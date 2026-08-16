@@ -1,0 +1,286 @@
+/* Black Flag — chrome tokens only.
+   The sea's palette lives in js/render.js because the canvas owns it. */
+
+:root{
+  --parch:#F2E7CE;
+  --ink:#132229;
+  --ink-78:rgba(19,34,41,.78);   /* the ONLY secondary text token. do not add a lower alpha. */
+  --ink-13:rgba(19,34,41,.13);
+  --ink-07:rgba(19,34,41,.07);
+
+  --gold:#D9A441; --gold-deep:#8A5F1B;
+  --blood:#8E2B24;               /* Spanish colours */
+  --brine:#2E6E7E; --foam:#CFE6E4; --rum:#B4703A;
+  --hull-lo:#C1503F; --hull-hi:#5FA88A;
+
+  --gutter:24px; --sheetpad:20px;
+  --r-chip:999px; --r-tile:18px; --r-sheet:26px; --r-cta:20px; --r-card:20px; --r-phone:46px;
+  --sh-tile:0 8px 18px -10px rgba(0,0,0,.5);
+  --sh-cta:0 12px 24px -12px rgba(0,0,0,.7);
+  --sh-sheet:0 -22px 44px -22px rgba(0,0,0,.6);
+  --dur:240ms;
+}
+
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{height:100%}
+body{
+  margin:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;
+  font-family:'Instrument Sans',system-ui,sans-serif;color:var(--parch);
+  /* dark tiled planking */
+  background:repeating-linear-gradient(112deg,#0E1D24 0 14px,#122229 14px 28px);
+  overflow:hidden;
+}
+
+.stagewrap{flex:none}
+.stage{
+  position:relative;width:390px;height:844px;border-radius:var(--r-phone);overflow:hidden;
+  background:#07141b;-webkit-font-smoothing:antialiased;
+  box-shadow:0 34px 60px -26px rgba(0,0,0,.8),0 0 0 1px rgba(0,0,0,.6);
+  transform-origin:50% 50%;
+  touch-action:none;
+  /* iOS: kill long-press selection + callout, or a steering drag gets cancelled */
+  user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;
+}
+#sea,#fleet,#fx{position:absolute;inset:0;width:100%;height:100%;display:block}
+#sea{z-index:1}
+#fleet{z-index:2}
+#fx{z-index:3}
+.ui{position:absolute;inset:0;z-index:5}
+
+/* two global treatments -------------------------------------------------- */
+.grain{
+  position:absolute;inset:0;pointer-events:none;z-index:9;opacity:.11;
+  background-image:repeating-linear-gradient(0deg,rgba(255,255,255,.5) 0 1px,transparent 1px 3px);
+  mix-blend-mode:soft-light;
+}
+.vig{position:absolute;inset:0;pointer-events:none;z-index:8;
+  background:radial-gradient(128% 84% at 50% 40%,transparent 50%,rgba(2,12,18,.44) 100%)}
+/* screens with no sea behind them get no weather */
+.stage.flat .vig{display:none}
+/* refit whiteout and lightning. render.js writes --flash; nothing here reflows. */
+.flash{position:absolute;inset:0;pointer-events:none;z-index:7;
+  background:var(--flash-c,#fff);opacity:var(--flash,0)}
+
+/* type ------------------------------------------------------------------- */
+.mono{font-family:'JetBrains Mono',ui-monospace,monospace;text-transform:uppercase;letter-spacing:.14em}
+.disp{font-family:'Cinzel','Instrument Sans',serif;font-weight:700;letter-spacing:.005em;line-height:1.06}
+.mark{font-family:'JetBrains Mono',monospace;font-weight:600;font-size:11px;letter-spacing:.3em;
+  color:var(--parch)}
+.sub{font-size:15px;line-height:1.5;color:rgba(242,231,206,.78)}
+.serif{font-family:'Cinzel',serif}
+
+/* screen scaffold -------------------------------------------------------- */
+.screen{position:absolute;inset:0;animation:fade var(--dur) ease-out;color:var(--parch)}
+@keyframes fade{from{opacity:0}to{opacity:1}}
+.hd{position:absolute;left:30px;right:30px;text-align:center;z-index:6}
+.eyebrow{font-size:11px;font-weight:600;opacity:.6;margin-bottom:14px}
+.wordmark{position:absolute;top:74px;left:0;right:0;text-align:center;z-index:6}
+.rule{height:1px;background:linear-gradient(90deg,transparent,rgba(217,164,65,.55),transparent);margin:18px 0}
+
+/* chrome ------------------------------------------------------------------ */
+.chip{
+  display:inline-flex;align-items:center;gap:7px;border-radius:var(--r-chip);
+  font:600 13px 'Instrument Sans';white-space:nowrap;color:var(--parch);
+  background:rgba(9,26,33,.62);padding:8px 13px;border:0;
+  backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px)}
+.chip.icon{width:38px;height:38px;justify-content:center;padding:0;font-size:15px}
+.chip.gold{color:var(--gold);box-shadow:inset 0 0 0 1px rgba(217,164,65,.45)}
+.chip[disabled]{opacity:.4}
+.chip.burger::before{content:'';width:16px;height:12px;border-radius:2px;
+  background:repeating-linear-gradient(currentColor 0 2.4px,transparent 2.4px 5px)}
+
+.top{position:absolute;top:18px;left:var(--gutter);right:var(--gutter);z-index:6;
+  display:flex;align-items:center;justify-content:space-between;gap:8px}
+
+.dock{position:absolute;left:0;right:0;bottom:0;padding:16px 20px 26px;z-index:7;
+  background:linear-gradient(rgba(6,18,24,0),rgba(6,18,24,.92) 46%)}
+.cta{width:100%;background:var(--parch);border:0;border-radius:var(--r-cta);padding:16px 20px;
+  display:flex;align-items:center;justify-content:space-between;gap:12px;box-shadow:var(--sh-cta);
+  text-align:left;font:inherit;color:var(--ink)}
+.cta b{font:700 16px 'Cinzel',serif;color:var(--ink);display:block;letter-spacing:.02em}
+.cta span{font:500 10px 'JetBrains Mono',monospace;letter-spacing:.12em;text-transform:uppercase;
+  color:var(--ink-78);display:block;margin-top:3px}
+.cta i{width:36px;height:36px;border-radius:50%;background:var(--ink);display:grid;place-items:center;
+  color:var(--parch);font-size:15px;font-style:normal;flex:none}
+.cta.ghost{background:transparent;box-shadow:inset 0 0 0 1.5px rgba(242,231,206,.4)}
+.cta.ghost b{color:var(--parch)}.cta.ghost span{color:rgba(242,231,206,.6)}.cta.ghost i{background:var(--parch);color:var(--ink)}
+.cta.gold{background:var(--gold);box-shadow:0 0 40px rgba(217,164,65,.34)}
+.cta.gold b,.cta.gold span{color:#2A1B04}.cta.gold i{background:#2A1B04;color:var(--gold)}
+.cta[disabled]{opacity:.42;box-shadow:none}
+
+/* ============================================================ the HUD ==== */
+
+.hud{position:absolute;inset:0;pointer-events:none;z-index:6}
+.hud button{pointer-events:auto}
+
+/* The HUD sits over the sky, which is the lightest thing on the screen. Without this
+   scrim the hearts, the coin and the flags all vanish into the horizon at midday. */
+.hud::before{content:'';position:absolute;left:0;right:0;top:0;height:120px;pointer-events:none;
+  background:linear-gradient(rgba(4,16,22,.66),rgba(4,16,22,.34) 34%,rgba(4,16,22,.12) 64%,rgba(4,16,22,0))}
+.hudtop{position:absolute;top:14px;left:14px;right:14px;display:flex;align-items:flex-start;gap:10px}
+.hudtop .col{flex:1;min-width:0}
+.hullbar{height:8px;border-radius:5px;background:rgba(4,14,20,.62);overflow:hidden;
+  box-shadow:inset 0 0 0 1px rgba(242,231,206,.22)}
+.hullbar i{display:block;height:100%;border-radius:5px;background:var(--hull-hi);
+  transition:width 140ms linear,background 300ms}
+.hullbar.low i{background:var(--hull-lo)}
+.hudline{display:flex;align-items:center;gap:8px;margin-top:6px;
+  font:500 10px 'JetBrains Mono',monospace;letter-spacing:.12em;text-transform:uppercase;
+  color:rgba(242,231,206,.86);text-shadow:0 1px 3px rgba(0,0,0,.7)}
+.hearts{letter-spacing:1px;color:var(--blood);font-size:12px;text-shadow:0 1px 2px rgba(0,0,0,.8)}
+.coin{color:var(--gold)}
+
+/* five flags. Lit ones are black cloth on a gold staff; unlit are just the staff. */
+.flags{display:flex;gap:3px;align-items:flex-end;height:18px}
+.flags i{width:9px;height:16px;display:block;position:relative;opacity:.28}
+.flags i::before{content:'';position:absolute;left:0;top:0;bottom:0;width:1.5px;background:var(--gold)}
+.flags i::after{content:'';position:absolute;left:1.5px;top:1px;width:7px;height:7px;
+  background:#0C1116;clip-path:polygon(0 0,100% 22%,100% 78%,0 100%)}
+.flags i.on{opacity:1}
+.flags i.on::after{background:#12181e;box-shadow:0 0 6px rgba(0,0,0,.8)}
+.flags.hot i.on::before{background:var(--blood)}
+
+.buffs{position:absolute;top:74px;left:14px;display:flex;flex-direction:column;gap:4px;align-items:flex-start}
+.buff{font:600 9.5px 'JetBrains Mono',monospace;letter-spacing:.12em;text-transform:uppercase;
+  background:rgba(9,26,33,.6);color:var(--gold);padding:3px 8px;border-radius:var(--r-chip);
+  backdrop-filter:blur(8px)}
+
+.mortar{position:absolute;right:18px;bottom:34px;width:78px;height:78px;border-radius:50%;
+  border:0;background:rgba(9,26,33,.5);box-shadow:inset 0 0 0 2px rgba(217,164,65,.55);
+  color:var(--gold);font:600 10px 'JetBrains Mono',monospace;letter-spacing:.1em;
+  display:grid;place-items:center;gap:1px;backdrop-filter:blur(10px);
+  transition:transform 90ms ease-out,opacity 200ms}
+.mortar b{font:700 21px 'Cinzel',serif;display:block;line-height:1}
+.mortar:active{transform:scale(.92)}
+.mortar[disabled]{opacity:.34;box-shadow:inset 0 0 0 2px rgba(242,231,206,.2);color:rgba(242,231,206,.5)}
+
+.pausebtn{position:absolute;top:12px;right:12px}
+
+/* the shout in the middle of the screen — wave titles, BOARDED!, SHE STRIKES */
+.toast{position:absolute;left:0;right:0;top:290px;text-align:center;z-index:6;pointer-events:none}
+.toast b{font:700 30px 'Cinzel',serif;display:block;color:var(--parch);letter-spacing:.03em;
+  text-shadow:0 3px 14px rgba(0,0,0,.85)}
+.toast span{font:500 10.5px 'JetBrains Mono',monospace;letter-spacing:.22em;text-transform:uppercase;
+  color:var(--gold);display:block;margin-top:8px}
+.toast.go{animation:shout 1.7s ease-out forwards}
+@keyframes shout{
+  0%{opacity:0;transform:scale(.92)}
+  12%{opacity:1;transform:scale(1)}
+  74%{opacity:1;transform:scale(1)}
+  100%{opacity:0;transform:scale(1.03)}
+}
+
+/* boss health, only while a legendary is on the water */
+.bossbar{position:absolute;top:58px;left:44px;right:44px;opacity:0;transition:opacity 300ms}
+.bossbar.on{opacity:1}
+/* Her name sits on the horizon, which is the brightest band on the screen — so it
+   carries its own backing rather than trusting the HUD scrim to reach that far. */
+.bossbar .n{font:600 10px 'JetBrains Mono',monospace;letter-spacing:.2em;text-transform:uppercase;
+  text-align:center;color:var(--gold);margin-bottom:5px;
+  text-shadow:0 1px 5px #041016,0 0 12px #041016}
+.bossbar .b{height:5px;border-radius:3px;background:rgba(4,14,20,.85);overflow:hidden;
+  box-shadow:inset 0 0 0 1px rgba(217,164,65,.5),0 2px 10px rgba(4,16,22,.7)}
+.bossbar .b i{display:block;height:100%;background:var(--blood);transition:width 200ms linear}
+
+/* ============================================================== sheets === */
+
+.paper{position:absolute;inset:0;padding:96px 22px 30px;overflow:auto;z-index:6;
+  background:
+    radial-gradient(120% 60% at 50% 0%,rgba(217,164,65,.09),transparent 60%),
+    linear-gradient(#14262E,#0C1A21);
+  color:var(--parch)}
+.paper::-webkit-scrollbar,.portsheet::-webkit-scrollbar{width:0}
+
+/* Nassau's upgrade sheet. Translucent, and it starts low, because the careened ship it
+   is describing is painted on the canvas behind and above it. */
+.portsheet{position:absolute;left:0;right:0;top:330px;bottom:0;overflow:auto;z-index:6;
+  padding:22px 22px 30px;color:var(--parch);
+  background:rgba(8,20,26,.88);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+  border-radius:var(--r-sheet) var(--r-sheet) 0 0;box-shadow:var(--sh-sheet)}
+
+.rowlist{display:flex;flex-direction:column}
+.rowlist>*{display:flex;width:100%;align-items:center;justify-content:space-between;gap:12px;
+  padding:16px 2px;border:0;border-bottom:1px solid rgba(242,231,206,.12);background:transparent;
+  font:600 15px 'Instrument Sans';color:var(--parch);text-align:left;text-decoration:none}
+.rowlist .r{font:500 11px 'JetBrains Mono',monospace;letter-spacing:.1em;text-transform:uppercase;
+  color:rgba(242,231,206,.7);flex:none}
+.rowlist .r.gold{color:var(--gold)}
+
+/* port: an upgrade is a row you can afford or can't */
+.up{display:flex;width:100%;gap:12px;align-items:center;padding:13px 14px;border:0;text-align:left;
+  border-radius:var(--r-card);background:rgba(242,231,206,.055);color:var(--parch);
+  box-shadow:inset 0 0 0 1px rgba(242,231,206,.1);font:inherit;margin-bottom:9px}
+.up:disabled{opacity:.4}
+.up .t{flex:1;min-width:0}
+.up .t b{font:700 14.5px 'Cinzel',serif;display:block;letter-spacing:.02em}
+.up .t span{font:500 10px 'JetBrains Mono',monospace;letter-spacing:.1em;text-transform:uppercase;
+  color:rgba(242,231,206,.66);display:block;margin-top:3px}
+.up .p{font:700 14px 'JetBrains Mono',monospace;color:var(--gold);flex:none}
+.up .p.no{color:rgba(242,231,206,.4)}
+/* pips show what you've already bought — five squares, filled left to right */
+.pips{display:flex;gap:3px;margin-top:6px}
+.pips i{width:14px;height:4px;border-radius:2px;background:rgba(242,231,206,.2)}
+.pips i.on{background:var(--gold)}
+
+.stat{display:flex;justify-content:space-between;align-items:baseline;padding:11px 0;
+  border-bottom:1px solid rgba(242,231,206,.1)}
+.stat .k{font:500 10.5px 'JetBrains Mono',monospace;letter-spacing:.14em;text-transform:uppercase;
+  color:rgba(242,231,206,.66)}
+.stat .v{font:700 19px 'Cinzel',serif;color:var(--parch)}
+.stat .v.gold{color:var(--gold)}
+
+/* captain's log: one card per class met */
+.logcard{display:flex;gap:14px;align-items:center;padding:13px 0;
+  border-bottom:1px solid rgba(242,231,206,.1)}
+.logcard canvas{flex:none;width:64px;height:64px;background:rgba(4,14,20,.4);border-radius:14px}
+.logcard .t{flex:1;min-width:0}
+.logcard .t b{font:700 15px 'Cinzel',serif;display:block}
+.logcard .t p{margin:3px 0 0;font-size:12.5px;line-height:1.45;color:rgba(242,231,206,.7)}
+.logcard .t .m{font:500 9.5px 'JetBrains Mono',monospace;letter-spacing:.12em;text-transform:uppercase;
+  color:var(--gold);margin-top:5px;display:block}
+.logcard.unmet{opacity:.34}
+
+.scrim{position:absolute;inset:0;background:rgba(4,14,20,.72);z-index:7;backdrop-filter:blur(3px)}
+
+.deskchrome{display:flex;flex-direction:column;align-items:center;gap:10px;color:#B9CDD3;flex:none}
+.deskline{font-size:10.5px;letter-spacing:.2em;opacity:.5}
+.deskmark{opacity:.85}
+.desknudge{background:rgba(242,231,206,.1);color:#D8E4E6;backdrop-filter:blur(10px)}
+
+@media (max-width:820px),(pointer:coarse){
+  /* The stage keeps its 390 column; the sea layer is painted --bx wider on each side
+     and hangs out past it, so the water reaches the screen edges. */
+  body{gap:0;background:#07141b}
+  .deskchrome{display:none}
+  html,body{overflow-x:hidden}
+  .stage{border-radius:0;box-shadow:none;overflow:visible}
+  /* the grade and the grain have to cover the spill too, or the seam just moves */
+  .vig,.grain,.flash{left:calc(-1 * var(--bx,0px));right:calc(-1 * var(--bx,0px))}
+  .dock{left:calc(-1 * var(--bx,0px));right:calc(-1 * var(--bx,0px));
+    padding-left:calc(20px + var(--bx,0px));padding-right:calc(20px + var(--bx,0px))}
+  /* the full-bleed surfaces have to cover the spill too, or the seam just moves */
+  .paper,.portsheet,.scrim{left:calc(-1 * var(--bx,0px));right:calc(-1 * var(--bx,0px));
+    padding-left:calc(22px + var(--bx,0px));padding-right:calc(22px + var(--bx,0px))}
+  /* the HUD's scrim is a backdrop, so it has to reach as far as the backdrop does */
+  .hud::before{left:calc(-1 * var(--bx,0px));right:calc(-1 * var(--bx,0px))}
+  .hudtop{left:calc(14px - var(--bx,0px));right:calc(14px - var(--bx,0px))}
+}
+
+/* Sideways on a phone. Coarse pointer AND short, which is the pair that means "phone":
+   a laptop has a fine pointer and already gets the surround, and a tablet on its side
+   still has the height to show the stage at a sensible size. */
+.rotate{display:none}
+@media (orientation:landscape) and (pointer:coarse) and (max-height:560px){
+  .stagewrap,.deskchrome{display:none}
+  .rotate{position:fixed;inset:0;z-index:50;display:flex;flex-direction:column;
+    align-items:center;justify-content:center;gap:16px;text-align:center;padding:0 40px;
+    background:#07141b;color:var(--parch)}
+  .rotate svg{color:var(--gold);animation:tilt 2.6s ease-in-out infinite}
+}
+@keyframes tilt{0%,60%,100%{transform:rotate(0)}30%{transform:rotate(-84deg)}}
+
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation-duration:.001ms!important;animation-iteration-count:1!important;
+    transition-duration:120ms!important}
+  .toast.go{animation:fade 200ms ease-out forwards}
+}

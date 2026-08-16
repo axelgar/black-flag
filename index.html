@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0A1C24">
+<!-- Add to Home Screen → launches chromeless, the stage gets the whole display.
+     iOS wants the apple- prefixed key; the unprefixed one covers Android. -->
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Black Flag</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<!-- ponytail: Google Fonts CDN. Self-host before anywhere with bad wifi. -->
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700;900&family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="./css/app.css">
+<script type="importmap">
+{"imports":{"d3":"https://cdn.jsdelivr.net/npm/d3@7/+esm"}}
+</script>
+</head>
+<body>
+
+<!-- Desktop surround. Never a second layout — the stage just clamps and scales. -->
+<div class="deskchrome" aria-hidden="true">
+  <div class="mark deskmark">BLACK FLAG</div>
+  <div class="mono deskline">BUILT FOR A PHONE · IT SAILS HERE ANYWAY</div>
+</div>
+
+<div class="stagewrap">
+  <div class="stage" id="stage">
+    <!-- sea → fleet → fx. Flat painting all the way down, no WebGL. -->
+    <canvas id="sea" aria-hidden="true"></canvas>
+    <canvas id="fleet" aria-hidden="true"></canvas>
+    <canvas id="fx" aria-hidden="true"></canvas>
+    <main id="ui" class="ui"></main>
+    <div class="vig" aria-hidden="true"></div>
+    <div class="grain" aria-hidden="true"></div>
+    <!-- refit / lightning. Painted by render.js through a CSS variable, never a reflow. -->
+    <div class="flash" id="flash" aria-hidden="true"></div>
+  </div>
+</div>
+
+<div class="deskchrome deskfoot" aria-hidden="true">
+  <div class="chip desknudge">← → steers · SPACE drops the mortar · ESC heaves to</div>
+</div>
+
+<!-- Portrait is the design, not a default. Turned sideways the stage would clamp to a
+     180px postage stamp, so say so instead. app.js heaves to when this appears. -->
+<div class="rotate" role="status">
+  <svg width="46" height="46" viewBox="0 0 46 46" fill="none" aria-hidden="true">
+    <rect x="15" y="6" width="16" height="34" rx="3" stroke="currentColor" stroke-width="2"/>
+    <path d="M8 30a15 15 0 0 0 4 8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+    <path d="M6 24l2 7 7-2" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+  </svg>
+  <div class="disp" style="font-size:26px">Turn her upright</div>
+  <div class="mono" style="font-size:10.5px;opacity:.6">BLACK FLAG SAILS IN PORTRAIT</div>
+</div>
+
+<script type="module" src="./js/app.js"></script>
+</body>
+</html>
