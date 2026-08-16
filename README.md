@@ -8,6 +8,9 @@ Implementation of `PLANS/BLACK_FLAG_V1.md` — all five stages of its build orde
 Same skeleton as `../oddish`: vanilla ES modules, no build step, stacked canvases, a
 pure model `node test.mjs` can import.
 
+**Live:** <https://black-flag-two.vercel.app> — Vercel took `black-flag` for someone
+else's project, so the alias is `-two`. Open it on a phone, in portrait.
+
 ## Run
 
 ```
