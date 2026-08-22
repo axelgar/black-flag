@@ -142,6 +142,39 @@ things that would rot silently:
 
 Waves 1–20 are also each run to completion, so the authored run has no dead end.
 
+## The frame budget
+
+A phone that gets hot is a phone painting more than anyone asked it to. Four things
+were doing that, and none of them was the simulation — `cull()` has always thrown away
+every ship, shot, drop, reef, spout and blast mark the moment it leaves the screen.
+
+- **The paint is gated to 60fps, and to 30 on an idle screen.** `d3.timer` is
+  `requestAnimationFrame`, so on a 120Hz phone the whole three-canvas stack was being
+  repainted 120 times a second — twice as often as anyone can see it. The simulation
+  keeps its own fixed 1/120s accumulator and is untouched by this; the paint now has a
+  second accumulator of its own, and is handed the whole elapsed dt so particles and
+  the flash decay at exactly the speed they always did.
+- **The title, Nassau, the pause and the run summary all idle at 30fps.** Every one of
+  them keeps a live sea behind it, and every one of them was painting it at the full
+  refresh rate for as long as it was left open. Shopping for upgrades cost the same as
+  being shot at.
+- **Sky, haze and water are baked and blitted**, the way the swell already was. All
+  three are the same gradients for the whole of a given weather, and all three were
+  being rebuilt and refilled full-width on every frame.
+- **The two overlays that sit over the wave itself lost their `backdrop-filter`.** A
+  blur has to re-read and re-blur its backdrop every frame it is composited, and behind
+  the mortar button is a canvas that is different every frame for the length of a run.
+  Every other blur in the build sits over a sea that has settled.
+
+The sea layer is also declared `alpha: false` — it is the widest of the three canvases
+and the sky and water cover every pixel of it, so it has nothing to blend with what is
+under it. `cull()` compacts in place rather than allocating six arrays a tick.
+
+Still on the table, both of which cost something to look at, so neither was taken
+unilaterally: `.grain`'s `mix-blend-mode: soft-light` is a full-screen blend the
+compositor has to recompute against changing water every frame, and the pause scrim's
+blur sits over a sea that is still moving under it.
+
 ## Not built
 
 Marked in the source with `ponytail:` comments.

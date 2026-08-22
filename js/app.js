@@ -282,6 +282,31 @@ window.addEventListener('bf:prefs', () => {
 
 /* ---------------------------------------------------------------- clock -- */
 
+// The simulation is stepped from an accumulator and the paint is gated off a second
+// one, because the two want different rates. d3's timer is requestAnimationFrame, so
+// on a 120Hz phone it fires 120 times a second and the sea was being repainted every
+// one of them — three full canvases, twice as often as anyone can see, for the whole
+// length of a run. That is heat and nothing else. 61 and 31 rather than 60 and 30 so
+// float jitter on a 16.667ms frame cannot round the wrong way and drop every other
+// paint; the gate has to be slightly looser than the display, never tighter.
+const PAINT_MIN = 1 / 61;
+const IDLE_MIN = 1 / 31;
+let paintAcc = 0;
+
+/**
+ * Paint at most 60fps, and at most 30 on a screen that is only idling behind a sheet
+ * of UI. The whole accumulated dt is handed to paint() rather than this frame's, so
+ * particles and the flash decay at the same speed they always did — there are simply
+ * fewer, longer steps. Returns whether it painted, so the HUD can follow it down.
+ */
+function maybePaint(dt, T, idle) {
+  paintAcc += dt;
+  if (paintAcc < (idle ? IDLE_MIN : PAINT_MIN)) return false;
+  R.paint(paintAcc, T);
+  paintAcc = 0;
+  return true;
+}
+
 let last = performance.now() / 1000;
 const t0 = last;
 
@@ -318,14 +343,15 @@ timer(() => {
   // The wave does not cut on the frame it ends — the last explosion gets to finish.
   if (outcome > 0 && world) {
     outcome -= dt;
-    R.paint(dt, T);
-    Screens.hudTick(world);
+    if (maybePaint(dt, T, false)) Screens.hudTick(world);
     if (outcome <= 0) { const won = world.phase === 'won'; won ? endWave() : endRun(); }
     return;
   }
 
-  R.paint(dt, T);
-  Screens.hudTick(world);
+  // Every screen that is not the wave itself — the title, Nassau, hove to, the summary —
+  // keeps a live sea behind it, and each was repainting it at the full refresh rate for
+  // as long as it was left open. Shopping for upgrades cost the same as being shot at.
+  if (maybePaint(dt, T, paused)) Screens.hudTick(world);
 });
 
 /* -------------------------------------------------------------- desktop -- */

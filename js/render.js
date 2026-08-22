@@ -61,6 +61,7 @@ export const scene = {
 let sctx, fctx, xctx, seaCv, fleetCv, fxCv, flashEl;
 let BX = 0;                       // how far past the 390 column the sea is painted
 let crestTile = null, crestKey = '';
+let skyTile = null, waterTile = null, backKey = '';
 let fx = [];
 let shakeT = 0, shakeAmp = 0, flash = 0, flashCol = '#fff', lightning = 0;
 let islands = null;
@@ -81,9 +82,15 @@ function sizeSea() {
   seaCv.style.left = `${-BX}px`;
   seaCv.style.right = `${-BX}px`;
   seaCv.style.width = 'auto';
-  sctx = seaCv.getContext('2d');
+  // The sea is the bottom layer and the sky and the water cover every pixel of it, so it
+  // has nothing to blend with what is underneath. Saying so lets the compositor skip the
+  // per-pixel alpha on the largest of the three canvases — it is wider than the other two
+  // by however far the water bleeds past the column. Fleet and fx stay transparent; they
+  // are mostly empty and have to be. (The attributes only bind on the first getContext,
+  // which is this one — later resizes keep the bitmap's shape, not the context.)
+  sctx = seaCv.getContext('2d', { alpha: false });
   sctx.setTransform(DPR, 0, 0, DPR, BX * DPR, 0);
-  crestKey = '';
+  crestKey = ''; backKey = '';
 }
 
 /** Called by the fitter, which is the only thing that knows the viewport. */
@@ -159,15 +166,55 @@ function bakeCrests(pal) {
   }
 }
 
+/**
+ * Sky, haze band and water. All three are the same gradients on every frame of a given
+ * weather, and all three were being built and filled full-width on every one of them —
+ * for a picture that does not change until the weather does. Baked and blitted, exactly
+ * as the swell already was, and for the same reason it was.
+ */
+function bakeBackdrop(key, pal) {
+  if (backKey === key) return;
+  backKey = key;
+  const ww = W + 2 * BX;
+
+  const sh = HORIZON + 14;
+  skyTile = document.createElement('canvas');
+  skyTile.width = ww * DPR; skyTile.height = sh * DPR;
+  const sc = skyTile.getContext('2d');
+  sc.setTransform(DPR, 0, 0, DPR, 0, 0);
+  const sky = sc.createLinearGradient(0, 0, 0, sh);
+  sky.addColorStop(0, pal.sky[0]); sky.addColorStop(0.62, pal.sky[1]); sky.addColorStop(1, pal.sky[2]);
+  sc.fillStyle = sky; sc.fillRect(0, 0, ww, sh);
+
+  // Offset into stage coordinates so the two fills below stay the numbers they always
+  // were — the tile starts at the top of the haze, not at the top of the stage.
+  const top = HORIZON - 16, wh = H - top;
+  waterTile = document.createElement('canvas');
+  waterTile.width = ww * DPR; waterTile.height = wh * DPR;
+  const wc = waterTile.getContext('2d');
+  wc.setTransform(DPR, 0, 0, DPR, 0, -top * DPR);
+
+  const hz = wc.createLinearGradient(0, HORIZON - 16, 0, HORIZON + 22);
+  hz.addColorStop(0, 'rgba(0,0,0,0)'); hz.addColorStop(0.5, pal.haze); hz.addColorStop(1, 'rgba(0,0,0,0)');
+  wc.fillStyle = hz; wc.fillRect(0, HORIZON - 16, ww, 38);
+
+  const sea = wc.createLinearGradient(0, HORIZON, 0, H);
+  const up = ramp(pal.deep, pal.near, 6), down = ramp(pal.near, pal.deep, 5);
+  up.forEach((col, i) => sea.addColorStop((i / (up.length - 1)) * 0.55, col));
+  down.forEach((col, i) => sea.addColorStop(0.55 + (i / (down.length - 1)) * 0.45, col));
+  wc.fillStyle = sea; wc.fillRect(0, HORIZON, ww, H - HORIZON);
+}
+
 function drawSea(T, dt) {
-  const pal = WEATHER[scene.mode === 'port' ? 'port' : scene.weather] || WEATHER.clear;
+  const palKey = scene.mode === 'port' ? 'port' : (WEATHER[scene.weather] ? scene.weather : 'clear');
+  const pal = WEATHER[palKey];
   const c = sctx;
   const x0 = -BX, ww = W + 2 * BX;
 
+  bakeBackdrop(`${palKey}:${BX}`, pal);
+
   // sky
-  const sky = c.createLinearGradient(0, 0, 0, HORIZON + 14);
-  sky.addColorStop(0, pal.sky[0]); sky.addColorStop(0.62, pal.sky[1]); sky.addColorStop(1, pal.sky[2]);
-  c.fillStyle = sky; c.fillRect(x0, 0, ww, HORIZON + 14);
+  c.drawImage(skyTile, x0, 0, ww, HORIZON + 14);
 
   // islands, with a whisper of parallax so they read as far rather than painted on
   const px = (scene.world ? scene.world.scroll : T * SCROLL) * 0.012;
@@ -184,17 +231,9 @@ function drawSea(T, dt) {
   }
   c.restore();
 
-  // haze band where the water meets the sky
-  const hz = c.createLinearGradient(0, HORIZON - 16, 0, HORIZON + 22);
-  hz.addColorStop(0, 'rgba(0,0,0,0)'); hz.addColorStop(0.5, pal.haze); hz.addColorStop(1, 'rgba(0,0,0,0)');
-  c.fillStyle = hz; c.fillRect(x0, HORIZON - 16, ww, 38);
-
-  // the water: far and dark at the horizon, near and lit at your own stern
-  const sea = c.createLinearGradient(0, HORIZON, 0, H);
-  const up = ramp(pal.deep, pal.near, 6), down = ramp(pal.near, pal.deep, 5);
-  up.forEach((col, i) => sea.addColorStop((i / (up.length - 1)) * 0.55, col));
-  down.forEach((col, i) => sea.addColorStop(0.55 + (i / (down.length - 1)) * 0.45, col));
-  c.fillStyle = sea; c.fillRect(x0, HORIZON, ww, H - HORIZON);
+  // the haze band where the water meets the sky, and the water under it: far and dark at
+  // the horizon, near and lit at your own stern. One blit, over the islands, as before.
+  c.drawImage(waterTile, x0, HORIZON - 16, ww, H - HORIZON + 16);
 
   // swell
   bakeCrests(pal);

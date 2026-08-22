@@ -615,13 +615,23 @@ function marks(w, dt) {
 
 /* ------------------------------------------------------------- tidy up --- */
 
+/** filter() in place. Order is preserved exactly, so the digest does not move — this is
+ *  only about the six fresh arrays a tick that the old shape handed the collector, which
+ *  at 120 ticks a second is seven hundred short-lived objects to sweep up every second
+ *  of a run, all of them during the frames that could least afford the pause. */
+function keep(a, ok) {
+  let n = 0;
+  for (let i = 0; i < a.length; i++) if (ok(a[i])) a[n++] = a[i];
+  a.length = n;
+}
+
 function cull(w) {
-  w.shots = w.shots.filter((s) => !s.dead && s.y > -60 && s.y < H + 60 && s.x > -60 && s.x < W + 60 && s.age < 6);
-  w.foes = w.foes.filter((e) => !e.dead && e.y < H + 100);
-  w.drops = w.drops.filter((d) => !d.dead && d.y < H + 40);
-  w.rocks = w.rocks.filter((k) => k.y < H + 60);
-  w.spouts = w.spouts.filter((p) => p.y < H + 80);
-  w.marks = w.marks.filter((m) => !m.done);
+  keep(w.shots, (s) => !s.dead && s.y > -60 && s.y < H + 60 && s.x > -60 && s.x < W + 60 && s.age < 6);
+  keep(w.foes, (e) => !e.dead && e.y < H + 100);
+  keep(w.drops, (d) => !d.dead && d.y < H + 40);
+  keep(w.rocks, (k) => k.y < H + 60);
+  keep(w.spouts, (p) => p.y < H + 80);
+  keep(w.marks, (m) => !m.done);
   if (w.boss && w.boss.dead) w.boss = null;
 }
 
