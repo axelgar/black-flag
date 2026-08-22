@@ -122,6 +122,43 @@ window.addEventListener('bf:abandon', () => {
   location.hash = '#/dead';
 });
 
+/**
+ * Put a half-fought wave back the way it was found. The run object is the wave's start
+ * line — nothing inside a wave ever writes to it, bankWave at the end is the only thing
+ * that does — so throwing the world away is the whole of the rewind. Plunder, lives,
+ * hull, shells and notoriety all come back to what they were when she left the beach,
+ * and whatever the wave had paid out so far goes back with them. That is deliberate:
+ * a retreat that banked its takings would make the first two ships of a rich wave a
+ * thing to sail in for and run from, over and over.
+ */
+function unsailWave() {
+  world = null; R.scene.world = null;
+  R.clearFx();
+  acc = 0; outcome = 0;
+  pendingToast = null;
+}
+
+// Guarded on the wave still being fought, both here and on the screen that draws the
+// buttons: during the second and a half a lost wave gets to finish its last explosion,
+// either of these would be a way to decline having lost it.
+const midWave = () => S.session.run && world && world.phase === 'fight';
+
+window.addEventListener('bf:restart-wave', () => {
+  if (!midWave()) return;
+  unsailWave();
+  location.hash = '#/play';
+  if (here === '/play') render();          // already here — the hash will not fire
+});
+
+window.addEventListener('bf:retreat', () => {
+  if (!midWave()) return;
+  unsailWave();
+  // There is nothing to bank, but the hulls the wave put in the captain's log were
+  // genuinely met, and the wave-end save is the one that would have written them down.
+  S.save();
+  location.hash = '#/port';
+});
+
 function enterPlay() {
   if (!S.session.run) S.newRun(seed());
   const run = S.session.run;

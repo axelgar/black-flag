@@ -47,8 +47,7 @@ export function title() {
   return { html: `
     <div class="screen">
       <div class="hd" style="top:132px">
-        <div class="mark" style="opacity:.72">ASSASSIN'S CREED IV</div>
-        <div class="disp" style="font-size:54px;line-height:.94;letter-spacing:.06em;margin-top:20px;
+        <div class="disp" style="font-size:54px;line-height:.94;letter-spacing:.06em;margin-top:36px;
           text-shadow:0 6px 24px rgba(4,16,22,.75)">BLACK<br>FLAG</div>
         <div class="rule"></div>
         <div class="mono" style="font-size:10.5px;opacity:.72">THE JACKDAW · WEST INDIES · 1715</div>
@@ -436,16 +435,27 @@ export function pause() {
   // which black the canvas out — it would otherwise be a scrim over nothing.
   R.scene.hidden = false;
   R.scene.mode = R.scene.world ? 'play' : 'sea';
+  // Only a wave still being fought offers a way out of itself. Hove to during the
+  // second and a half a finished wave gets to let its last explosion land, these two
+  // would be a way to un-lose the wave you had just lost.
+  const live = R.scene.world?.phase === 'fight';
+  const wave = S.session.run?.wave;
   return { html: `
     <div class="screen">
       <div class="scrim"></div>
-      <div class="hd" style="top:300px;z-index:8">
+      <div class="hd" style="top:250px;z-index:8">
         <div class="disp" style="font-size:36px">Hove to</div>
         <div class="mono" style="font-size:10.5px;margin-top:14px;opacity:.65">THE SEA IS STILL COMING</div>
       </div>
       <div class="dock" style="z-index:8">
         <button class="cta gold" style="margin-bottom:10px" data-go="#/play">
           <div><b>Make sail</b><span>RESUME</span></div><i>→</i></button>
+        ${live ? `
+          <button class="cta ghost" style="margin-bottom:10px" data-again>
+            <div><b>Come about</b><span>WAVE ${wave} AGAIN FROM THE TOP</span></div><i>↻</i></button>
+          <button class="cta ghost" style="margin-bottom:10px" data-retreat>
+            <div><b>Run for Nassau</b><span>RETREAT · WAVE ${wave} STANDS UNSAILED</span></div><i>⚓</i></button>
+        ` : ''}
         <div style="display:flex;gap:9px">
           <button class="chip" style="flex:1;justify-content:center" data-go="#/menu">Articles</button>
           <button class="chip" style="flex:1;justify-content:center" data-abandon>Scuttle her</button>
@@ -453,6 +463,17 @@ export function pause() {
       </div>
     </div>`,
     mount(root) {
+      // Neither of these arms twice the way scuttling her does. Both cost you a wave you
+      // were in the middle of and nothing else, the button says as much, and what was
+      // asked for was a way back to the beach — not a way back with a form to fill in.
+      $('[data-again]', root)?.addEventListener('click', () => {
+        buzz(12);
+        window.dispatchEvent(new Event('bf:restart-wave'));
+      });
+      $('[data-retreat]', root)?.addEventListener('click', () => {
+        buzz(12);
+        window.dispatchEvent(new Event('bf:retreat'));
+      });
       $('[data-abandon]', root)?.addEventListener('click', (e) => {
         const b = e.currentTarget;
         if (b.dataset.armed !== '1') { b.dataset.armed = '1'; b.textContent = 'Certain?'; return; }

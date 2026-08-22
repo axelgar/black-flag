@@ -32,8 +32,8 @@ decision is the same decision (left or right).
 Boarding inverts one object's meaning mid-flight. A surrendered ship is the only thing on
 screen you *want* to collide with, it is on a timer, and chasing it drags you out of
 position while the rest of the wave is still descending. It is also, mechanically, what
-Black Flag is actually about — Edward Kenway's whole economy is boarding rather than
-sinking. One mechanic, and it carries the theme and the risk/reward at the same time.
+the age is actually about — a pirate's whole economy is boarding rather than sinking.
+One mechanic, and it carries the theme and the risk/reward at the same time.
 
 Everything else in this plan hangs off it: notoriety is the cost of *not* boarding,
 upgrades are bought with plunder, and the hunters are the sea's answer to a captain who

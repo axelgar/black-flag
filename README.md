@@ -112,6 +112,10 @@ in headless, so the numbers this build can measure are not the numbers a phone w
   fog banks, waterspouts from wave 12
 - Nassau: five upgrades and a bribe, all per-run; the record book and the captain's log
   persist across runs
+- Hove to mid-wave, two ways out of it: come about and sail the wave again from the top,
+  or run for Nassau and leave it for later. Both un-sail the wave — plunder, lives, hull
+  and notoriety all go back to what they were when she left the beach, so a retreat is a
+  retreat and not a way to farm the first two ships of a rich wave
 - All eight hash routes, `oddish`'s router verbatim
 - Three flat 2D canvases, everything procedural, zero assets
 - Touch drag / keyboard / mouse, and `prefers-reduced-motion` cutting shake, lightning,
@@ -121,7 +125,7 @@ in headless, so the numbers this build can measure are not the numbers a phone w
 
 ## The self-check
 
-`node test.mjs` runs headless battles at a fixed 1/120s timestep and holds the four
+`node test.mjs` runs headless battles at a fixed 1/120s timestep and holds the five
 things that would rot silently:
 
 - `waveBudget(n)` strictly increases for sixty waves, and no class appears before it unlocks
@@ -132,6 +136,9 @@ things that would rot silently:
 - a fixed seed replays byte-identically over four seed/wave pairs. That is the tripwire:
   the moment anything in `world.js` reaches for `Math.random()` or a clock, the digests
   stop matching.
+- a wave in progress never writes back to the run it was created from. `bankWave()` at the
+  beach is the only thing allowed to, and that is the whole of why coming about and
+  retreating rewind anything at all.
 
 Waves 1–20 are also each run to completion, so the authored run has no dead end.
 

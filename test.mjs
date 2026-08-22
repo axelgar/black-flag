@@ -240,8 +240,8 @@ assert.equal(rollDrop(rng('d1'), false)?.id, rollDrop(rng('d1'), false)?.id, 'dr
 
 // Two identical headless battles, sixty seconds each, driven by a scripted helm.
 // If any float path drifts or anything in world.js reaches for a clock, these diverge.
-function battle(seed, wave) {
-  const w = Wo.create({ seed, wave, run: { upgrades: { broadside: 2, plating: 1, racks: 2 } } });
+function battle(seed, wave, run = { upgrades: { broadside: 2, plating: 1, racks: 2 } }) {
+  const w = Wo.create({ seed, wave, run });
   let t = 0, i = 0;
   while (w.phase === 'fight' && t < 60) {
     // A helm that depends on the world state, so the input stream is part of the loop
@@ -272,6 +272,32 @@ for (let n = 1; n <= 20; n++) {
   assert.ok(r.w.foes.every((e) => e.hull >= 0 || e.dead), 'a live foe has negative hull');
 }
 
+/* ------------------------------------------- the wave is not the run ----- */
+
+// Coming about, and running for Nassau, are both just "throw the world away and build
+// another from the run". That rewinds anything at all only because a wave in progress
+// never writes back to the run it was created from — bankWave, once she is careened, is
+// the only thing allowed to. The day a step starts touching `run`, a retreat quietly
+// keeps half of what it was meant to forfeit, and the beach becomes a place to farm.
+{
+  const run = {
+    seed: 'retreat', wave: 3, plunder: 400, lives: 3, hull: null, shells: null,
+    upgrades: { plating: 1, broadside: 1 }, heat: 1.2, boarded: 2, sunk: 5, time: 90, bribes: 1,
+  };
+  const before = JSON.stringify(run);
+  const { w } = battle('retreat', 3, run);
+  assert.ok(w.heat !== 1.2 || w.sunk !== 5, 'the battle never actually happened, so it proves nothing');
+  assert.equal(JSON.stringify(run), before, 'a wave wrote back to the run — retreating would not rewind it');
+
+  // And what she puts back to sea in is the wave she started, not the one she left.
+  const again = Wo.create({ seed: 'retreat', wave: 3, run });
+  assert.equal(again.plunder, 400, 'coming about must hand back the plunder the wave started on');
+  assert.equal(again.heat, 1.2, 'coming about must hand back the notoriety too');
+  assert.equal(again.lives, 3, 'a life spent in a wave that was never finished is not spent');
+  assert.equal(again.ship.hull, shipStats(run.upgrades).hullMax, 'she comes about whole');
+  assert.equal(again.ship.shells, shipStats(run.upgrades).shellsMax, 'and with full racks');
+}
+
 /* ------------------------------------------------------------- the small -- */
 
 assert.equal(clock(0), '0:00');
@@ -279,4 +305,4 @@ assert.equal(clock(61), '1:01');
 assert.equal(clock(-5), '0:00', 'a clock skew must not print a negative time');
 assert.equal(reales(1234), '1,234');
 
-console.log('ok — wave curve, surrender window, boarding, hull clamps, notoriety, seeded replay');
+console.log('ok — wave curve, surrender window, boarding, hull clamps, notoriety, seeded replay, the run untouched mid-wave');
