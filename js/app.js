@@ -10,6 +10,7 @@ import * as S from './state.js';
 import * as Wo from './world.js';
 import * as A from './audio.js';
 import * as Screens from './screens.js';
+import { track, screen } from './analytics.js';
 
 const ui = document.getElementById('ui');
 const stage = document.getElementById('stage');
@@ -95,6 +96,7 @@ function startWave() {
   acc = 0; outcome = 0;
   A.setSea(world.weather);
   const p = world.plan;
+  track('wave_start', { wave: run.wave, boss: !!p.boss, weather: p.weather });
   // Held rather than shouted: startWave runs while the play screen is still a string,
   // so there is no HUD to shout into until render() has mounted it.
   pendingToast = [
@@ -108,6 +110,7 @@ function startWave() {
 
 window.addEventListener('bf:new-run', () => {
   S.newRun(seed());
+  track('run_start');
   world = null;
   location.hash = '#/play';
   if (here === '/play') render();          // already here — the hash will not fire
@@ -116,6 +119,7 @@ window.addEventListener('bf:new-run', () => {
 window.addEventListener('bf:abandon', () => {
   if (S.session.run) {
     S.session.lastRun = S.endRun(S.session.run, world);
+    track('run_end', { reason: 'abandon', ...S.session.lastRun });
     S.save();
   }
   world = null; R.scene.world = null;
@@ -199,6 +203,7 @@ function endWave() {
 
 function endRun() {
   S.session.lastRun = S.endRun(S.session.run, world);
+  track('run_end', { reason: 'sunk', ...S.session.lastRun });
   S.save();
   world = null; R.scene.world = null;
   location.hash = '#/dead';
@@ -230,7 +235,7 @@ let here = null;
 
 function render() {
   const p = path();
-  if (p !== here) { S.nav.from = here; here = p; }
+  if (p !== here) { S.nav.from = here; here = p; screen(p); }
 
   if (teardown) { try { teardown(); } catch { /* noop */ } teardown = null; }
 
