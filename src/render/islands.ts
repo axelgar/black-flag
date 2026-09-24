@@ -171,6 +171,9 @@ export class Islands {
   group = new THREE.Group();
   private key = '';
   private mat = new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.95, metalness: 0 });
+  // Fronds are single sheets, seen from above and below; drawn front-face-only, the camera
+  // (looking down) only ever saw their undersides culled away, and the trees were bare poles.
+  private palmMat = new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.9, metalness: 0, side: THREE.DoubleSide });
   private lightMat = new THREE.MeshBasicMaterial({ color: new THREE.Color('#FFC878').multiplyScalar(2) });
 
   build(m: GameMap, shadows: boolean) {
@@ -200,7 +203,7 @@ export class Islands {
     this.group.add(land);
     if (lights.pos.length) this.group.add(new THREE.Mesh(lights.geometry(), this.lightMat));
 
-    const palmMesh = new THREE.InstancedMesh(palmGeometry(), this.mat, palms.length);
+    const palmMesh = new THREE.InstancedMesh(palmGeometry(), this.palmMat, palms.length);
     palms.forEach((mm, i) => palmMesh.setMatrixAt(i, mm));
     palmMesh.castShadow = shadows;
     this.group.add(palmMesh);
