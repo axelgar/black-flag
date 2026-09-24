@@ -10,13 +10,13 @@
 import { clamp, TAU, wrap } from '../core/vec';
 import { HEAT_MAX, heatEscaped } from '../data/notoriety';
 import { MAP_R, EDGE, lineOfSight, openWater, shoreDist } from './map';
-import { foeBroadside, foeShot, isPrize, lead, raise, sideVec } from './combat';
+import { FOE_LAY, foeBroadside, foeShot, isPrize, lead, raise, sideVec } from './combat';
 import { ground, helm, rim } from './sailing';
 import { POINT_BLANK, SIGHT } from './weather';
 import { ev, type Foe, type Vessel, type World } from './types';
 import { addFoe } from './spawn';
 
-const SEARCH_SPEED = 9;       // a squadron's search sweeps toward where you were last heard of
+const SEARCH_SPEED = 12;      // a squadron's search sweeps toward where you were last heard of
 
 export function stepFoe(w: World, e: Foe, dt: number) {
   e.hit = Math.max(0, e.hit - dt * 4);
@@ -180,8 +180,8 @@ function guns(w: World, e: Foe, dt: number, d: number) {
   if (!lineOfSight(w.map, e.x, e.y, s.x, s.y)) return;
 
   if (C.guns === 'aimed') {
-    const [tx, ty] = lead(e.x, e.y, s, 95, 0.9);
-    foeShot(w, e, e.x, e.y, Math.atan2(ty - e.y, tx - e.x) + (w.r() - 0.5) * 0.05, C.shotDmg, C.range);
+    const [tx, ty] = lead(e.x, e.y, s, 88, 0.9);
+    foeShot(w, e, e.x, e.y, Math.atan2(ty - e.y, tx - e.x) + (w.r() - 0.5) * FOE_LAY * 1.4, C.shotDmg, C.range);
     ev(w, 'foe-fire', { x: e.x, y: e.y, id: e.id, n: 1 });
     e.cool = C.reload * w.reloadMul;
     return;
@@ -209,7 +209,7 @@ function legend(w: World, e: Foe, dt: number): [number, number] {
 
   // La Fortuna would rather run you down than out-shoot you, so every phase she takes
   // brings her in closer. The others hold their range and work their guns.
-  const pref = L.pattern === 'spiral' ? 150 - phase * 55 : 150;
+  const pref = L.pattern === 'spiral' ? 150 - phase * 35 : 150;
   const d = Math.hypot(s.x - e.x, s.y - e.y);
   const heading = d > 380 ? Math.atan2(s.y - e.y, s.x - e.x) : orbitHeading(e, s.x, s.y, pref);
 
@@ -217,23 +217,32 @@ function legend(w: World, e: Foe, dt: number): [number, number] {
   if (e.cool > 0 || d > 260 || w.phase === 'lost') return [heading, 1];
   const live = e.ports!.filter((p) => !p.dead).length;
   const power = live / e.ports!.length;
-  const reload = (2.8 - phase * 0.5) * (0.55 + power * 0.6) * w.reloadMul;
+  // Aimed fans and point-blank rings are the two patterns that punish a captain who has
+  // not yet found the ports; they come round a little slower than a broadside does.
+  const slow = L.pattern === 'shroud' ? 1.4 : L.pattern === 'spiral' ? 1.3 : 1;
+  const reload = (2.8 - phase * 0.5) * (0.55 + power * 0.6) * w.reloadMul * slow;
 
   if (L.pattern === 'sweep') {
     const { side } = beamTo(e, s.x, s.y);
-    foeBroadside(w, e, side, 6 + phase * 2, 4, 230, 0.3);
+    foeBroadside(w, e, side, 6 + phase * 2, 3, 230, 0.3);
   } else if (L.pattern === 'shroud') {
-    if (w.r() < 0.45 + phase * 0.2) {
+    // She sends a screen of launches, not an endless stream: boarding them used to be
+    // answered with two more every volley, and wave 10 was a wall of rams. `chase` is unused
+    // on a legendary, so it counts what she has put in the water.
+    if (e.chase < 4 + phase * 3 && w.r() < 0.45 + phase * 0.2) {
+      e.chase += 2;
       const [sx, sy] = sideVec(e.h, 1);
       for (const k of [-1, 1]) {
         const f = addFoe(w, 'lancha', e.x + sx * k * 30, e.y + sy * k * 30, e.h, e.squad);
         f.state = 'engage'; f.alert = true;
       }
     }
-    const [tx, ty] = lead(e.x, e.y, s, 95, 0.9);
-    const b = Math.atan2(ty - e.y, tx - e.x);
-    for (let i = -1 - phase; i <= 1 + phase; i++) foeShot(w, e, e.x, e.y, b + i * 0.1, 4, 240);
-    ev(w, 'foe-fire', { x: e.x, y: e.y, id: e.id, n: 3 + phase * 2, big: true });
+    // Aimed where you are, not where you will be: a ship with way on sails out of it, and
+    // one lying still does not. Leading the shot made her fan a certainty at any speed.
+    const b = Math.atan2(s.y - e.y, s.x - e.x) + (w.r() - 0.5) * FOE_LAY;
+    const fan = 1 + Math.floor(phase / 2);
+    for (let i = -fan; i <= fan; i++) foeShot(w, e, e.x, e.y, b + i * 0.16, 3, 240);
+    ev(w, 'foe-fire', { x: e.x, y: e.y, id: e.id, n: fan * 2 + 1, big: true });
   } else if (L.pattern === 'rain') {
     for (let i = 0; i < 3 + phase; i++) {
       w.marks.push({
@@ -244,8 +253,8 @@ function legend(w: World, e: Foe, dt: number): [number, number] {
     }
     ev(w, 'mortar-in', { x: e.x, y: e.y, id: e.id });
   } else {
-    const n = 10 + phase * 4;
-    for (let i = 0; i < n; i++) foeShot(w, e, e.x, e.y, w.t * 1.6 + (i / n) * TAU, 4, 200, 80);
+    const n = 8 + phase * 3;
+    for (let i = 0; i < n; i++) foeShot(w, e, e.x, e.y, w.t * 1.6 + (i / n) * TAU, 3, 200, 80);
     ev(w, 'foe-fire', { x: e.x, y: e.y, id: e.id, n, big: true });
   }
   e.cool = reload;

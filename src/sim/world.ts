@@ -125,19 +125,19 @@ function sail(w: World, dt: number, input: Input) {
     if (d < reach && d > 1) {
       const k = (1 - d / reach) * 16 * dt * (w.reduce ? 0.5 : 1);
       s.x += (dx / d) * k; s.y += (dy / d) * k;
-      if (d < p.r && s.groundT <= 0) { wound(w, 3, s.x, s.y); s.groundT = 0.6; }
+      if (d < p.r && s.groundT <= 0) { wound(w, 3, 'spout', s.x, s.y); s.groundT = 0.6; }
     }
   }
 
   s.groundT = Math.max(0, s.groundT - dt);
   const hit = ground(w.map, s);
-  if (hit > 3.5 && s.groundT <= 0) { wound(w, 2 + hit * 0.35); s.groundT = 1; ev(w, 'ground', { x: s.x, y: s.y }); }
+  if (hit > 3.5 && s.groundT <= 0) { wound(w, 2 + hit * 0.35, 'ground'); s.groundT = 1; ev(w, 'ground', { x: s.x, y: s.y }); }
   for (const k of w.map.reefs) {
     const d = Math.hypot(k.x - s.x, k.y - s.y);
     if (d < k.r + s.beam * 0.5) {
       const nx = (s.x - k.x) / (d || 1), ny = (s.y - k.y) / (d || 1);
       s.x = k.x + nx * (k.r + s.beam * 0.5); s.y = k.y + ny * (k.r + s.beam * 0.5);
-      if (s.groundT <= 0) { wound(w, 5); s.groundT = 1; s.v *= 0.5; ev(w, 'ground', { x: s.x, y: s.y, reef: true }); }
+      if (s.groundT <= 0) { wound(w, 5, 'ground'); s.groundT = 1; s.v *= 0.5; ev(w, 'ground', { x: s.x, y: s.y, reef: true }); }
     }
   }
   rim(s, dt);
@@ -165,7 +165,7 @@ function hulls(w: World) {
     if (s.invuln > 0 || s.ramT > 0) continue;
     // Ramming hurts you both. Yours is the better hull, which is the only reason it is
     // ever worth doing to a lancha.
-    wound(w, e.ram);
+    wound(w, e.ram, 'ram');
     if (!e.L) hurt(w, e, w.stats.ramDmg, s.x, s.y);
     s.ramT = 0.7;
     s.v *= 0.6;
@@ -246,9 +246,16 @@ function finish(w: World) {
     ev(w, 'won', { wave: w.wave });
   }
   if (w.phase === 'clear') {
-    const h = w.map.harbour, s = w.ship;
-    if (Math.hypot(s.x - h.x, s.y - h.y) < h.r) { w.phase = 'docked'; ev(w, 'dock', {}); }
+    if (atNassau(w)) { w.phase = 'docked'; ev(w, 'dock', {}); }
   }
+}
+
+/** Home: the harbour mouth, or close enough under Nassau's lee from any side — the
+ *  beacon points at the harbour, and a captain who comes in from the north should not
+ *  have to find his way round the island to be allowed to stop. */
+export function atNassau(w: World): boolean {
+  const h = w.map.harbour, n = w.map.nassau, s = w.ship;
+  return Math.hypot(s.x - h.x, s.y - h.y) < h.r || Math.hypot(s.x - n.x, s.y - n.y) < n.r * 1.4 + 45;
 }
 
 /* -------------------------------------------------------------- readers -- */

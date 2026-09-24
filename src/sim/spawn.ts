@@ -12,6 +12,7 @@ import { hostile } from './combat';
 import { ev, type Foe, type World } from './types';
 
 const FAR = 430;   // a squadron never puts to sea closer to you than this
+const FIRST = [360, 560];   // …except the first of a wave, which is on the horizon, not over it
 
 export function addFoe(w: World, cls: string, x: number, y: number, h: number, squad: number): Foe {
   const C = CLASSES[cls];
@@ -66,7 +67,11 @@ function newSquad(w: World, x: number, y: number): number {
 /** Somewhere to put to sea from: a point on the rim or in the lee of an island, far from you. */
 function anchor(w: World): { x: number; y: number } {
   const s = w.ship, m = w.map;
-  const far = (p: { x: number; y: number }) => Math.hypot(p.x - s.x, p.y - s.y) > FAR;
+  // The first squadron of a wave puts to sea close enough to be found in the first half
+  // minute. A minute of empty sailing was the first thing a play-test complained about.
+  const first = w.gi === 0 || w.squads.length === 0;
+  const lo = first ? FIRST[0] : FAR, hi = first ? FIRST[1] : 780;
+  const far = (p: { x: number; y: number }) => Math.hypot(p.x - s.x, p.y - s.y) > lo;
   const options: { x: number; y: number }[] = m.spawns.filter(far);
   for (const is of m.islands) {
     if (is.kind === 'nassau') continue;
@@ -75,7 +80,7 @@ function anchor(w: World): { x: number; y: number } {
     const p = { x: is.x + Math.cos(a) * (is.r * 1.6 + 30), y: is.y + Math.sin(a) * (is.r * 1.6 + 30) };
     if (far(p) && openWater(m, p.x, p.y, 25)) options.push(p);
   }
-  const near = options.filter((p) => Math.hypot(p.x - s.x, p.y - s.y) < 780);
+  const near = options.filter((p) => Math.hypot(p.x - s.x, p.y - s.y) < hi);
   if (near.length) return near[Math.floor(w.r() * near.length)];
   if (!options.length) {
     const a = Math.atan2(-s.y, -s.x);
@@ -136,12 +141,22 @@ export function spawnGroup(w: World, g: Group) {
  * An open chart takes longer to cross than a screen did, and nobody should sail round an
  * empty sea waiting for a timer.
  */
+/** How many hostile hulls a wave lets on the water before it holds the next squadron back. */
+export const crowd = (wave: number) => Math.min(14, 5 + Math.floor(wave * 0.6));
+
 export function release(w: World, dt: number) {
   const p = w.plan;
   let active = 0;
   for (const e of w.foes) if (hostile(e)) active++;
   w.quiet = active === 0 ? w.quiet + dt : 0;
-  while (w.gi < p.groups.length && w.t >= p.groups[w.gi].at) spawnGroup(w, p.groups[w.gi++]);
+  // A screen only ever held a few ships at once; an open sea lets every squadron that has
+  // put to sea converge on you together. Timed releases wait while the water is crowded.
+  // Checked squadron by squadron — several overdue ones must not all put to sea at once.
+  while (w.gi < p.groups.length && w.t >= p.groups[w.gi].at && active < crowd(w.wave)) {
+    const g = p.groups[w.gi++];
+    spawnGroup(w, g);
+    if (g.cls !== 'spout' && g.cls !== 'legend') active += g.n;
+  }
   if (w.gi < p.groups.length && w.quiet > 3) { spawnGroup(w, p.groups[w.gi++]); w.quiet = 0; }
 }
 

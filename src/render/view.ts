@@ -493,13 +493,15 @@ export class View {
       const u = (fan.material as THREE.ShaderMaterial).uniforms;
       const load = 1 - sh.cool[i] / (w.stats.reload || 1);
       u.uLoad.value = load;
-      u.uAlpha.value = bears ? (load >= 1 ? 0.7 : 0.35) : 0.08;
+      u.uAlpha.value = bears ? (load >= 1 ? 0.55 : 0.25) : 0.06;
       u.uColor.value.set(bears && load >= 1 ? '#FFD36A' : '#F6E7C0');
     }
 
     // the mortar's reticle
     const aim = sh.aim;
-    M.reticle.visible = !!aim && sh.shells > 0 && w.phase !== 'lost';
+    // Only when there is something to throw a shell at: a ring on empty water is clutter.
+    const target = !!aim && (aim.lock !== 0 || w.foes.some((e) => e.state === 'engage' && Math.hypot(e.x - sh.x, e.y - sh.y) < 260));
+    M.reticle.visible = target && sh.shells > 0 && w.phase !== 'lost';
     if (aim) {
       M.reticle.position.set(aim.x, heightAt(aim.x, aim.y, t) + 0.5, aim.y);
       M.reticle.scale.setScalar(26);

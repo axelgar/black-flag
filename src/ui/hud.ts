@@ -4,7 +4,7 @@
 
 import { heatFlags, HUNTER_AT } from '../data/notoriety';
 import { reales } from '../state/run';
-import { STRIKE_WINDOW, hostile, isPrize } from '../sim/combat';
+import { BOARD_SPEED, STRIKE_WINDOW, hostile, isPrize } from '../sim/combat';
 import { MAP_R } from '../sim/map';
 import type { World } from '../sim/types';
 import type { View } from '../render/view';
@@ -175,8 +175,9 @@ function pointers(w: World, view: View) {
     // Off screen: point along the bearing, as the camera sees it — forward is up.
     const rel = Math.atan2(y - w.ship.y, x - w.ship.x) - view.yaw;
     const a = Math.atan2(-Math.cos(rel), Math.sin(rel));
-    const m = 34;
-    const k = Math.min((W / 2 - m) / Math.abs(Math.cos(a) || 1e-3), (H / 2 - m) / Math.abs(Math.sin(a) || 1e-3));
+    // Clear of the key hints and gun buttons at the bottom, the HUD at the top.
+    const m = 34, mv = Math.sin(a) > 0 ? 64 : 46;
+    const k = Math.min((W / 2 - m) / Math.abs(Math.cos(a) || 1e-3), (H / 2 - mv) / Math.abs(Math.sin(a) || 1e-3));
     let el = h.ptrPool[n];
     if (!el) { el = document.createElement('div'); h.ptrs.appendChild(el); h.ptrPool.push(el); }
     el.className = `ptr ${kind}`;
@@ -204,14 +205,36 @@ function pointers(w: World, view: View) {
     if (isPrize(e)) {
       const on = arrow(e.x, e.y, 'prize');
       if (on) {
-        const boarding = w.ship.board && w.ship.board.id === e.id;
-        label(e.x, e.len * 0.6 + 8, e.y, boarding ? 'BOARDING…' : `PRIZE · ${Math.ceil(e.strikeT)}s`, 'prize');
+        const s = w.ship;
+        const boarding = s.board && s.board.id === e.id;
+        const d = Math.hypot(e.x - s.x, e.y - s.y);
+        const reach = (e.len + s.len) * 0.5 * 0.85 + 12;
+        const secs = `${Math.ceil(e.strikeT)}s`;
+        // The one rule about boarding nobody can see: you have to be alongside, not tearing past.
+        const text = boarding ? 'BOARDING…'
+          : d < reach && s.v > s.maxSpeed * BOARD_SPEED ? `EASE OFF TO BOARD · ${secs}`
+          : d < reach * 3 ? `COME ALONGSIDE · ${secs}` : `PRIZE · ${secs}`;
+        label(e.x, e.len * 0.6 + 8, e.y, text, 'prize');
       }
       continue;
     }
     if (e.state !== 'engage') continue;
     arrow(e.x, e.y, e.L ? 'boss' : 'foe');
     if (e.L) label(e.x, e.len * 0.7 + 10, e.y, e.L.name, 'prize');
+  }
+  // Nobody has found you yet: the lookout calls the nearest sail, so the start of a wave is
+  // a heading and not a minute of empty sea.
+  if (w.phase === 'fight' && !w.foes.some((e) => e.state === 'engage')) {
+    const s = w.ship;
+    let best = null as World['foes'][number] | null, bd = 1e9;
+    for (const e of w.foes) {
+      if (e.state !== 'patrol') continue;
+      const d = Math.hypot(e.x - s.x, e.y - s.y);
+      if (d < bd) { bd = d; best = e; }
+    }
+    if (best) {
+      if (arrow(best.x, best.y, 'sail')) label(best.x, best.len + 10, best.y, 'SAIL HO', 'sail');
+    }
   }
   if (w.phase === 'clear') {
     const hb = w.map.harbour;

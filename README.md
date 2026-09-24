@@ -142,10 +142,29 @@ scripts/qr.ts  QR printer
 - **Passive notoriety is a third of v1's rate** (`0.004/s`). Open-sea waves run minutes,
   not one, and at the old rate a wave on its own was worth three flags.
 
+## First play-test, and what changed
+
+One run by hand (sunk on wave 4), then waves 1–10 headless, 4 seeds each, with the
+bot captain. What it found and what was done:
+
+| Found | Changed |
+|---|---|
+| 52s of empty sea before anyone found you, from behind | the first squadron of a wave puts to sea 360–560m out, squadrons search faster, and a **SAIL HO** arrow points at the nearest one until someone sees you |
+| Spanish balls hit 50–70% of the time, the player's ~30% | every volley is laid with an error and each ball scatters (`FOE_LAY`, `FOE_SCATTER` in `sim/combat.ts`): ~35–45% now. Your 30m hull beam-on is still the bigger target, so turning bow-on to a broadside is the counter |
+| lanchas out-ran the Jackdaw and did most of the early damage by ramming | lanchas 17.5 → 14 m/s, ram 5 → 4; bow chasers hit harder |
+| a prize touching your bow sailed away because you were at full sail, with no hint why | the speed limit is 90% (was 75%), and the prize label says **EASE OFF TO BOARD** / **COME ALONGSIDE** |
+| steering at the beacon runs you aground on Nassau's north shore, and a grounded ship barely turned | anywhere close under Nassau counts as home; a ship with no way on keeps half her helm; land shoves her off |
+| every squadron converged at once in later waves | a timed squadron waits while `crowd(wave)` hostiles are already on the water |
+| La Dama Negra answered every boarded launch with two more: wave 10 was lost 4/4 | she puts a fixed screen of launches in the water per phase; her fan is aimed, not led |
+| legendaries were two- to three-minute sponges unless you found the ports | 30% less hull, hull hits count for half (was a third), Dama and Fortuna fire a little slower |
+
+Bot, waves 1–10 with the upgrades a player would have by then — before → after:
+damage taken per wave 30–103 → 19–94 for waves 1–9, and wave 10 went from **0/4 won, all
+three lives lost** to **4/4 won, half a life**.
+
 ## Not built, or not yet measured
 
-- **Balance past wave ~8 needs real play.** The bot finishes the early waves and dies in
-  the late ones. It charges everything, so its results are not a player's.
+- **Balance needs a real player.** The numbers above are a bot that knows where every ship is and never dodges; treat them as relative, not absolute.
 - **Frame rate on a real phone is unmeasured.** Desktop Chrome: about 40 draw calls and
   ~5ms CPU a frame at wave 9. Low tier (the default on touch devices): DPR 1.5, 3 swell
   waves, no shadows, no bloom. Picture quality can be forced in Articles.

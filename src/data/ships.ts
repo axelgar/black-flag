@@ -14,7 +14,7 @@ export const SHIPS: ShipDef[] = [
     base: {
       hull: 40, maxSpeed: 15, accel: 3.2, turnRate: 0.72,
       gunsPerSide: 5, broadsideReload: 2.6, shotDmg: 1, shotSpeed: 105, shotRange: 150,
-      bowGun: { reload: 1.2, dmg: 0.5, range: 130 },
+      bowGun: { reload: 1.0, dmg: 0.8, range: 140 },
       shellsMax: 3, boardRepair: 10, ramDmg: 2, lives: 3,
     },
     model: {
@@ -35,7 +35,7 @@ export const SHIPS: ShipDef[] = [
     base: {
       hull: 28, maxSpeed: 19, accel: 4.4, turnRate: 1.08,
       gunsPerSide: 3, broadsideReload: 2.0, shotDmg: 1, shotSpeed: 110, shotRange: 140,
-      bowGun: { reload: 0.8, dmg: 0.5, range: 130 },
+      bowGun: { reload: 0.8, dmg: 0.7, range: 140 },
       shellsMax: 2, boardRepair: 8, ramDmg: 2, lives: 3,
     },
     model: {

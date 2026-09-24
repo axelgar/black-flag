@@ -13,7 +13,7 @@ import { heatBoarded, heatEscaped, heatSunk } from '../src/data/notoriety';
 import { SHIPS, shipById } from '../src/data/ships';
 import { UPGRADES, bribeCost, shipStats } from '../src/data/upgrades';
 import { isBossWave, waveBudget, wavePlan, waveWeather } from '../src/data/waves';
-import { addFoe } from '../src/sim/spawn';
+import { addFoe, crowd } from '../src/sim/spawn';
 import { lineOfSight, openWater, islandSd } from '../src/sim/map';
 import { sees } from '../src/sim/ai';
 import type { Foe, Input, World } from '../src/sim/types';
@@ -375,5 +375,50 @@ describe('the harbour', () => {
     w.ship.x = w.map.harbour.x; w.ship.y = w.map.harbour.y;
     Wo.step(w, DT, idle);
     expect(w.phase).toBe('docked');
+  });
+});
+
+describe('play-test fixes', () => {
+  it('coming in under Nassau from the north is home too', () => {
+    const w = lab('north');
+    Wo.step(w, DT, idle);
+    expect(w.phase).toBe('clear');
+    const n = w.map.nassau;
+    w.ship.x = n.x; w.ship.y = n.y - n.r * 1.4 - 20;
+    Wo.step(w, DT, idle);
+    expect(w.phase).toBe('docked');
+  });
+
+  it('the first squadron of a wave puts to sea within reach', () => {
+    for (const seed of ['f1', 'f2', 'f3', 'f4', 'f5']) {
+      const w = Wo.create({ seed, wave: 3 });
+      while (!w.foes.length) Wo.step(w, DT, idle);
+      const s = w.ship;
+      const d = Math.min(...w.foes.map((e) => Math.hypot(e.x - s.x, e.y - s.y)));
+      expect(d).toBeLessThan(700);
+    }
+  });
+
+  it('timed squadrons wait while the water is crowded', () => {
+    const w = Wo.create({ seed: 'crowd', wave: 12 });
+    for (let i = 0; i < 120 * 120; i++) {
+      Wo.step(w, DT, idle);
+      const live = w.foes.filter((e) => Wo.hostile(e) && !e.hunter && !e.L).length;
+      // one squadron may land on top of the cap; never two
+      expect(live).toBeLessThanOrEqual(crowd(w.wave) + 4);
+    }
+  });
+
+  it('La Dama Negra sends a screen of launches, not an endless stream', () => {
+    const w = Wo.create({ seed: 'dama', wave: 10, run: { upgrades: { plating: 4 } } });
+    w.plan.groups = w.plan.groups.filter((g) => g.cls === 'legend');
+    let launched = 0;
+    const seen = new Set<number>();
+    for (let i = 0; i < 120 * 200 && w.phase === 'fight'; i++) {
+      Wo.step(w, DT, bot(w, i));
+      for (const e of w.foes) if (e.cls === 'lancha' && !seen.has(e.id)) { seen.add(e.id); launched++; }
+      w.events.length = 0;
+    }
+    expect(launched).toBeLessThanOrEqual(10 + 2);
   });
 });

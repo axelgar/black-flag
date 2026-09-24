@@ -19,8 +19,8 @@ const TARRED: Palette = {
 
 export const CLASSES: Record<string, FoeClass> = {
   lancha: {
-    id: 'lancha', name: 'Lancha', rank: 'Gunboat', hull: 3, speed: 17.5, turn: 1.5, reales: 25,
-    ram: 5, strikes: true, guns: 'none', gunsPerSide: 0, reload: 0, range: 0, shotDmg: 0,
+    id: 'lancha', name: 'Lancha', rank: 'Gunboat', hull: 3, speed: 14, turn: 1.5, reales: 25,
+    ram: 4, strikes: true, guns: 'none', gunsPerSide: 0, reload: 0, range: 0, shotDmg: 0,
     prefRange: 0, sight: 300,
     note: 'An open launch with a swivel gun and eleven angry men. She cannot shoot you, so she aims to hit you.',
     recipe: {

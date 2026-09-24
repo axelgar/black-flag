@@ -5,7 +5,7 @@ import type { LegendDef } from './types';
 
 export const LEGENDS: LegendDef[] = [
   {
-    id: 'impoluto', name: 'El Impoluto', hull: 120, speed: 6.5, turn: 0.32, reales: 2600,
+    id: 'impoluto', name: 'El Impoluto', hull: 90, speed: 6.5, turn: 0.32, reales: 2600,
     pattern: 'sweep', ports: 6,
     note: 'A hundred and forty guns and never once holed. She sweeps her broadside across the whole of the sea.',
     recipe: {
@@ -16,7 +16,7 @@ export const LEGENDS: LegendDef[] = [
     },
   },
   {
-    id: 'dama', name: 'La Dama Negra', hull: 140, speed: 7.5, turn: 0.36, reales: 3000,
+    id: 'dama', name: 'La Dama Negra', hull: 100, speed: 7.5, turn: 0.36, reales: 3000,
     pattern: 'shroud', ports: 4,
     note: 'Black hull, black canvas. She sends the launches in first and fires through them.',
     recipe: {
@@ -27,7 +27,7 @@ export const LEGENDS: LegendDef[] = [
     },
   },
   {
-    id: 'prince', name: 'HMS Prince', hull: 165, speed: 6, turn: 0.3, reales: 3400,
+    id: 'prince', name: 'HMS Prince', hull: 115, speed: 6, turn: 0.3, reales: 3400,
     pattern: 'rain', ports: 8,
     note: 'English, and a long way from home. Her mortar deck writes rings on the water faster than you can read them.',
     recipe: {
@@ -38,7 +38,7 @@ export const LEGENDS: LegendDef[] = [
     },
   },
   {
-    id: 'fortuna', name: 'La Fortuna', hull: 185, speed: 10, turn: 0.45, reales: 4000,
+    id: 'fortuna', name: 'La Fortuna', hull: 130, speed: 10, turn: 0.45, reales: 4000,
     pattern: 'spiral', ports: 6,
     note: 'The treasure ship. Fast for her weight, and she would rather run you down than out-shoot you.',
     recipe: {

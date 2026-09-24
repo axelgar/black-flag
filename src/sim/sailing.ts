@@ -17,7 +17,8 @@ export function helm(s: Vessel, dt: number, heading: number | null, rudder: numb
   const dv = want - s.v;
   s.v += clamp(dv, -s.accel * 1.8 * dt, s.accel * dt);
 
-  const bite = 0.3 + 0.7 * clamp(s.v / (s.maxSpeed || 1), 0, 1);
+  // A ship with no way on still answers a little — enough to warp her head off a lee shore.
+  const bite = 0.5 + 0.5 * clamp(s.v / (s.maxSpeed || 1), 0, 1);
   const rate = s.turnRate * bite;
   const h0 = s.h;
   if (heading != null) {
@@ -50,6 +51,9 @@ export function ground(m: GameMap, s: Vessel): number {
     // Only the part of her way that was driving into the coast is lost.
     const into = -(fx * p.nx + fy * p.ny);
     if (into > 0) { hit = Math.max(hit, s.v * into); s.v *= 1 - into * 0.7; }
+    // and a firm shove off, so a ship driven onto the beach backs off it rather than
+    // sitting there grinding while you work the helm round.
+    s.x += p.nx * 0.35; s.y += p.ny * 0.35;
   }
   return hit;
 }

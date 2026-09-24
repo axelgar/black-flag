@@ -111,7 +111,7 @@ export class Markers {
 
     this.fans = [-1, 1].map((side) => {
       const m = new THREE.Mesh(fanGeometry(0.34), new THREE.ShaderMaterial({
-        vertexShader: ringVert, fragmentShader: fanFrag, transparent: true, depthWrite: false, side: THREE.DoubleSide,
+        vertexShader: ringVert, fragmentShader: fanFrag, transparent: true, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending,
         uniforms: { uColor: { value: new THREE.Color('#F6E7C0') }, uAlpha: { value: 0.3 }, uLoad: { value: 1 } },
       }));
       if (side === -1) m.rotation.y = Math.PI;

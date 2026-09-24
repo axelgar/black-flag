@@ -11,9 +11,16 @@ import { ev, type Foe, type Input, type Side, type Vessel, type World } from './
 export const STRIKE_AT = 0.25;    // hull fraction at which the colours come down
 export const STRIKE_WINDOW = 6;   // seconds a prize stays boardable. The number.
 export const BOARD_TIME = 0.8;    // seconds alongside it takes to put a crew across
+export const BOARD_SPEED = 0.9;   // faster than this fraction of her best and you are tearing past, not alongside
 const VOLLEY_GAP = 0.055;         // a broadside ripples bow to stern, it does not clap
 const MORTAR_FUSE = 1.3;
-const FOE_SHOT = 95;
+const FOE_SHOT = 88;
+// Spanish gunnery is good, not perfect. Each volley is laid with an error, and each ball
+// scatters round it — measured over fifteen waves, 0.09 of scatter alone had them hitting
+// with 55–70% of everything they fired, against the player's 30%. These put a Spanish
+// broadside at about a third, which is what the player's own manages.
+const FOE_LAY = 0.28;
+const FOE_SCATTER = 0.2;
 const SQUAD_CALL = 520;           // how far a squadron hears one of its own open fire
 
 /** Which way a side's guns point. Port is to the left of her heading, starboard right. */
@@ -147,6 +154,8 @@ export function mortarAim(w: World): { x: number; y: number; lock: number } | nu
 
 /* ------------------------------------------------------------ their guns -- */
 
+export { FOE_LAY, FOE_SCATTER };
+
 export function foeShot(w: World, e: Foe, x: number, y: number, ang: number, dmg: number, range: number, speed = FOE_SHOT) {
   w.shots.push({
     x, y, vx: Math.cos(ang) * speed + Math.cos(e.h) * e.v, vy: Math.sin(ang) * speed + Math.sin(e.h) * e.v,
@@ -159,12 +168,12 @@ export function foeShot(w: World, e: Foe, x: number, y: number, ang: number, dmg
 export function foeBroadside(w: World, e: Foe, side: -1 | 1, n: number, dmg: number, range: number, fan = 0.08) {
   const [sx, sy] = sideVec(e.h, side === 1 ? 1 : 0);
   const fx = Math.cos(e.h), fy = Math.sin(e.h);
-  const base = Math.atan2(sy, sx);
+  const base = Math.atan2(sy, sx) + (w.r() - 0.5) * FOE_LAY;
   for (let i = 0; i < n; i++) {
     const k = n === 1 ? 0 : i / (n - 1) - 0.5;
     const along = k * e.len * 0.6;
     foeShot(w, e, e.x + fx * along + sx * e.beam * 0.5, e.y + fy * along + sy * e.beam * 0.5,
-      base + k * fan * 2 + (w.r() - 0.5) * 0.09, dmg, range);
+      base + k * fan * 2 + (w.r() - 0.5) * FOE_SCATTER, dmg, range);
   }
   ev(w, 'foe-fire', { x: e.x, y: e.y, id: e.id, side, n, big: n >= 5 });
 }
@@ -225,7 +234,7 @@ function hurtLegend(w: World, e: Foe, dmg: number, x: number, y: number) {
     e.hull -= dmg * 3;
     if (best.hull <= 0) { best.dead = true; ev(w, 'port-down', { id: e.id, x, y }); }
   } else {
-    e.hull -= dmg * 0.35;
+    e.hull -= dmg * 0.5;
   }
   e.hit = 1;
   if (e.hull <= 0) { e.hull = 0; sink(w, e, false); }
@@ -268,13 +277,15 @@ export function sink(w: World, e: Foe, byBoard: boolean) {
   w.shake = Math.max(w.shake, e.L ? 1.4 : e.hullMax > 12 ? 0.7 : 0.35);
 }
 
-export function wound(w: World, dmg: number, x = w.ship.x, y = w.ship.y) {
+export type Harm = 'shot' | 'shell' | 'ram' | 'ground' | 'spout';
+
+export function wound(w: World, dmg: number, src: Harm, x = w.ship.x, y = w.ship.y) {
   const s = w.ship;
   if (w.phase === 'lost' || s.invuln > 0) return;
   s.hull -= dmg;
   s.hit = 1;
   w.shake = Math.max(w.shake, 0.5);
-  ev(w, 'hit', { x, y, dmg });
+  ev(w, 'hit', { x, y, dmg, src });
   if (s.hull > 0) return;
 
   s.hull = 0;
@@ -302,7 +313,7 @@ export function flyShots(w: World, dt: number) {
       continue;
     }
     if (sh.foe) {
-      if (s.invuln <= 0 && inHull(s, sh.x, sh.y, sh.r)) { sh.dead = true; wound(w, sh.dmg, sh.x, sh.y); }
+      if (s.invuln <= 0 && inHull(s, sh.x, sh.y, sh.r)) { sh.dead = true; wound(w, sh.dmg, 'shot', sh.x, sh.y); }
       else hitLand(w, sh);
       continue;
     }
@@ -353,7 +364,7 @@ export function landMarks(w: World, dt: number) {
       }
     } else {
       const s = w.ship;
-      if (Math.hypot(s.x - m.x, s.y - m.y) < m.r + s.beam * 0.5) wound(w, m.dmg, m.x, m.y);
+      if (Math.hypot(s.x - m.x, s.y - m.y) < m.r + s.beam * 0.5) wound(w, m.dmg, 'shell', m.x, m.y);
     }
     w.shake = Math.max(w.shake, 0.6);
     ev(w, 'boom', { x: m.x, y: m.y, big: m.r > 20, splash: true });
@@ -376,7 +387,7 @@ export function boarding(w: World, dt: number) {
     const reach = (e.len + s.len) * 0.5 * 0.85 + 12;
     if (d < reach && d < bd) { best = e; bd = d; }
   }
-  if (!best || Math.abs(s.v) > s.maxSpeed * 0.75) { s.board = null; return; }
+  if (!best || Math.abs(s.v) > s.maxSpeed * BOARD_SPEED) { s.board = null; return; }
   if (!s.board || s.board.id !== best.id) s.board = { id: best.id, t: 0 };
   s.board.t += dt;
   if (s.board.t >= BOARD_TIME) { s.board = null; sink(w, best, true); }
