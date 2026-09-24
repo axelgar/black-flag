@@ -1,0 +1,220 @@
+// The sea. One polar grid that follows the camera — dense under the ship, thinning out
+// to the horizon — displaced by the Gerstner swell in the vertex shader and shaded in
+// the fragment shader: depth from a baked distance-to-shore texture, sky in the Fresnel,
+// the sun's glint, foam on the crests and in the surf round every island and reef.
+
+import * as THREE from 'three';
+import type { GameMap } from '../sim/map';
+import { shoreDist } from '../sim/map';
+import type { Air } from './atmosphere';
+import { packed, swell } from './waves';
+
+const SHORE_SIZE = 2400;             // metres covered by the shore texture, centred on 0,0
+const SHORE_RES = 256;
+
+const vert = /* glsl */ `
+uniform float uTime, uAmp;
+uniform vec4 uWA[4];
+uniform vec2 uWB[4];
+uniform vec2 uCenter;
+varying vec3 vWorld;
+varying vec3 vN;
+varying float vCrest;
+void main() {
+  vec2 xz = position.xz + uCenter;
+  vec3 P = vec3(xz.x, 0.0, xz.y);
+  vec3 N = vec3(0.0, 1.0, 0.0);
+  float crest = 0.0;
+  // Far out, the swell fades flat: the grid is too coarse there to carry it, and the
+  // fog would hide it anyway.
+  float fade = 1.0 - smoothstep(500.0, 1600.0, length(position.xz));
+  for (int i = 0; i < 4; i++) {
+    float A = uWB[i].x * uAmp * fade;
+    float Q = uWB[i].y / max(uAmp, 1.0);
+    vec2 D = uWA[i].xy;
+    float k = uWA[i].z, w = uWA[i].w;
+    float f = k * dot(D, xz) - w * uTime;
+    float c = cos(f), s = sin(f);
+    P.x += Q * A * D.x * c;
+    P.z += Q * A * D.y * c;
+    P.y += A * s;
+    N.x -= D.x * k * A * c;
+    N.z -= D.y * k * A * c;
+    N.y -= Q * k * A * s;
+    crest += A * s;
+  }
+  vN = normalize(N);
+  vCrest = crest / max(uAmp, 0.3);
+  vWorld = P;
+  gl_Position = projectionMatrix * viewMatrix * vec4(P, 1.0);
+}`;
+
+const frag = /* glsl */ `
+uniform vec3 uDeep, uShallow, uFoam, uZenith, uHorizon, uSunDir, uSunColor;
+uniform float uTime, uFogNear, uFogFar, uSunI, uDetail;
+uniform sampler2D uShore;
+uniform vec3 uShoreRect;
+varying vec3 vWorld;
+varying vec3 vN;
+varying float vCrest;
+
+float hash(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
+float noise(vec2 p) {
+  vec2 i = floor(p), f = fract(p);
+  vec2 u = f * f * (3.0 - 2.0 * f);
+  return mix(mix(hash(i), hash(i + vec2(1, 0)), u.x), mix(hash(i + vec2(0, 1)), hash(i + vec2(1, 1)), u.x), u.y);
+}
+// Small ripples as a slope, from two drifting layers of noise. Cheap, and enough to break
+// the big waves' clean highlights into the sparkle a real sea has.
+vec2 ripples(vec2 p, float t) {
+  vec2 a = p * 0.45 + vec2(t * 0.35, t * 0.21);
+  vec2 b = p * 1.1 + vec2(-t * 0.27, t * 0.4);
+  float e = 0.25;
+  float n0 = noise(a) + 0.5 * noise(b);
+  float nx = noise(a + vec2(e, 0.0)) + 0.5 * noise(b + vec2(e * 2.4, 0.0));
+  float nz = noise(a + vec2(0.0, e)) + 0.5 * noise(b + vec2(0.0, e * 2.4));
+  return vec2(n0 - nx, n0 - nz) * 1.6;
+}
+
+void main() {
+  vec3 toCam = cameraPosition - vWorld;
+  float dist = length(toCam);
+  vec3 V = toCam / dist;
+
+  vec2 rp = ripples(vWorld.xz, uTime) * uDetail * (1.0 - smoothstep(60.0, 420.0, dist));
+  vec3 N = normalize(vN + vec3(rp.x, 0.0, rp.y) * 0.22);
+
+  vec2 suv = (vWorld.xz - uShoreRect.xy) / uShoreRect.z;
+  float sd = texture2D(uShore, suv).r;          // 0.2 is the coastline, 1 is open ocean
+  float depth = smoothstep(0.2, 0.62, sd);
+
+  vec3 water = mix(uShallow, uDeep, depth);
+  // Light through the crest of a wave, green in the shallows and teal in the deep.
+  float sss = clamp(vCrest * 0.7 + 0.25, 0.0, 1.0);
+  water += uShallow * sss * 0.22 * (1.0 - depth * 0.4);
+  float ndl = max(dot(N, uSunDir), 0.0);
+  water *= 0.6 + 0.4 * ndl;
+
+  vec3 R = reflect(-V, N);
+  R.y = abs(R.y);
+  vec3 sky = mix(uHorizon, uZenith, pow(R.y, 0.6));
+  float fres = 0.02 + 0.98 * pow(1.0 - max(dot(N, V), 0.0), 5.0);
+  vec3 col = mix(water, sky, fres * 0.85);
+  // The glint uses the big waves only — with the ripples in, a high sun turns the whole
+  // play area into a mirror and you cannot see a ship on it.
+  vec3 Rs = reflect(-V, normalize(vN + vec3(rp.x, 0.0, rp.y) * 0.06));
+  float spec = pow(max(dot(Rs, uSunDir), 0.0), 600.0);
+  col += uSunColor * spec * uSunI * 0.55;
+
+  // Foam: on the crests, and in bands of surf running in to every coast and reef.
+  float n = noise(vWorld.xz * 0.18 + vec2(uTime * 0.12, -uTime * 0.07));
+  float n2 = noise(vWorld.xz * 0.6 - uTime * 0.2);
+  float crestFoam = smoothstep(0.78, 1.05, vCrest * 0.5 + n * 0.3 + n2 * 0.25) * smoothstep(0.35, 0.7, n2);
+  float coast = 1.0 - smoothstep(0.2, 0.34, sd);
+  float band = sin(sd * 220.0 - uTime * 1.7) * 0.5 + 0.5;
+  float surf = coast * smoothstep(0.45, 0.95, band * 0.65 + n * 0.5) + (1.0 - smoothstep(0.19, 0.225, sd)) * 0.9;
+  float foam = clamp(max(crestFoam * 0.4, surf) * (0.75 + n2 * 0.35), 0.0, 1.0);
+  col = mix(col, uFoam * (0.7 + 0.3 * ndl), foam);
+
+  float fog = smoothstep(uFogNear, uFogFar, dist);
+  col = mix(col, uHorizon, fog);
+  gl_FragColor = vec4(col, 1.0);
+  #include <tonemapping_fragment>
+  #include <colorspace_fragment>
+}`;
+
+/** A disc of rings and spokes, dense at the middle. Rings are spaced linearly near the
+ *  centre (where the ship is) and then fall off fast toward the horizon. */
+function polarGrid(rings: number, spokes: number): THREE.BufferGeometry {
+  const pos: number[] = [0, 0, 0];
+  const idx: number[] = [];
+  const radius = (i: number) => 2.6 * i + 2600 * Math.pow(i / rings, 4);
+  for (let i = 1; i <= rings; i++) {
+    const r = radius(i);
+    for (let j = 0; j < spokes; j++) {
+      const a = (j / spokes) * Math.PI * 2;
+      pos.push(Math.cos(a) * r, 0, Math.sin(a) * r);
+    }
+  }
+  for (let j = 0; j < spokes; j++) idx.push(0, 1 + ((j + 1) % spokes), 1 + j);
+  for (let i = 1; i < rings; i++) {
+    const a0 = 1 + (i - 1) * spokes, a1 = 1 + i * spokes;
+    for (let j = 0; j < spokes; j++) {
+      const j1 = (j + 1) % spokes;
+      idx.push(a0 + j, a0 + j1, a1 + j, a0 + j1, a1 + j1, a1 + j);
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setIndex(idx);
+  g.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 1e5);
+  return g;
+}
+
+export class Ocean {
+  mesh: THREE.Mesh;
+  mat: THREE.ShaderMaterial;
+  shore: THREE.DataTexture;
+  private shoreKey = '';
+
+  constructor(high: boolean) {
+    const data = new Uint8Array(SHORE_RES * SHORE_RES).fill(255);
+    this.shore = new THREE.DataTexture(data, SHORE_RES, SHORE_RES, THREE.RedFormat, THREE.UnsignedByteType);
+    this.shore.magFilter = THREE.LinearFilter;
+    this.shore.minFilter = THREE.LinearFilter;
+    this.shore.wrapS = this.shore.wrapT = THREE.ClampToEdgeWrapping;
+    this.shore.needsUpdate = true;
+
+    const count = high ? 4 : 3;
+    swell.count = count;
+    const { a, b } = packed(count);
+    const v4 = (i: number) => new THREE.Vector4(a[i * 4], a[i * 4 + 1], a[i * 4 + 2], a[i * 4 + 3]);
+    const v2 = (i: number) => new THREE.Vector2(b[i * 2], b[i * 2 + 1]);
+    this.mat = new THREE.ShaderMaterial({
+      vertexShader: vert, fragmentShader: frag,
+      uniforms: {
+        uTime: { value: 0 }, uAmp: { value: 1 }, uCenter: { value: new THREE.Vector2() },
+        uWA: { value: [0, 1, 2, 3].map(v4) }, uWB: { value: [0, 1, 2, 3].map(v2) },
+        uDeep: { value: new THREE.Color() }, uShallow: { value: new THREE.Color() }, uFoam: { value: new THREE.Color() },
+        uZenith: { value: new THREE.Color() }, uHorizon: { value: new THREE.Color() },
+        uSunDir: { value: new THREE.Vector3(0, 1, 0) }, uSunColor: { value: new THREE.Color() }, uSunI: { value: 1 },
+        uFogNear: { value: 300 }, uFogFar: { value: 1500 }, uDetail: { value: high ? 1 : 0.6 },
+        uShore: { value: this.shore },
+        uShoreRect: { value: new THREE.Vector3(-SHORE_SIZE / 2, -SHORE_SIZE / 2, SHORE_SIZE) },
+      },
+    });
+    this.mesh = new THREE.Mesh(high ? polarGrid(190, 160) : polarGrid(130, 112), this.mat);
+    this.mesh.frustumCulled = false;
+    this.mesh.renderOrder = -1;
+  }
+
+  /** Bake distance-to-shore for a chart. Once per run; a few tens of milliseconds. */
+  bakeShore(m: GameMap) {
+    if (this.shoreKey === m.seed) return;
+    this.shoreKey = m.seed;
+    const d = this.shore.image.data as Uint8Array;
+    for (let j = 0; j < SHORE_RES; j++) {
+      for (let i = 0; i < SHORE_RES; i++) {
+        const x = -SHORE_SIZE / 2 + ((i + 0.5) / SHORE_RES) * SHORE_SIZE;
+        const z = -SHORE_SIZE / 2 + ((j + 0.5) / SHORE_RES) * SHORE_SIZE;
+        const sd = shoreDist(m, x, z);
+        // coast at 0.2, open water by 80m out
+        d[j * SHORE_RES + i] = Math.round(Math.min(1, Math.max(0, 0.2 + sd / 100)) * 255);
+      }
+    }
+    this.shore.needsUpdate = true;
+  }
+
+  update(t: number, air: Air, cx: number, cz: number) {
+    const u = this.mat.uniforms;
+    u.uTime.value = t;
+    u.uAmp.value = air.swell;
+    swell.amp = air.swell;
+    // Snap the grid's centre so its vertices do not swim across the swell as it follows.
+    u.uCenter.value.set(Math.round(cx / 8) * 8, Math.round(cz / 8) * 8);
+    u.uDeep.value.copy(air.deep); u.uShallow.value.copy(air.shallow); u.uFoam.value.copy(air.foam);
+    u.uZenith.value.copy(air.zenith); u.uHorizon.value.copy(air.horizon);
+    u.uSunDir.value.copy(air.sun); u.uSunColor.value.copy(air.sunColor); u.uSunI.value = air.sunIntensity;
+    u.uFogNear.value = air.fogNear; u.uFogFar.value = air.fogFar;
+  }
+}
