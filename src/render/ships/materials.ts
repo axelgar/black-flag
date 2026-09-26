@@ -55,7 +55,7 @@ export interface TimberUniforms {
   uFogK: { value: number };
 }
 
-export function timberMaterial(map: THREE.Texture, bump: boolean): THREE.MeshStandardMaterial & { userData: { u: TimberUniforms } } {
+export function timberMaterial(map: THREE.Texture, bump: boolean, masonry?: THREE.Texture): THREE.MeshStandardMaterial & { userData: { u: TimberUniforms } } {
   const m = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: 1 });
   const u: TimberUniforms = {
     uPorts: { value: new THREE.Vector4(0, 0, 0, 0) },
@@ -64,9 +64,11 @@ export function timberMaterial(map: THREE.Texture, bump: boolean): THREE.MeshSta
     uFogK: { value: 1 },
   };
   m.userData.u = u;
-  if (bump) m.defines = { BF_BUMP: '' };
+  m.defines = {};
+  if (bump) m.defines.BF_BUMP = '';
+  if (masonry) m.defines.BF_MASONRY = '';
   m.onBeforeCompile = (sh) => {
-    Object.assign(sh.uniforms, u, { uTimber: { value: map }, uLamp: lampGlow });
+    Object.assign(sh.uniforms, u, { uTimber: { value: map }, uMasonry: { value: masonry ?? map }, uLamp: lampGlow });
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', /* glsl */ `#include <common>
 attribute vec4 aMat;
@@ -96,12 +98,14 @@ if (bfLid) {
 vPort = aAnim.x > 2.5 ? (bfSide > 0.0 ? 1.0 : 0.0) : -1.0;
 vMat = aMat;
 float bfK = aMat.z;
-vTuv = aTuv / (bfK < 0.5 ? vec2(8.0, 4.0) : bfK < 1.5 ? vec2(8.0, 4.8) : bfK < 2.5 ? vec2(4.0, 1.2) : vec2(16.0));
+vTuv = aTuv / (bfK < 0.5 ? vec2(8.0, 4.0) : bfK < 1.5 ? vec2(8.0, 4.8) : bfK < 2.5 ? vec2(4.0, 1.2) : bfK < 4.5 ? vec2(16.0)
+  : bfK < 5.5 ? vec2(4.0) : bfK < 6.5 ? vec2(4.0, 5.6) : vec2(3.0));
 vLocal = position;`);
 
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <common>', /* glsl */ `#include <common>
 uniform sampler2D uTimber;
+uniform sampler2D uMasonry;
 uniform vec2 uGlow;
 uniform float uScorch, uLamp, uFogK;
 varying vec4 vMat;
@@ -109,7 +113,10 @@ varying vec2 vTuv;
 varying vec3 vLocal;
 varying float vPort;
 ${NOISE}
-float bfPick(vec4 t, float k) { return k < 0.5 ? t.r : k < 1.5 ? t.g : k < 2.5 ? t.b : k < 3.5 ? t.a : 1.0; }
+float bfPick(vec4 t, vec4 t2, float k) {
+  return k < 0.5 ? t.r : k < 1.5 ? t.g : k < 2.5 ? t.b : k < 3.5 ? t.a : k < 4.5 ? 1.0
+    : k < 5.5 ? t2.r : k < 6.5 ? t2.g : k < 7.5 ? t2.b : t2.a;
+}
 vec3 bfBump(vec3 surf_pos, vec3 surf_norm, vec2 dHdxy, float faceDirection) {
   vec3 vSigmaX = normalize(dFdx(surf_pos)), vSigmaY = normalize(dFdy(surf_pos));
   vec3 R1 = cross(vSigmaY, surf_norm), R2 = cross(surf_norm, vSigmaX);
@@ -119,8 +126,13 @@ vec3 bfBump(vec3 surf_pos, vec3 surf_norm, vec2 dHdxy, float faceDirection) {
 }`)
       .replace('#include <color_fragment>', /* glsl */ `#include <color_fragment>
 vec4 bfTex = texture2D(uTimber, vTuv);
+#ifdef BF_MASONRY
+vec4 bfTex2 = texture2D(uMasonry, vTuv);
+#else
+vec4 bfTex2 = vec4(1.0);
+#endif
 float bfK = vMat.z;
-float bfD = bfPick(bfTex, bfK);
+float bfD = bfPick(bfTex, bfTex2, bfK);
 bool bfPane = bfK > 2.5 && bfK < 3.5;
 // glass is lit by the panes; everything else, gratings included, is darkened in its seams
 if (!(bfPane && vMat.w > 0.0)) diffuseColor.rgb *= bfPane ? mix(0.25, 1.0, bfD) : bfD;
@@ -141,9 +153,14 @@ diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * 0.18 + vec3(0.03, 0.
       .replace('#include <metalnessmap_fragment>', /* glsl */ `float metalnessFactor = vMat.y;`)
       .replace('#include <normal_fragment_maps>', /* glsl */ `#include <normal_fragment_maps>
 #ifdef BF_BUMP
-if (bfK < 2.5) {
+if (bfK < 2.5 || bfK > 4.5) {
   vec2 dx = dFdx(vTuv), dy = dFdy(vTuv);
-  float hx = bfPick(texture2D(uTimber, vTuv + dx), bfK), hy = bfPick(texture2D(uTimber, vTuv + dy), bfK);
+  #ifdef BF_MASONRY
+  float hx = bfPick(texture2D(uTimber, vTuv + dx), texture2D(uMasonry, vTuv + dx), bfK);
+  float hy = bfPick(texture2D(uTimber, vTuv + dy), texture2D(uMasonry, vTuv + dy), bfK);
+  #else
+  float hx = bfPick(texture2D(uTimber, vTuv + dx), vec4(1.0), bfK), hy = bfPick(texture2D(uTimber, vTuv + dy), vec4(1.0), bfK);
+  #endif
   normal = bfBump(-vViewPosition, normal, vec2(hx - bfD, hy - bfD) * 1.6, faceDirection);
 }
 #endif`)
@@ -152,7 +169,7 @@ totalEmissiveRadiance += vec3(1.0, 0.6, 0.26) * vMat.w * uLamp * (bfPane ? bfTex
 if (vPort > -0.5) totalEmissiveRadiance += vec3(1.0, 0.42, 0.12) * 2.4 * mix(uGlow.x, uGlow.y, vPort);`)
       .replace('#include <fog_fragment>', FOG);
   };
-  m.customProgramCacheKey = () => `bf-timber${bump ? '-b' : ''}`;
+  m.customProgramCacheKey = () => `bf-timber${bump ? '-b' : ''}${masonry ? '-m' : ''}`;
   return m as THREE.MeshStandardMaterial & { userData: { u: TimberUniforms } };
 }
 

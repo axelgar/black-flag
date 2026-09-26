@@ -58,7 +58,7 @@ export class View {
   reduced = false;
 
   private ocean: Ocean;
-  private sky = new Sky();
+  private sky: Sky;
   private islands = new Islands();
   private fx = new Fx();
   private wakes = new Wakes();
@@ -120,6 +120,7 @@ export class View {
     this.scene.add(this.sun, this.sun.target, this.hemi);
 
     this.ocean = new Ocean(high);
+    this.sky = new Sky(high);
     this.scene.add(this.sky.mesh, this.ocean.mesh, this.islands.group, this.wakes.mesh, this.marks.group, this.fx.group);
     this.fx.scale = high ? 1 : 0.6;
 
@@ -170,7 +171,7 @@ export class View {
   setMap(m: GameMap) {
     if (this.map === m) return;
     this.map = m;
-    this.islands.build(m, this.tier === 'high');
+    this.islands.build(m, this.tier === 'high', Math.min(8, this.renderer.capabilities.getMaxAnisotropy()));
     this.ocean.bakeShore(m);
     const h = m.harbour;
     this.marks.beacon.position.set(h.x, 0.3, h.y);
@@ -251,6 +252,11 @@ export class View {
     this.peekAt = pos ? { pos, look } : null;
   }
   private peekAt: { pos: [number, number, number]; look: [number, number, number] } | null = null;
+  /** For the console: a camera anywhere, in world coordinates. null to let go. */
+  eye(pos: [number, number, number] | null, look: [number, number, number] = [0, 0, 0]) {
+    this.eyeAt = pos ? { pos: new THREE.Vector3(...pos), look: new THREE.Vector3(...look) } : null;
+  }
+  private eyeAt: { pos: THREE.Vector3; look: THREE.Vector3 } | null = null;
   /** For the console: hold the showcase orbit still, at an angle. */
   orbitAt(a: number) { this.orbit = a; this.dragYaw = 0; this.spin = false; }
   private spin = true;
@@ -382,6 +388,7 @@ export class View {
     this.ocean.update(t, a, this.camera.position.x, this.camera.position.z);
     this.sky.update(t, a, this.camera.position);
     this.fx.update(dt, t, this.camLook);
+    this.islands.update(t);
     this.refreshEnv(dt);
 
     this.flash = Math.max(0, this.flash - dt * 1.6);
@@ -611,6 +618,7 @@ export class View {
   /* ------------------------------------------------------------- camera --- */
 
   private target(): { pos: THREE.Vector3; look: THREE.Vector3; rate: number } {
+    if (this.eyeAt) return { pos: this.eyeAt.pos.clone(), look: this.eyeAt.look.clone(), rate: 30 };
     const w = this.world;
     const aspect = this.camera.aspect;
     if (this.mode === 'play' && w) {

@@ -8,27 +8,52 @@ import { heightAt } from './waves';
 const pvert = /* glsl */ `
 attribute vec4 aColor;
 attribute float aSize;
+attribute vec2 aLife;      // seed, age 0..1
 uniform float uScale;
 varying vec4 vColor;
+varying vec2 vLife;
 void main() {
   vec4 mv = modelViewMatrix * vec4(position, 1.0);
   gl_Position = projectionMatrix * mv;
   gl_PointSize = min(aSize * uScale / max(-mv.z, 1.0), 900.0);
   vColor = aColor;
+  vLife = aLife;
 }`;
 
+// Smoke is a billowing puff, lit from above and ragged at its edge, turning as it rolls;
+// glow is hot at the core and cools outward — and, for fire, cools with age too.
 const pfrag = /* glsl */ `
 varying vec4 vColor;
+varying vec2 vLife;
 uniform float uLumpy;
+float h21(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
+float vn(vec2 p) {
+  vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(h21(i), h21(i + vec2(1.0, 0.0)), f.x), mix(h21(i + vec2(0.0, 1.0)), h21(i + vec2(1.0, 1.0)), f.x), f.y);
+}
 void main() {
   vec2 c = gl_PointCoord - 0.5;
   float d = length(c) * 2.0;
-  // a lumpy edge for smoke, a clean one for spray and sparks
-  float a = atan(c.y, c.x);
-  float edge = 1.0 - uLumpy * 0.18 * (sin(a * 5.0 + vColor.a * 20.0) * 0.5 + 0.5);
-  float alpha = smoothstep(edge, edge * 0.35, d);
-  if (alpha <= 0.01) discard;
-  gl_FragColor = vec4(vColor.rgb, alpha * clamp(vColor.a, 0.0, 1.0));
+  float seed = vLife.x, age = vLife.y;
+  if (uLumpy > 0.5) {
+    // turn the puff as it ages so it rolls rather than slides
+    float a = seed * 6.28 + age * 1.3;
+    vec2 r = mat2(cos(a), -sin(a), sin(a), cos(a)) * c;
+    float n = vn(r * 4.2 + seed * 37.0) * 0.6 + vn(r * 9.0 - seed * 19.0) * 0.4;
+    float edge = d + (n - 0.5) * 0.62;
+    float alpha = smoothstep(1.0, 0.3, edge);
+    if (alpha <= 0.01) discard;
+    // lit from above: brighter on the crown, greyer underneath and in the folds
+    float lit = clamp(0.55 - c.y * 1.3 + (n - 0.5) * 0.5, 0.0, 1.0);
+    vec3 col = vColor.rgb * mix(0.66, 1.1, lit);
+    gl_FragColor = vec4(col, alpha * clamp(vColor.a, 0.0, 1.0));
+  } else {
+    float core = 1.0 - smoothstep(0.0, 0.55, d);
+    float alpha = smoothstep(1.0, 0.15, d + (vn(c * 6.0 + seed * 11.0 + age * 3.0) - 0.5) * 0.3);
+    if (alpha <= 0.01) discard;
+    vec3 col = mix(vColor.rgb, vec3(1.0, 0.96, 0.82), core * (1.0 - age * 0.8));
+    gl_FragColor = vec4(col, alpha * clamp(vColor.a, 0.0, 1.0));
+  }
   #include <tonemapping_fragment>
   #include <colorspace_fragment>
 }`;
@@ -49,6 +74,7 @@ class Pool {
   private vel: Float32Array; private life: Float32Array; private age: Float32Array;
   private s0: Float32Array; private s1: Float32Array; private a0: Float32Array;
   private drag: Float32Array; private grav: Float32Array; private rgb: Float32Array;
+  private lifeAttr: Float32Array; private seed: Float32Array;
   mat: THREE.ShaderMaterial;
   private c = new THREE.Color();
 
@@ -58,10 +84,12 @@ class Pool {
     this.vel = new Float32Array(max * 3); this.life = new Float32Array(max); this.age = new Float32Array(max);
     this.s0 = new Float32Array(max); this.s1 = new Float32Array(max); this.a0 = new Float32Array(max);
     this.drag = new Float32Array(max); this.grav = new Float32Array(max); this.rgb = new Float32Array(max * 3);
+    this.lifeAttr = new Float32Array(max * 2); this.seed = new Float32Array(max);
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.BufferAttribute(this.pos, 3).setUsage(THREE.DynamicDrawUsage));
     g.setAttribute('aColor', new THREE.BufferAttribute(this.col, 4).setUsage(THREE.DynamicDrawUsage));
     g.setAttribute('aSize', new THREE.BufferAttribute(this.siz, 1).setUsage(THREE.DynamicDrawUsage));
+    g.setAttribute('aLife', new THREE.BufferAttribute(this.lifeAttr, 2).setUsage(THREE.DynamicDrawUsage));
     g.setDrawRange(0, 0);
     this.mat = new THREE.ShaderMaterial({
       vertexShader: pvert, fragmentShader: pfrag,
@@ -83,6 +111,7 @@ class Pool {
     this.s0[i] = o.size; this.s1[i] = o.size * (o.grow ?? 1);
     this.a0[i] = o.alpha ?? 1;
     this.drag[i] = o.drag ?? 0; this.grav[i] = o.grav ?? 0;
+    this.seed[i] = Math.random();
     const c = typeof o.color === 'string' ? this.c.set(o.color) : o.color;
     this.rgb[i * 3] = c.r; this.rgb[i * 3 + 1] = c.g; this.rgb[i * 3 + 2] = c.b;
   }
@@ -103,6 +132,7 @@ class Pool {
       const fade = t < 0.1 ? t / 0.1 : 1 - (t - 0.1) / 0.9;
       this.col[n * 4] = this.rgb[n * 3]; this.col[n * 4 + 1] = this.rgb[n * 3 + 1]; this.col[n * 4 + 2] = this.rgb[n * 3 + 2];
       this.col[n * 4 + 3] = this.a0[n] * fade;
+      this.lifeAttr[n * 2] = this.seed[n]; this.lifeAttr[n * 2 + 1] = t;
       n++;
     }
     this.n = n;
@@ -111,6 +141,7 @@ class Pool {
     (g.attributes.position as THREE.BufferAttribute).needsUpdate = true;
     (g.attributes.aColor as THREE.BufferAttribute).needsUpdate = true;
     (g.attributes.aSize as THREE.BufferAttribute).needsUpdate = true;
+    (g.attributes.aLife as THREE.BufferAttribute).needsUpdate = true;
   }
 
   private move(from: number, to: number) {
@@ -121,6 +152,7 @@ class Pool {
     }
     this.life[to] = this.life[from]; this.s0[to] = this.s0[from]; this.s1[to] = this.s1[from];
     this.a0[to] = this.a0[from]; this.drag[to] = this.drag[from]; this.grav[to] = this.grav[from];
+    this.seed[to] = this.seed[from];
   }
 
   clear() { this.n = 0; this.points.geometry.setDrawRange(0, 0); }
@@ -242,11 +274,13 @@ export class Fx {
   /** One gun: a flash at the muzzle and a bank of powder smoke rolling out along the shot. */
   muzzle(x: number, y: number, z: number, dx: number, dz: number, big = 1) {
     this.glow.spawn({ x, y, z, vx: dx * 6, vz: dz * 6, life: 0.14, size: 3.2 * big, grow: 1.6, color: FLASH });
-    for (let i = 0; i < this.n(4); i++) {
-      const s = 4 + Math.random() * 7;
+    this.glow.spawn({ x: x + dx * 1.5, y, z: z + dz * 1.5, vx: dx * 14, vz: dz * 14, life: 0.1, size: 2.2 * big, grow: 2.4, color: FIRE });
+    // the bank of powder smoke a broadside leaves hanging over the water
+    for (let i = 0; i < this.n(6); i++) {
+      const s = 3 + Math.random() * 9;
       this.smoke.spawn({
-        x, y, z, vx: dx * s + (Math.random() - 0.5) * 1.5, vy: 0.6 + Math.random() * 1.2, vz: dz * s + (Math.random() - 0.5) * 1.5,
-        life: 2.2 + Math.random() * 1.6, size: 2.5 * big, grow: 3.6, color: SMOKE, alpha: 0.55, drag: 1.3,
+        x, y, z, vx: dx * s + (Math.random() - 0.5) * 1.8, vy: 0.4 + Math.random() * 1.1, vz: dz * s + (Math.random() - 0.5) * 1.8,
+        life: 3 + Math.random() * 2.5, size: (2.2 + Math.random() * 1.4) * big, grow: 4.2, color: SMOKE, alpha: 0.6, drag: 1.2,
       });
     }
   }

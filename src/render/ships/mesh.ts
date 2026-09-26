@@ -13,8 +13,9 @@ import * as THREE from 'three';
 
 export type V3 = [number, number, number];
 
-/** The timber map a face samples. Panes glow when the finish does, and read as a grating when not. */
-export const TEX = { hull: 0, deck: 1, grain: 2, pane: 3, flat: 4 } as const;
+/** The map a face samples. 0–3 are the timber map — panes glow when the finish does,
+ *  and read as a grating when not — 4 is plain, and 5–8 the masonry map, for the land. */
+export const TEX = { hull: 0, deck: 1, grain: 2, pane: 3, flat: 4, plaster: 5, tile: 6, stone: 7, thatch: 8 } as const;
 
 export interface Finish { rough: number; metal: number; tex: number; glow: number }
 
@@ -30,6 +31,12 @@ export const FIN = {
   glass: { rough: 0.1, metal: 0, tex: TEX.pane, glow: 1 },
   lamp: { rough: 0.2, metal: 0, tex: TEX.flat, glow: 1.8 },
   grating: { rough: 0.8, metal: 0, tex: TEX.pane, glow: 0 },
+  plaster: { rough: 0.92, metal: 0, tex: TEX.plaster, glow: 0 },
+  tile: { rough: 0.78, metal: 0, tex: TEX.tile, glow: 0 },
+  stone: { rough: 0.88, metal: 0, tex: TEX.stone, glow: 0 },
+  thatch: { rough: 0.96, metal: 0, tex: TEX.thatch, glow: 0 },
+  cloth: { rough: 0.95, metal: 0, tex: TEX.flat, glow: 0 },
+  unlit: { rough: 0.3, metal: 0, tex: TEX.pane, glow: 0 },
 } satisfies Record<string, Finish>;
 
 export const ANIM = { still: 0, lid: 1, gun: 2, port: 3 } as const;

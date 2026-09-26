@@ -21,7 +21,7 @@ const smooth = (a: number, b: number, x: number) => { const t = clamp01((x - a) 
 const byte = (v: number) => Math.round(clamp01(v) * 255);
 
 /** Tileable value noise: `px` × `py` lattice cells across the texture, wrapping at the edges. */
-function lattice(seed: number, px: number, py = px) {
+export function lattice(seed: number, px: number, py = px) {
   const r = rng(seed);
   const v = new Float32Array(px * py);
   for (let i = 0; i < v.length; i++) v[i] = r();
@@ -39,7 +39,7 @@ function lattice(seed: number, px: number, py = px) {
 
 /** A smooth field sampled on a coarse grid and read back bilinearly per pixel: noise this
  *  soft looks the same either way, at a sixteenth of the cost. */
-function coarse(H: number, step: number, fn: (s: number, t: number) => number) {
+export function coarse(H: number, step: number, fn: (s: number, t: number) => number) {
   const n = Math.ceil(H / step) + 2;
   const g = new Float32Array(n * n);
   for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) g[j * n + i] = fn((i * step + 0.5) / H, (j * step + 0.5) / H);
@@ -55,7 +55,7 @@ function coarse(H: number, step: number, fn: (s: number, t: number) => number) {
 /** Distance between two points on a loop of length 1. */
 const loop = (a: number, b: number) => { const d = Math.abs(a - b) % 1; return Math.min(d, 1 - d); };
 
-function finish(data: Uint8Array, N: number, anisotropy: number): THREE.DataTexture {
+export function finish(data: Uint8Array, N: number, anisotropy: number): THREE.DataTexture {
   const t = new THREE.DataTexture(data, N, N, THREE.RGBAFormat);
   t.wrapS = t.wrapT = THREE.RepeatWrapping;
   t.magFilter = THREE.LinearFilter;

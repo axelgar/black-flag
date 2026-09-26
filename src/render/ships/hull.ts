@@ -537,7 +537,7 @@ function stern(m: Mesh, f: Form, d: Dress, out: HullOut) {
   }
 }
 
-function lantern(m: Mesh, p: V3, s: number, d: Dress) {
+export function lantern(m: Mesh, p: V3, s: number, d: Pick<Dress, 'gilt' | 'gold' | 'metal'>) {
   const metal = d.gilt ? d.gold : d.metal, fin = d.gilt ? FIN.gilt : FIN.iron;
   m.push(at(p[0], p[1], p[2]));
   m.paint(metal, fin).lathe([[0.03 * s, -0.62 * s], [0.14 * s, -0.55 * s], [0.2 * s, -0.42 * s], [0.3 * s, -0.34 * s]], 8, false);
@@ -761,7 +761,7 @@ function furniture(m: Mesh, f: Form, d: Dress, steps: Step[]) {
 }
 
 /** A little boat, right way up, planked and painted, with thwarts. */
-function boat(m: Mesh, x: number, y: number, len: number, beam: number, d: Dress) {
+export function boat(m: Mesh, x: number, y: number, len: number, beam: number, d: Pick<Dress, 'band' | 'deck'>) {
   const S = 9, K = 4, dep = beam * 0.42;
   const pt = (i: number, k: number, inset = 0): V3 => {
     const u = i / (S - 1), v = k / K;                         // u stern to bow, v keel to gunwale

@@ -94,6 +94,14 @@ void main() {
   float depth = smoothstep(0.2, 0.62, sd);
 
   vec3 water = mix(uShallow, uDeep, depth);
+  // Light on a sandy bottom: in the shallows the sea is paler, and caustics play over it.
+  float shoal = 1.0 - smoothstep(0.2, 0.34, sd);
+  water = mix(water, uShallow * vec3(1.18, 1.12, 0.92), shoal * 0.5);
+  vec2 cp = vWorld.xz * 0.32;
+  float c1 = noise(cp + vec2(uTime * 0.31, uTime * 0.17));
+  float c2 = noise(cp * 1.37 + vec2(-uTime * 0.23, uTime * 0.29) + 7.3);
+  float caus = pow(max(0.0, 1.0 - abs(c1 - c2) * 3.2), 5.0);
+  water += uShallow * caus * 0.45 * (1.0 - depth) * uDetail;
   // Light through the crest of a wave, green in the shallows and teal in the deep.
   float sss = clamp(vCrest * 0.7 + 0.25, 0.0, 1.0);
   water += uShallow * sss * 0.22 * (1.0 - depth * 0.4);
@@ -115,9 +123,16 @@ void main() {
   float n = noise(vWorld.xz * 0.18 + vec2(uTime * 0.12, -uTime * 0.07));
   float n2 = noise(vWorld.xz * 0.6 - uTime * 0.2);
   float crestFoam = smoothstep(0.78, 1.05, vCrest * 0.5 + n * 0.3 + n2 * 0.25) * smoothstep(0.35, 0.7, n2);
-  float coast = 1.0 - smoothstep(0.2, 0.34, sd);
-  float band = sin(sd * 220.0 - uTime * 1.7) * 0.5 + 0.5;
-  float surf = coast * smoothstep(0.45, 0.95, band * 0.65 + n * 0.5) + (1.0 - smoothstep(0.19, 0.225, sd)) * 0.9;
+  // Surf: a lacy swash line where the sea runs up the sand, and waves breaking as they
+  // come in over the shelf — each a bright front with foam trailing behind it, broken into
+  // lengths, never a ring.
+  float lace = smoothstep(0.3, 0.75, noise(vWorld.xz * 0.9 + uTime * 0.4) * 0.6 + n2 * 0.5);
+  float swash = (1.0 - smoothstep(0.2, 0.232 + n * 0.02 + sin(uTime * 1.1 + n * 6.0) * 0.006, sd)) * (0.55 + 0.45 * lace);
+  float ph = fract(sd * 7.5 + uTime * 0.22 + n * 0.35);
+  float breaker = smoothstep(0.0, 0.04, ph) * (1.0 - smoothstep(0.04, 0.42, ph));
+  float lengths = smoothstep(0.42, 0.7, noise(vWorld.xz * 0.045 + vec2(uTime * 0.05, 0.0)) + n2 * 0.25);
+  float near = 1.0 - smoothstep(0.215, 0.42, sd);
+  float surf = max(swash, breaker * lengths * near * (0.5 + 0.5 * lace));
   // Where a hull meets the sea: a collar of broken water hugging her, pushed up into a
   // bow wave as she gathers way, and the water in her lee a shade darker.
   float collar = 0.0, lee = 0.0;

@@ -51,7 +51,8 @@ export function prewarmShips(recipes: HullRecipe[]) {
   setTimeout(() => idle(next), 600);
 }
 
-function textures() {
+/** The shipwright's timber and canvas, painted on first use and shared with the land. */
+export function textures() {
   timberTex ??= paintTimber(quality.high ? 1024 : 512, quality.aniso);
   canvasTex ??= paintCanvas(quality.high ? 1024 : 512, quality.aniso);
   return { timber: timberTex, canvas: canvasTex };
@@ -84,10 +85,10 @@ interface Kit {
 
 const kits = new Map<string, Kit>();
 
-interface Flag { at: THREE.Vector3; w: number; h: number; ph: number }
+export interface Flag { at: THREE.Vector3; w: number; h: number; ph: number }
 
 /** Flags, streaming aft from their hoists. UVs put the hoist at the canvas's left edge. */
-function bunting(list: Flag[]): THREE.BufferGeometry {
+export function bunting(list: Flag[]): THREE.BufferGeometry {
   const P: number[] = [], U: number[] = [], F: number[] = [], I: number[] = [];
   const NX = 12, NY = 4;
   for (const fl of list) {
