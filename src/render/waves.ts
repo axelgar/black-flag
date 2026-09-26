@@ -3,6 +3,8 @@
 // is drawn with. Render-only — the simulation's sea is flat, which is what keeps it
 // cheap and deterministic.
 
+import * as THREE from 'three';
+
 export interface Wave { dir: number; len: number; amp: number; steep: number }
 
 export const WAVES: Wave[] = [
@@ -28,6 +30,27 @@ export function packed(count: number) {
 }
 
 export const swell = { amp: 1, count: 4 };
+
+/** The swell as shader uniforms, shared by the sea and by everything painted on it, so a
+ *  mark on the water rides the same waves the water is drawn with. The ocean owns and
+ *  updates them; everyone else reads. */
+export const seaUniforms = {
+  uTime: { value: 0 },
+  uAmp: { value: 1 },
+  uWA: { value: [0, 1, 2, 3].map(() => new THREE.Vector4()) },
+  uWB: { value: [0, 1, 2, 3].map(() => new THREE.Vector2()) },
+};
+
+/** GLSL: the height of the sea at a world xz, from the shared uniforms. */
+export const SEA_HEIGHT = /* glsl */ `
+uniform float uTime, uAmp;
+uniform vec4 uWA[4];
+uniform vec2 uWB[4];
+float seaHeight(vec2 xz) {
+  float y = 0.0;
+  for (int i = 0; i < 4; i++) y += uWB[i].x * uAmp * sin(uWA[i].z * dot(uWA[i].xy, xz) - uWA[i].w * uTime);
+  return y;
+}`;
 
 /** Height of the sea at a point. Ignores the horizontal part of the Gerstner motion,
  *  which at these steepnesses is a few centimetres of error nobody on a deck will feel. */

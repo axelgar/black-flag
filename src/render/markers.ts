@@ -3,10 +3,19 @@
 // way home. Flat, bright, and never lit — they are information, not scenery.
 
 import * as THREE from 'three';
+import { SEA_HEIGHT, seaUniforms } from './waves';
 
+// Marks lie on the water whatever the swell is doing: each vertex is set on the sea's own
+// surface, so a ring does not vanish into the face of a storm wave.
 const ringVert = /* glsl */ `
+${SEA_HEIGHT}
 varying vec2 vUv;
-void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`;
+void main() {
+  vUv = uv;
+  vec4 wp = modelMatrix * vec4(position, 1.0);
+  wp.y = seaHeight(wp.xz) + 0.4;
+  gl_Position = projectionMatrix * viewMatrix * wp;
+}`;
 
 // A ring with a progress arc and an optional fill. Used for mortar telegraphs, prize
 // timers and the boarding count.
@@ -48,8 +57,9 @@ export function ringMaterial(color: string) {
   return new THREE.ShaderMaterial({
     vertexShader: ringVert, fragmentShader: ringFrag, transparent: true, depthWrite: false, side: THREE.DoubleSide,
     uniforms: {
+      ...seaUniforms,
       uColor: { value: new THREE.Color(color) }, uProg: { value: 1 }, uFill: { value: 0 },
-      uAlpha: { value: 1 }, uTime: { value: 0 }, uDash: { value: 0 },
+      uAlpha: { value: 1 }, uDash: { value: 0 },
     },
   });
 }
@@ -57,7 +67,7 @@ export function ringMaterial(color: string) {
 class RingPool {
   private items: THREE.Mesh[] = [];
   private used = 0;
-  private geo = new THREE.PlaneGeometry(2, 2).rotateX(-Math.PI / 2);
+  private geo = new THREE.PlaneGeometry(2, 2, 20, 20).rotateX(-Math.PI / 2);
   constructor(private parent: THREE.Object3D, private color: string) {}
   begin() { this.used = 0; }
   get(): THREE.Mesh {
@@ -112,7 +122,7 @@ export class Markers {
     this.fans = [-1, 1].map((side) => {
       const m = new THREE.Mesh(fanGeometry(0.34), new THREE.ShaderMaterial({
         vertexShader: ringVert, fragmentShader: fanFrag, transparent: true, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending,
-        uniforms: { uColor: { value: new THREE.Color('#F6E7C0') }, uAlpha: { value: 0.3 }, uLoad: { value: 1 } },
+        uniforms: { ...seaUniforms, uColor: { value: new THREE.Color('#F6E7C0') }, uAlpha: { value: 0.3 }, uLoad: { value: 1 } },
       }));
       if (side === -1) m.rotation.y = Math.PI;
       m.renderOrder = 4;
@@ -120,7 +130,7 @@ export class Markers {
       return m;
     });
 
-    this.reticle = new THREE.Mesh(new THREE.PlaneGeometry(2, 2).rotateX(-Math.PI / 2), ringMaterial('#FFD36A'));
+    this.reticle = new THREE.Mesh(new THREE.PlaneGeometry(2, 2, 16, 16).rotateX(-Math.PI / 2), ringMaterial('#FFD36A'));
     (this.reticle.material as THREE.ShaderMaterial).uniforms.uDash.value = 12;
     this.reticle.renderOrder = 4;
     this.group.add(this.reticle);
@@ -132,7 +142,7 @@ export class Markers {
       new THREE.MeshBasicMaterial({ color: new THREE.Color('#FFD36A').multiplyScalar(1.3), transparent: true, opacity: 0.16, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending }),
     );
     beam.position.y = 80;
-    const ring = new THREE.Mesh(new THREE.PlaneGeometry(2, 2).rotateX(-Math.PI / 2), ringMaterial('#FFD36A'));
+    const ring = new THREE.Mesh(new THREE.PlaneGeometry(2, 2, 40, 40).rotateX(-Math.PI / 2), ringMaterial('#FFD36A'));
     (ring.material as THREE.ShaderMaterial).uniforms.uDash.value = 20;
     ring.name = 'ring';
     this.beacon.add(beam, ring);

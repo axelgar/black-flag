@@ -7,7 +7,7 @@ import * as THREE from 'three';
 import type { GameMap } from '../sim/map';
 import { shoreDist } from '../sim/map';
 import type { Air } from './atmosphere';
-import { packed, swell } from './waves';
+import { packed, seaUniforms, swell } from './waves';
 
 const SHORE_SIZE = 2400;             // metres covered by the shore texture, centred on 0,0
 const SHORE_RES = 256;
@@ -206,13 +206,12 @@ export class Ocean {
     const count = high ? 4 : 3;
     swell.count = count;
     const { a, b } = packed(count);
-    const v4 = (i: number) => new THREE.Vector4(a[i * 4], a[i * 4 + 1], a[i * 4 + 2], a[i * 4 + 3]);
-    const v2 = (i: number) => new THREE.Vector2(b[i * 2], b[i * 2 + 1]);
+    seaUniforms.uWA.value.forEach((v, i) => v.set(a[i * 4], a[i * 4 + 1], a[i * 4 + 2], a[i * 4 + 3]));
+    seaUniforms.uWB.value.forEach((v, i) => v.set(b[i * 2], b[i * 2 + 1]));
     this.mat = new THREE.ShaderMaterial({
       vertexShader: vert, fragmentShader: frag,
       uniforms: {
-        uTime: { value: 0 }, uAmp: { value: 1 }, uCenter: { value: new THREE.Vector2() },
-        uWA: { value: [0, 1, 2, 3].map(v4) }, uWB: { value: [0, 1, 2, 3].map(v2) },
+        ...seaUniforms, uCenter: { value: new THREE.Vector2() },
         uDeep: { value: new THREE.Color() }, uShallow: { value: new THREE.Color() }, uFoam: { value: new THREE.Color() },
         uZenith: { value: new THREE.Color() }, uHorizon: { value: new THREE.Color() },
         uSunDir: { value: new THREE.Vector3(0, 1, 0) }, uSunColor: { value: new THREE.Color() }, uSunI: { value: 1 },

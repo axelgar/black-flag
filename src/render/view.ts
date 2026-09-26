@@ -19,6 +19,7 @@ import type { GameMap } from '../sim/map';
 import { sideVec } from '../sim/combat';
 import type { Foe, GameEvent, World } from '../sim/types';
 import { Air, type Look } from './atmosphere';
+import { Flotsam } from './flotsam';
 import { Fx } from './fx';
 import { Islands } from './islands';
 import { Markers } from './markers';
@@ -61,6 +62,7 @@ export class View {
   private sky: Sky;
   private islands = new Islands();
   private fx = new Fx();
+  private flotsam: Flotsam;
   private wakes = new Wakes();
   private marks = new Markers();
   private sun: THREE.DirectionalLight;
@@ -121,7 +123,8 @@ export class View {
 
     this.ocean = new Ocean(high);
     this.sky = new Sky(high);
-    this.scene.add(this.sky.mesh, this.ocean.mesh, this.islands.group, this.wakes.mesh, this.marks.group, this.fx.group);
+    this.flotsam = new Flotsam(high);
+    this.scene.add(this.sky.mesh, this.ocean.mesh, this.islands.group, this.wakes.mesh, this.marks.group, this.fx.group, this.flotsam.group);
     this.fx.scale = high ? 1 : 0.6;
 
     const ballGeo = new THREE.SphereGeometry(0.55, 8, 6);
@@ -197,6 +200,7 @@ export class View {
     this.fx.clear();
     this.wakes.clear();
     this.marks.clear();
+    this.flotsam.clear();
     if (w) {
       this.setMap(w.map);
       this.setLook(w.weather, true);
@@ -360,7 +364,7 @@ export class View {
     this.wakes.begin();
     this.ocean.beginHulls();
     if (this.mode === 'play' && w) this.syncWorld(w, dt, t);
-    else if (this.player) this.player.root.visible = false;
+    else { if (this.player) this.player.root.visible = false; this.flotsam.clear(); }
     this.syncShowcase(dt, t);
     this.hulksStep(dt, t);
     this.wakes.end(t, this.air.foam);
@@ -456,6 +460,7 @@ export class View {
 
     this.syncShots(w, t);
     this.syncMarks(w, t);
+    this.flotsam.sync(w, t, this.fx, this.scene.fog as THREE.Fog);
   }
 
   private poseFoe(e: Foe, m: ShipModel, dt: number, t: number) {

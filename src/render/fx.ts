@@ -346,6 +346,19 @@ export class Fx {
     });
   }
 
+  /** The foot of a waterspout: the sea torn up and flung round. */
+  spray(x: number, z: number, r: number, t: number) {
+    const y = heightAt(x, z, t);
+    for (let i = 0; i < this.n(2); i++) {
+      const a = Math.random() * Math.PI * 2, d = r * (0.8 + Math.random() * 0.9);
+      this.smoke.spawn({
+        x: x + Math.cos(a) * d, y, z: z + Math.sin(a) * d,
+        vx: -Math.sin(a) * 9 + Math.cos(a) * 2, vy: 4 + Math.random() * 7, vz: Math.cos(a) * 9 + Math.sin(a) * 2,
+        life: 1.2 + Math.random() * 0.8, size: 2 + Math.random() * 2, grow: 2.5, color: SPRAY, alpha: 0.5, drag: 0.8, grav: 3,
+      });
+    }
+  }
+
   sparkle(x: number, y: number, z: number, n = 24) {
     for (let i = 0; i < this.n(n); i++) {
       const a = Math.random() * Math.PI * 2, s = 2 + Math.random() * 8;
