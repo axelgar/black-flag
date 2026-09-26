@@ -11,6 +11,8 @@ import { packed, swell } from './waves';
 
 const SHORE_SIZE = 2400;             // metres covered by the shore texture, centred on 0,0
 const SHORE_RES = 256;
+/** Hulls the sea knows about, for the foam where each meets the water. */
+export const MAX_HULLS = 16;
 
 const vert = /* glsl */ `
 uniform float uTime, uAmp;
@@ -54,6 +56,9 @@ uniform vec3 uDeep, uShallow, uFoam, uZenith, uHorizon, uSunDir, uSunColor;
 uniform float uTime, uFogNear, uFogFar, uSunI, uDetail;
 uniform sampler2D uShore;
 uniform vec3 uShoreRect;
+uniform vec4 uHulls[${MAX_HULLS}];   // x, z, heading, half-length at the waterline
+uniform vec4 uHullB[${MAX_HULLS}];   // half-beam, -, way (0..1), reach squared
+uniform int uHullN;
 varying vec3 vWorld;
 varying vec3 vN;
 varying float vCrest;
@@ -113,7 +118,25 @@ void main() {
   float coast = 1.0 - smoothstep(0.2, 0.34, sd);
   float band = sin(sd * 220.0 - uTime * 1.7) * 0.5 + 0.5;
   float surf = coast * smoothstep(0.45, 0.95, band * 0.65 + n * 0.5) + (1.0 - smoothstep(0.19, 0.225, sd)) * 0.9;
-  float foam = clamp(max(crestFoam * 0.4, surf) * (0.75 + n2 * 0.35), 0.0, 1.0);
+  // Where a hull meets the sea: a collar of broken water hugging her, pushed up into a
+  // bow wave as she gathers way, and the water in her lee a shade darker.
+  float collar = 0.0, lee = 0.0;
+  for (int i = 0; i < ${MAX_HULLS}; i++) {
+    if (i >= uHullN) break;
+    vec4 H = uHulls[i], B = uHullB[i];
+    vec2 d = vWorld.xz - H.xy;
+    if (dot(d, d) > B.w) continue;
+    vec2 f = vec2(cos(H.z), sin(H.z));
+    vec2 l = vec2(dot(d, f), dot(d, vec2(-f.y, f.x)));
+    float e = length(l / vec2(H.w, B.x));
+    float fwd = smoothstep(-0.2, 1.0, l.x / H.w);
+    float wide = 1.16 + fwd * B.z * 0.55;
+    collar = max(collar, (1.0 - smoothstep(0.97, wide, e)) * smoothstep(0.8, 0.98, e) * (0.28 + B.z * 0.85 * fwd));
+    lee = max(lee, 1.0 - smoothstep(0.9, 2.1, e));
+  }
+  col *= 1.0 - lee * 0.22;
+  float froth = smoothstep(0.35, 0.8, n2 * 0.75 + noise(vWorld.xz * 1.7 + uTime * 0.6) * 0.5);
+  float foam = clamp(max(max(crestFoam * 0.4, surf) * (0.75 + n2 * 0.35), collar * froth * 1.3), 0.0, 1.0);
   col = mix(col, uFoam * (0.7 + 0.3 * ndl), foam);
 
   float fog = smoothstep(uFogNear, uFogFar, dist);
@@ -180,6 +203,9 @@ export class Ocean {
         uSunDir: { value: new THREE.Vector3(0, 1, 0) }, uSunColor: { value: new THREE.Color() }, uSunI: { value: 1 },
         uFogNear: { value: 300 }, uFogFar: { value: 1500 }, uDetail: { value: high ? 1 : 0.6 },
         uShore: { value: this.shore },
+        uHulls: { value: Array.from({ length: MAX_HULLS }, () => new THREE.Vector4()) },
+        uHullB: { value: Array.from({ length: MAX_HULLS }, () => new THREE.Vector4()) },
+        uHullN: { value: 0 },
         uShoreRect: { value: new THREE.Vector3(-SHORE_SIZE / 2, -SHORE_SIZE / 2, SHORE_SIZE) },
       },
     });
@@ -187,6 +213,21 @@ export class Ocean {
     this.mesh.frustumCulled = false;
     this.mesh.renderOrder = -1;
   }
+
+  /** The hulls afloat this frame: where each is, which way she heads, how long and broad
+   *  she is at the waterline, and how much way she has on, 0..1. */
+  private hullN = 0;
+  beginHulls() { this.hullN = 0; }
+  hull(x: number, z: number, h: number, len: number, beam: number, way: number) {
+    if (this.hullN >= MAX_HULLS) return;
+    const u = this.mat.uniforms;
+    const hl = len * 0.47, hb = beam * 0.5;
+    const reach = hl * 1.8 + 4;
+    u.uHulls.value[this.hullN].set(x, z, h, hl);
+    u.uHullB.value[this.hullN].set(hb, 0, Math.min(1, Math.max(0, way)), reach * reach);
+    this.hullN++;
+  }
+  endHulls() { this.mat.uniforms.uHullN.value = this.hullN; }
 
   /** Bake distance-to-shore for a chart. Once per run; a few tens of milliseconds. */
   bakeShore(m: GameMap) {

@@ -9,6 +9,7 @@
 import * as THREE from 'three';
 import type { Emblem } from '../../data/types';
 import { Form, type Step } from './form';
+import { crewRng, outfitter, sailor } from './crew';
 import type { Dress } from './hull';
 import { FIN, LOD, Mesh, at, frame, type V3 } from './mesh';
 import { CANVAS_REGION } from './paint';
@@ -511,6 +512,20 @@ export function buildRig(m: Mesh, cv: Canvas, rp: Ropes, f: Form, d: Dress, embl
       }
     }
   });
+
+  // Hands aloft: a lookout in the main top, and men out on the main yard.
+  const cr = crewRng(R), dressFor = outfitter(R);
+  const mm = masts.find((ms) => ms.s.role === 'main' || ms.s.role === 'single');
+  if (mm && R.rig === 'square' && !LOD.lo && mm.yards.length) {
+    m.push(mm.M);
+    sailor(m, mm.r * 0.35 - mm.tw * 0.3, mm.h1 + 0.08, mm.tw * 0.35, dressFor(cr), 0.2);
+    const y = mm.yards[0];
+    for (const side of [1, -1]) {
+      const z = side * y.half * (0.35 + cr() * 0.3);
+      sailor(m, y.x - y.r - 0.42, y.y - 1.5, z, dressFor(cr), 0, 0.42, 0.7);
+    }
+    m.pop();
+  }
 
   // oars, for a launch
   if (R.oars) {

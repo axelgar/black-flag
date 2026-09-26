@@ -68,7 +68,11 @@ The roster is `src/data/ships.ts`. A ship is a `ShipDef`:
 
 - `base`: her numbers (hull, speed, helm, guns a side, reload, reach, bow chasers, shells, lives)
 - `model`: a procedural `HullRecipe` (length, beam, freeboard, sheer, stern, rig, masts,
-  gun decks, flag, palette), or a GLTF with a recipe fallback
+  gun decks, flag, palette), or a GLTF with a recipe fallback. The recipe also carries her
+  looks: `tatter` (how ragged her canvas is at full hull), `emblem` and `ink` (a skull or the
+  Cross of Burgundy painted on her main canvas), `gilt` (carved and gilded stern and head),
+  `chasers` (bow guns on deck), `squareTops` (square topsails over a fore-and-aft rig), and
+  `palette.inside` (the inboard face of her bulwarks)
 - `ability`: a hook for signature moves; none ship yet
 - `unlock`: `'starter'` or `{ code }`
 
@@ -90,6 +94,42 @@ API. The URL format can stay the same.
 
 `npm run qr -- https://your.site` writes a printable SVG and PNG per code.
 
+### How a ship is drawn
+
+Every hull afloat, the player's and the Spanish line alike, is lofted from its recipe
+by one procedural shipwright in `src/render/ships/`. No models or image files are loaded:
+
+- **Lines** (`form.ts`). The hull is a function of how far along her and how high: a bluff
+  bow that flares, a round bilge going to a V at the ends, the run narrowing under a raked
+  transom, tumblehome, sheer, and stepped quarterdeck, poop and forecastle.
+- **Hull** (`hull.ts`). Planked sides painted in strakes that follow the sheer, with wales
+  standing proud. Then:
+  - decks, bulwarks, rails and balustrades;
+  - gun ports whose red-lined lids swing up while the guns run out, and recoil when a side fires;
+  - lit stern windows, stern walks, quarter galleries, gilded crests and lanterns;
+  - the stem, head and figurehead, catheads and anchors;
+  - on deck: capstan, wheel, boat, casks and a crew (`crew.ts`).
+- **Rig** (`rig.ts`). Masts in sections with tops and crosstrees, yards up to royals, gaffs,
+  spankers, jibs and a spritsail. Shrouds carry ratlines; stays, backstays, lifts, braces
+  and footropes are drawn as rope ribbons.
+- **Paint** (`paint.ts`). Two textures painted pixel by pixel at start-up:
+  - timber: hull and deck planking, spar grain, glazing;
+  - a sail atlas: cloths, reef bands, patches, stains, emblems, and a tear map. The
+    canvas rags from the foot up and rips along its cloths as she takes damage.
+- **Shaders** (`materials.ts`). Four, each three.js's standard or basic material with a few
+  lines spliced in:
+  - timber: the whole solid ship in one draw; swings the lids, runs out the guns, chars with damage;
+  - canvas: fills, luffs and flaps, and glows with the sun behind it;
+  - rope: keeps a line at least a pixel wide and fades it by coverage instead of letting it crawl;
+  - bunting: flags and pennants.
+
+A ship is five draws. Geometry is built once per recipe and shared, and every recipe is
+prebuilt in idle time at start-up. The phone tier builds lighter hulls: fewer stations and
+cylinder sides, sparser ratlines, half the crew. In the console,
+`bf.inspect('foe', 'manowar', 1.5)` puts any hull at anchor in the shipyard (kinds `ship`,
+`foe`, `legend`; the last argument is zoom). `bf.view.peek([x, y, z])` places the camera
+in her frame, and `bf.view.showDamage = 0.7` shows her shot up.
+
 ## Files
 
 ```
@@ -106,9 +146,11 @@ src/
     world.ts     the tick
   render/      three.js; reads a world, never writes one
     view.ts      renderer, camera modes, sync, event → effect
-    ocean.ts     Gerstner swell, shore-distance shallows and surf, glint, foam
-    sky.ts  atmosphere.ts  islands.ts  wakes.ts  fx.ts  markers.ts  waves.ts
-    ships/       procedural.ts (lofted hulls, rigs, billowing sails, flags), ShipModel.ts
+    ocean.ts     Gerstner swell, shore-distance shallows and surf, glint, foam, hull wash
+    sky.ts  atmosphere.ts  islands.ts  builder.ts  wakes.ts  fx.ts  markers.ts  waves.ts
+    ships/       the shipwright: procedural.ts (a ship on the water), form.ts (her lines),
+                 hull.ts, rig.ts, crew.ts, paint.ts (timber and canvas textures),
+                 materials.ts (her shaders), mesh.ts, flags.ts, ShipModel.ts
   ui/          screens, HUD (minimap, pointers, reload rings), input, silhouettes, css
   audio/       synthesised, stereo-placed cannons, sea and shanty
   state/       session (localStorage v2, migrates the v1 record book), run banking
@@ -165,9 +207,13 @@ three lives lost** to **4/4 won, half a life**.
 ## Not built, or not yet measured
 
 - **Balance needs a real player.** The numbers above are a bot that knows where every ship is and never dodges; treat them as relative, not absolute.
-- **Frame rate on a real phone is unmeasured.** Desktop Chrome: about 40 draw calls and
-  ~5ms CPU a frame at wave 9. Low tier (the default on touch devices): DPR 1.5, 3 swell
-  waves, no shadows, no bloom. Picture quality can be forced in Articles.
+- **Frame rate on a real phone is unmeasured.** Desktop Chrome with thirteen ships on
+  screen at wave 14: about 80 draw calls, 275k triangles, and half a millisecond of CPU a
+  frame for the view. Low tier, the default on touch devices:
+  - DPR 1.5, 3 swell waves, no shadows, no bloom;
+  - lighter hulls and 512px ship textures.
+
+  Picture quality can be forced in Articles.
 - **No GLTF ships ship yet.** `ModelSpec` has the `gltf` variant and `ShipModel` is the
   seam. The loader is not written.
 - **Records are this device's.** localStorage only, like v1.

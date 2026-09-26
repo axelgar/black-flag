@@ -8,6 +8,7 @@
 
 import * as THREE from 'three';
 import type { HullRecipe } from '../../data/types';
+import { crewRng, outfitter, sailor } from './crew';
 import { Form, type Step } from './form';
 import { ANIM, FIN, LOD, MIRROR, Mesh, at, frame, type Finish, type V3 } from './mesh';
 
@@ -645,6 +646,7 @@ function anchor(m: Mesh, top: V3, la: number, d: Dress) {
 function furniture(m: Mesh, f: Form, d: Dress, steps: Step[]) {
   const L = f.L, B = f.B;
   const on = (t: number) => f.floor(t) + f.B * 0.012;           // on the crown of the deck
+  const cr = crewRng(f.R), dressFor = outfitter(f.R);
   const clear = (t: number, pad = 0.035) => steps.every((s) => Math.abs(s.t - t) > pad);
   const main = steps.find((s) => s.role === 'main' || s.role === 'single')!;
   const fore = steps.find((s) => s.role === 'fore');
@@ -699,6 +701,8 @@ function furniture(m: Mesh, f: Form, d: Dress, steps: Step[]) {
     // the binnacle before it
     m.paint(d.rail, FIN.wood).push(at(x + 0.9, y + 0.5, 0)).box(0.5, 1.0, 0.55).pop();
     m.paint(d.gold, FIN.gilt).push(at(x + 0.9, y + 1.0, 0)).lathe([[0.2, 0], [0.18, 0.12], [0.08, 0.22], [0.02, 0.25]], 8, true).pop();
+    // and a hand on it
+    sailor(m, x - 0.5, y, 0, dressFor(cr, false), 0, 0.1, 0.9);
   }
 
   // A ship's boat on the booms over the main hatch.
@@ -729,6 +733,25 @@ function furniture(m: Mesh, f: Form, d: Dress, steps: Step[]) {
   if (L > 24 && fore) {
     const t = Math.min(0.97, fore.t + 0.07);
     m.paint(d.metal, FIN.iron).cyl([f.x(t), on(t), 0.4], [f.x(t), on(t) + 1.3, 0.4], 0.18, 0.16, 8, true);
+  }
+
+  // Her people: an officer on the quarterdeck, and hands about the deck, clear of the
+  // masts, the capstan and the boat on the booms.
+  const busy = [tCap, tWheel, ...(L > 25 ? [tHatch - 0.05, tHatch, tHatch + 0.05] : [])];
+  if (f.qd) {
+    const t = Math.max(0.06, f.qd.to - 0.05);
+    if (clear(t, 0.025)) sailor(m, f.x(t), on(t), f.hb(t, on(t)) * 0.35, dressFor(cr, true), Math.PI * 0.1);
+  }
+  const n = Math.round((L / 3.2) * (LOD.lo ? 0.5 : 1));
+  for (let i = 0, tries = 0; i < n && tries < n * 6; tries++) {
+    const t = 0.07 + cr() * 0.88;
+    if (!clear(t, 0.03) || busy.some((b) => Math.abs(b - t) < 0.035)) continue;
+    const fl = on(t);
+    const w = Math.max(0, f.hb(t, fl) - f.thick - 0.6);
+    if (w < 0.4) continue;
+    const z = (cr() * 2 - 1) * w * 0.62;
+    sailor(m, f.x(t), fl, z, dressFor(cr), cr() * Math.PI * 2, 0, cr() < 0.3 ? 0.9 : 0);
+    i++;
   }
 }
 

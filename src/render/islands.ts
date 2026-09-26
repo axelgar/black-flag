@@ -6,7 +6,7 @@
 import * as THREE from 'three';
 import { rng } from '../core/rng';
 import { coastAt, type GameMap, type Island } from '../sim/map';
-import { Builder, type V3 } from './ships/builder';
+import { Builder, type V3 } from './builder';
 
 const PAL = {
   wet: '#B7A07A', sand: '#E3CF9E', grass: '#4F8A3C', jungle: '#2F6B34', rock: '#7D776C', dark: '#5B564E',

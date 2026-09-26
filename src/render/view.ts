@@ -352,6 +352,7 @@ export class View {
 
     const w = this.world;
     this.wakes.begin();
+    this.ocean.beginHulls();
     if (this.mode === 'play' && w) this.syncWorld(w, dt, t);
     else if (this.player) this.player.root.visible = false;
     this.syncShowcase(dt, t);
@@ -377,6 +378,7 @@ export class View {
     const focus = this.camLook;
     this.sun.position.copy(focus).addScaledVector(a.sun, 300);
     this.sun.target.position.copy(focus);
+    this.ocean.endHulls();
     this.ocean.update(t, a, this.camera.position.x, this.camera.position.z);
     this.sky.update(t, a, this.camera.position);
     this.fx.update(dt, t, this.camLook);
@@ -424,6 +426,7 @@ export class View {
     p.ready?.(w.phase !== 'lost');
     const fx = Math.cos(s.h), fz = Math.sin(s.h);
     this.wakes.track(0, s.x - fx * s.len * 0.45, s.y - fz * s.len * 0.45, s.beam, s.v, dt, t);
+    if (!lost) this.ocean.hull(s.x, s.y, s.h, s.len, s.beam, s.v / s.maxSpeed);
     this.fx.bowSpray(s.x + fx * s.len * 0.5, r.heave + 0.5, s.y + fz * s.len * 0.5, s.v);
     const dmg = 1 - s.hull / s.hullMax;
     if (dmg > 0.35) this.fx.burn(s.x, r.heave + 3, s.y, dmg, dt);
@@ -465,6 +468,7 @@ export class View {
     if (e.ports && m.weakPoints) m.weakPoints(e.ports.map((p) => !p.dead));
     const fx = Math.cos(e.h), fz = Math.sin(e.h);
     this.wakes.track(e.id, e.x - fx * e.len * 0.45, e.y - fz * e.len * 0.45, e.beam, e.v, dt, t);
+    this.ocean.hull(e.x, e.y, e.h, e.len, e.beam, e.v / Math.max(1, e.maxSpeed));
     const dmg = 1 - e.hull / e.hullMax;
     if (dmg > 0.4) this.fx.burn(e.x, r.heave + 2 + e.len * 0.05, e.y, dmg, dt);
     if (e.cls === 'brulote' && e.state === 'engage') this.fx.burn(e.x, r.heave + 2, e.y, 0.9, dt);
@@ -574,6 +578,7 @@ export class View {
       h.t += dt;
       const r = ride(h.x, h.z, h.h, h.m.len, h.m.beam, t);
       const k = Math.min(1, h.t / (h.boarded ? 7 : 5));
+      if (k < 0.6) this.ocean.hull(h.x, h.z, h.h, h.m.len, h.m.beam, 0);
       h.m.pose({
         x: h.x, z: h.z, h: h.h, heave: r.heave - k * k * h.m.height * 0.9, pitch: r.pitch + k * 0.35, roll: r.roll + k * 0.5,
         fill: 0, struck: h.boarded, damage: 1, t,
@@ -590,6 +595,7 @@ export class View {
     m.root.visible = this.mode === 'title' || this.mode === 'shipyard' || this.mode === 'port';
     const at = this.anchorage();
     const r = ride(at.x, at.z, at.h, m.len, m.beam, t);
+    if (m.root.visible) this.ocean.hull(at.x, at.z, at.h, m.len, m.beam, 0);
     m.pose({ x: at.x, z: at.z, h: at.h, heave: r.heave, pitch: r.pitch, roll: r.roll, fill: this.mode === 'port' ? 0.15 : 0.7, struck: false, damage: this.showDamage, t });
     m.ready?.(this.mode !== 'port');
     void dt;
@@ -612,9 +618,9 @@ export class View {
       this.camYaw += angleTo(this.camYaw, s.h) * Math.min(1, this.dtLast * 1.1);
       let fight = false;
       for (const e of w.foes) if (e.state === 'engage' && Math.hypot(e.x - s.x, e.y - s.y) < 240) { fight = true; break; }
-      const base = aspect >= 1 ? 150 : 185 / Math.sqrt(aspect);
+      const base = (aspect >= 1 ? this.chase.dist : (this.chase.dist * 1.23) / Math.sqrt(aspect));
       const dist = base * (fight ? 1.18 : 1) + s.len * 0.8;
-      const pitch = 0.78;
+      const pitch = this.chase.pitch;
       const ahead = 16 + s.v * 1.6;
       const look = new THREE.Vector3(s.x + Math.cos(s.h) * ahead, 0, s.y + Math.sin(s.h) * ahead);
       const back = new THREE.Vector3(-Math.cos(this.camYaw), 0, -Math.sin(this.camYaw));
@@ -647,6 +653,8 @@ export class View {
   }
 
   private dtLast = 1 / 60;
+  /** The chase camera: how far back (landscape), and how steeply it looks down. */
+  chase = { dist: 135, pitch: 0.72 };
   private moveCamera(dt: number, t: number) {
     this.dtLast = dt;
     if ((this.mode === 'title' || this.mode === 'shipyard') && this.spin) this.orbit += dt * (this.mode === 'shipyard' ? 0.12 : 0.05);

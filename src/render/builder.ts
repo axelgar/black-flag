@@ -1,6 +1,7 @@
 // A tiny mesh builder: triangles with a flat colour each, in one non-indexed buffer.
-// Flat shading and per-face colour is the whole low-poly look, and building everything
-// for a ship into one of these makes her hull, deck, guns and spars a single draw call.
+// Flat shading and per-face colour is the islands' whole low-poly look, and building a
+// coast, its town and its fort into one of these makes them a single draw call. Ships
+// have their own, richer builder in ships/mesh.ts.
 
 import * as THREE from 'three';
 

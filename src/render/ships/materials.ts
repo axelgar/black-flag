@@ -209,8 +209,11 @@ if (uTatter > 0.0) diffuseColor.rgb *= mix(0.55, 1.0, smoothstep(0.0, 0.035, bfC
 // Cloth is thin: with the sun behind her, a sail glows.
 #if NUM_DIR_LIGHTS > 0
 {
-  float bfBack = saturate(-dot(normal, directionalLights[0].direction));
-  reflectedLight.directDiffuse += diffuseColor.rgb * directionalLights[0].color * bfBack * 0.32;
+  float bfNL = dot(normal, directionalLights[0].direction);
+  float bfBack = saturate(-bfNL);
+  // and it scatters: a sail catches the sun at any angle, never quite edge-dark
+  float bfWrap = saturate(bfNL * 0.5 + 0.5);
+  reflectedLight.directDiffuse += diffuseColor.rgb * directionalLights[0].color * (bfBack * 0.32 + bfWrap * bfWrap * 0.16);
 }
 #endif`)
       .replace('#include <fog_fragment>', FOG);
