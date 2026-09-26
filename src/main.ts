@@ -43,6 +43,12 @@ let covered = false;
 
 Input.attachKeys(() => togglePause(), () => A.unlock());
 Input.attachMouse(app, () => path() === '/play');
+// The wheel brings the chase camera in to look at your ship, or out to look for theirs.
+app.addEventListener('wheel', (e) => {
+  if (path() !== '/play') return;
+  e.preventDefault();
+  view.chaseZoom = Math.min(1.35, Math.max(0.45, view.chaseZoom * Math.exp(e.deltaY * 0.0012)));
+}, { passive: false });
 addEventListener('pointerdown', () => A.unlock(), { once: true });
 
 /* ------------------------------------------------------------ run flow --- */

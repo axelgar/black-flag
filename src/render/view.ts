@@ -619,9 +619,9 @@ export class View {
       let fight = false;
       for (const e of w.foes) if (e.state === 'engage' && Math.hypot(e.x - s.x, e.y - s.y) < 240) { fight = true; break; }
       const base = (aspect >= 1 ? this.chase.dist : (this.chase.dist * 1.23) / Math.sqrt(aspect));
-      const dist = base * (fight ? 1.18 : 1) + s.len * 0.8;
+      const dist = (base * (fight ? 1.18 : 1) + s.len * 0.8) * this.chaseZoom;
       const pitch = this.chase.pitch;
-      const ahead = 16 + s.v * 1.6;
+      const ahead = (16 + s.v * 1.6) * this.chaseZoom;
       const look = new THREE.Vector3(s.x + Math.cos(s.h) * ahead, 0, s.y + Math.sin(s.h) * ahead);
       const back = new THREE.Vector3(-Math.cos(this.camYaw), 0, -Math.sin(this.camYaw));
       const pos = look.clone().addScaledVector(back, Math.cos(pitch) * dist).add(new THREE.Vector3(0, Math.sin(pitch) * dist, 0));
@@ -655,6 +655,8 @@ export class View {
   private dtLast = 1 / 60;
   /** The chase camera: how far back (landscape), and how steeply it looks down. */
   chase = { dist: 135, pitch: 0.72 };
+  /** The player's own pull on the chase camera, from the mouse wheel: under 1 is closer. */
+  chaseZoom = 1;
   private moveCamera(dt: number, t: number) {
     this.dtLast = dt;
     if ((this.mode === 'title' || this.mode === 'shipyard') && this.spin) this.orbit += dt * (this.mode === 'shipyard' ? 0.12 : 0.05);

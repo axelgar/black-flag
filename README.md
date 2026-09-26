@@ -32,6 +32,7 @@ Vite, TypeScript and Three.js. Everything is procedural: no models, textures or 
 | Broadsides | PORT and STBD buttons (the ring is the reload) | Q / E, or left / right mouse button |
 | Mortar | MORTAR button | Space |
 | Heave to | ❙❙ | Esc |
+| Camera | | mouse wheel: in to your ship, out to the horizon |
 
 The fans painted on the water are each side's arc and range. They turn gold when a side
 is loaded and bears on something. The gold dashed ring ahead of the bow is where the

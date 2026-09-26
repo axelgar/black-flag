@@ -565,11 +565,12 @@ function head(m: Mesh, f: Form, d: Dress) {
   const top = kp(1);
   m.paint(d.rail, FIN.wood).beam([top[0] - 0.1, top[1] - 0.2, 0], [top[0] + 0.12, top[1] + 0.45, 0], kw * 2, kd * 0.8, [1, 0, 0]);
 
-  // rudder, hung on the sternpost with iron pintles
-  const c = clamp(f.L * 0.036, 0.7, 2.3), rt = f.ywt + 0.45, x0 = f.x(0);
-  m.paint(d.bottom, FIN.bottom).push(at(x0 - c / 2 - 0.06, (rt - f.D) / 2, 0)).box(c, rt + f.D, kw * 1.7).pop();
+  // rudder: broad at the heel, narrowing to a head that runs up under the counter, hung on
+  // the sternpost with iron pintles
+  const c = clamp(f.L * 0.036, 0.7, 2.3), rt = f.ywt + 0.3, x0 = f.x(0);
+  m.paint(d.bottom, FIN.bottom).slab([[x0 - 0.04, -f.D], [x0 - 0.04, rt], [x0 - c * 0.35, rt], [x0 - c, f.ywt - 0.35], [x0 - c, -f.D + 0.12]], kw * 1.4);
   m.paint(d.metal, FIN.iron);
-  for (const k of [0.2, 0.5, 0.8]) m.push(at(x0 - 0.15, -f.D + (rt + f.D) * k, 0)).box(0.4, 0.09, kw * 1.9).pop();
+  for (const k of [0.15, 0.45, 0.75]) m.push(at(x0 - 0.18, -f.D + (f.ywt + f.D) * k, 0)).box(0.42, 0.09, kw * 1.6).pop();
 
   const gild = d.gilt ? d.gold : d.trim, gildFin = d.gilt ? FIN.gilt : FIN.paint;
   // The head: a knee carrying her figure, headrails, and a grating to stand on.
@@ -582,7 +583,11 @@ function head(m: Mesh, f: Form, d: Dress) {
     const s = clamp(f.L * 0.05, 1.1, 3.2);
     const a = 0.95;
     m.push(frame([xs + kl * 0.97, yT + 0.05, 0], [Math.sin(a), -Math.cos(a), 0], [Math.cos(a), Math.sin(a), 0]));
-    m.paint(gild, gildFin).lathe([[0.06 * s, 0], [0.2 * s, 0.1 * s], [0.26 * s, 0.34 * s], [0.2 * s, 0.58 * s], [0.12 * s, 0.7 * s], [0.17 * s, 0.8 * s], [0.15 * s, 0.94 * s], [0.04 * s, 1.02 * s]], 7, true);
+    m.paint(gild, gildFin);
+    m.lathe([[0.05 * s, 0], [0.19 * s, 0.08 * s], [0.25 * s, 0.3 * s], [0.21 * s, 0.5 * s], [0.12 * s, 0.63 * s], [0.07 * s, 0.68 * s]], 7, false);
+    m.push(at(0, 0.8 * s, 0)).lathe([[0.02 * s, -0.13 * s], [0.12 * s, -0.07 * s], [0.13 * s, 0.03 * s], [0.1 * s, 0.1 * s], [0.02 * s, 0.14 * s]], 7, true).pop();
+    m.push(at(0, 0.93 * s, 0)).lathe([[0.08 * s, 0], [0.12 * s, 0.08 * s], [0.06 * s, 0.06 * s]], 6, false).pop();
+    for (const k of [1, -1]) m.cyl([0, 0.56 * s, k * 0.17 * s], [0.28 * s, 0.34 * s, k * 0.2 * s], 0.055 * s, 0.045 * s, 5, true);
     m.pop();
     // headrails sweeping from her bows down to the figure
     m.paint(gild, gildFin);
