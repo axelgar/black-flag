@@ -179,7 +179,15 @@ function foreAft(cv: Canvas, A: V3, B: V3, C: V3, D: V3, depth: number, region: 
 
 /* --------------------------------------------------------------- masts ---- */
 
-interface Yard { y: number; half: number; r: number; x: number }
+/** A yard: its height and length on the mast, and B, the brace — the turn about its own
+ *  mast section that swings it round to the wind, in the mast's frame. */
+interface Yard { y: number; half: number; r: number; x: number; B: THREE.Matrix4 }
+
+/** Yards are braced round to a wind on the larboard quarter, the one her fore-and-aft
+ *  canvas is filling to: the canvas shows its face to the side and to the chase. */
+const BRACE = -0.3;
+const braced = (axis: number, a = BRACE) =>
+  new THREE.Matrix4().makeTranslation(axis, 0, 0).multiply(new THREE.Matrix4().makeRotationY(a)).multiply(new THREE.Matrix4().makeTranslation(-axis, 0, 0));
 
 interface Mast {
   s: Step;
@@ -197,6 +205,12 @@ interface Mast {
 
 function lp(ms: Mast, p: V3): V3 {
   const v = new THREE.Vector3(...p).applyMatrix4(ms.M);
+  return [v.x, v.y, v.z];
+}
+
+/** A point on a yard, in its braced frame, to the ship. */
+function yp(ms: Mast, y: Yard, p: V3): V3 {
+  const v = new THREE.Vector3(...p).applyMatrix4(y.B).applyMatrix4(ms.M);
   return [v.x, v.y, v.z];
 }
 
@@ -219,16 +233,16 @@ function makeMast(f: Form, s: Step): Mast {
   if (R.rig === 'square') {
     const half = B * 0.9 * s.tall * (s.role === 'mizzen' ? 0.92 : 1);
     const yr = r * 0.5;
-    yards.push({ y: h1 - 0.035 * H, half, r: yr, x: r + yr });
-    if (tiers >= 2) yards.push({ y: h1 + 0.72 * (h2 - h1), half: half * 0.78, r: yr * 0.8, x: xt + rt + yr * 0.8 });
-    if (tiers >= 3) yards.push({ y: h2 + 0.52 * (H - h2), half: half * 0.56, r: yr * 0.62, x: xg + rg + yr * 0.62 });
-    if (tiers >= 4) yards.push({ y: h2 + 0.84 * (H - h2), half: half * 0.4, r: yr * 0.46, x: xg + rg * 0.8 + yr * 0.46 });
+    yards.push({ y: h1 - 0.035 * H, half, r: yr, x: r + yr, B: braced(0) });
+    if (tiers >= 2) yards.push({ y: h1 + 0.72 * (h2 - h1), half: half * 0.78, r: yr * 0.8, x: xt + rt + yr * 0.8, B: braced(xt) });
+    if (tiers >= 3) yards.push({ y: h2 + 0.52 * (H - h2), half: half * 0.56, r: yr * 0.62, x: xg + rg + yr * 0.62, B: braced(xg) });
+    if (tiers >= 4) yards.push({ y: h2 + 0.84 * (H - h2), half: half * 0.4, r: yr * 0.46, x: xg + rg * 0.8 + yr * 0.46, B: braced(xg) });
   } else if (square) {
     // a topsail schooner's foremast: a square topsail and topgallant over her fore-and-aft sail
     const half = B * 0.62;
-    yards.push({ y: h1 - 0.02 * H, half, r: r * 0.4, x: r + r * 0.4 });
-    yards.push({ y: h1 + 0.6 * (H - h1), half: half * 0.72, r: r * 0.32, x: xt + rt + r * 0.32 });
-    yards.push({ y: H * 0.97, half: half * 0.5, r: r * 0.26, x: xt + rt * 0.7 + r * 0.26 });
+    yards.push({ y: h1 - 0.02 * H, half, r: r * 0.4, x: r + r * 0.4, B: braced(0) });
+    yards.push({ y: h1 + 0.6 * (H - h1), half: half * 0.72, r: r * 0.32, x: xt + rt + r * 0.32, B: braced(xt) });
+    yards.push({ y: H * 0.97, half: half * 0.5, r: r * 0.26, x: xt + rt * 0.7 + r * 0.26, B: braced(xt) });
   }
   return { s, x, y0, M, H, r, h1, h2, tw, xt, rt, xg, rg, tall3: !fa && tiers >= 3, yards, square };
 }
@@ -280,10 +294,12 @@ function spars(m: Mesh, ms: Mast, d: Dress, fa: boolean, pole: boolean) {
   m.push(at(tx, H, 0)).lathe([[0.02, 0], [Math.max(0.12, r * 0.45), 0.08], [Math.max(0.12, r * 0.45), 0.18], [0.02, 0.24]], 8, true).pop();
   // yards, tapered from the slings to the arms
   for (const y of ms.yards) {
+    m.push(y.B);
     m.paint(d.rail, FIN.wood);
     m.cyl([y.x, y.y, 0], [y.x, y.y, y.half], y.r, y.r * 0.45, 7, true);
     m.cyl([y.x, y.y, 0], [y.x, y.y, -y.half], y.r, y.r * 0.45, 7, true);
     m.paint(d.metal, FIN.iron).cyl([y.x, y.y, -y.r * 1.6], [y.x, y.y, y.r * 1.6], y.r * 1.12, y.r * 1.12, 7);
+    m.pop();
   }
   m.pop();
 }
@@ -369,7 +385,7 @@ export function buildRig(m: Mesh, cv: Canvas, rp: Ropes, f: Form, d: Dress, embl
         let region = plain(sailNo++);
         if (mark === CANVAS_REGION.cross && k === 0 && (main || ms.s.role === 'fore')) region = mark;
         if (mark === CANVAS_REGION.skull && main && (k === 1 || ms.yards.length === 1)) region = mark;
-        squareSail(cv, ms.M, y.x + y.r * 0.9, yHead, y.half * 0.96, yFoot, hFoot, region, k === 0);
+        squareSail(cv, ms.M.clone().multiply(y.B), y.x + y.r * 0.9, yHead, y.half * 0.96, yFoot, hFoot, region, k === 0);
       });
     }
 
@@ -492,21 +508,21 @@ export function buildRig(m: Mesh, cv: Canvas, rp: Ropes, f: Form, d: Dress, embl
     ms.yards.forEach((y, k) => {
       const above: V3 = k === 0 ? [0, h1 + 0.06 * H, 0] : k === 1 ? [xt, (ms.tall3 ? h2 : H) - 0.1, 0] : [xg, H * 0.98, 0];
       for (const side of [1, -1]) {
-        const arm = lp(ms, [y.x, y.y, side * y.half * 0.97]);
+        const arm = yp(ms, y, [y.x, y.y, side * y.half * 0.97]);
         rp.line(arm, lp(ms, above), rr, HEMP);
         const brace: V3 = aft ? lp(aft, [0, Math.min(aft.H * 0.7, y.y * 0.72), side * aft.r])
           : [f.x(0.05), f.rail(0.05) + 0.2, side * (f.hb(0.05, f.rail(0.05)) - 0.1)];
         rp.line(arm, brace, rr * 0.8, HEMP, 0.25);
-        rp.line(lp(ms, [y.x - y.r, y.y - y.r * 1.5, side * y.r * 2]), lp(ms, [y.x - y.r, y.y - y.r * 1.5, side * y.half * 0.94]), rr * 0.7, HEMP, Math.max(0.35, y.half * 0.07));
+        rp.line(yp(ms, y, [y.x - y.r, y.y - y.r * 1.5, side * y.r * 2]), yp(ms, y, [y.x - y.r, y.y - y.r * 1.5, side * y.half * 0.94]), rr * 0.7, HEMP, Math.max(0.35, y.half * 0.07));
       }
-      rp.line(lp(ms, [y.x, y.y + y.r, 0]), lp(ms, above), rr * 0.9, HEMP);
+      rp.line(yp(ms, y, [y.x, y.y + y.r, 0]), lp(ms, above), rr * 0.9, HEMP);
     });
     // a course's sheets, down to her side abaft the mast
     if (ms.yards.length && R.rig === 'square' && ms.s.role !== 'mizzen') {
       const cf = Math.max(railY + 1.1, ms.y0 + 2.0);
       const y = ms.yards[0];
       for (const side of [1, -1]) {
-        const clew = lp(ms, [y.x + 0.3, cf - ms.y0, side * y.half * 1.0]);
+        const clew = yp(ms, y, [y.x + 0.3, cf - ms.y0, side * y.half * 1.0]);
         const tt = clamp(t - 0.1, 0.02, 1);
         rp.line(clew, [f.x(tt), f.rail(tt) + 0.1, side * (f.hb(tt, f.rail(tt)) - 0.1)], rr, HEMP, 0.3);
       }
@@ -520,10 +536,12 @@ export function buildRig(m: Mesh, cv: Canvas, rp: Ropes, f: Form, d: Dress, embl
     m.push(mm.M);
     sailor(m, mm.r * 0.35 - mm.tw * 0.3, mm.h1 + 0.08, mm.tw * 0.35, dressFor(cr), 0.2);
     const y = mm.yards[0];
+    m.push(y.B);
     for (const side of [1, -1]) {
       const z = side * y.half * (0.35 + cr() * 0.3);
       sailor(m, y.x - y.r - 0.42, y.y - 1.5, z, dressFor(cr), 0, 0.42, 0.7);
     }
+    m.pop();
     m.pop();
   }
 

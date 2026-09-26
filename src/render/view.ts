@@ -643,7 +643,7 @@ export class View {
     }
     // title and shipyard: a slow orbit round the ship at anchor
     const shipyard = this.mode === 'shipyard';
-    const d = ((shipyard ? 1.9 : 2.3) * len + 24) / this.zoom;
+    const d = ((shipyard ? 1.65 : 1.95) * len + 21) / this.zoom;
     const ang = this.orbit + this.dragYaw;
     const look = new THREE.Vector3(at.x, 0.3 * len, at.z);
     // Push the ship to the right of frame so the left-hand column has open sea behind it.

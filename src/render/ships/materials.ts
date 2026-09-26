@@ -128,8 +128,16 @@ if (!(bfPane && vMat.w > 0.0)) diffuseColor.rgb *= bfPane ? mix(0.25, 1.0, bfD) 
 float bfN = bfNoise(vLocal * 0.42) * 0.62 + bfNoise(vLocal * 1.9) * 0.38;
 float bfThr = uScorch * 0.6;
 float bfBurn = (1.0 - smoothstep(bfThr - 0.1, bfThr, bfN)) * (1.0 - vMat.y) * step(0.001, uScorch);
+// Weather on her planking: wet and dark where the sea slaps her, a line of weed at the
+// water, and grime run down her sides from every port and scupper.
+float bfSide = step(bfK, 0.5);
+float bfWet = (1.0 - smoothstep(0.0, 1.2, vLocal.y)) * bfSide;
+float bfWeed = (1.0 - smoothstep(0.04, 0.4, abs(vLocal.y - 0.12))) * (0.45 + 0.55 * bfNoise(vLocal * vec3(0.6, 4.0, 0.6))) * bfSide;
+float bfStreak = smoothstep(0.58, 0.86, bfNoise(vec3(vLocal.x * 1.9, vLocal.y * 0.14, vLocal.z * 1.9))) * bfSide * step(0.3, vLocal.y);
+diffuseColor.rgb *= (1.0 - bfWet * 0.28) * (1.0 - bfStreak * 0.2);
+diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.1, 0.13, 0.06), bfWeed * 0.4);
 diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * 0.18 + vec3(0.03, 0.025, 0.022), bfBurn * 0.85);`)
-      .replace('#include <roughnessmap_fragment>', /* glsl */ `float roughnessFactor = clamp(vMat.x + (1.0 - bfD) * 0.22 + bfBurn * 0.25, 0.05, 1.0);`)
+      .replace('#include <roughnessmap_fragment>', /* glsl */ `float roughnessFactor = clamp(vMat.x + (1.0 - bfD) * 0.22 + bfBurn * 0.25 - bfWet * 0.32, 0.05, 1.0);`)
       .replace('#include <metalnessmap_fragment>', /* glsl */ `float metalnessFactor = vMat.y;`)
       .replace('#include <normal_fragment_maps>', /* glsl */ `#include <normal_fragment_maps>
 #ifdef BF_BUMP
