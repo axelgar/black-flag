@@ -9,9 +9,10 @@ const cache = new Map<FlagKind, THREE.Texture>();
 function paint(kind: FlagKind): HTMLCanvasElement | null {
   if (typeof document === 'undefined') return null;
   const cv = document.createElement('canvas');
-  cv.width = 128; cv.height = 84;
+  cv.width = 256; cv.height = 168;
   const c = cv.getContext('2d')!;
-  const W = cv.width, H = cv.height;
+  c.scale(2, 2);
+  const W = cv.width / 2, H = cv.height / 2;
   if (kind === 'black') {
     c.fillStyle = '#0D0D0E'; c.fillRect(0, 0, W, H);
     c.fillStyle = '#EDE6D4';
@@ -57,7 +58,7 @@ export function flagTexture(kind: FlagKind): THREE.Texture | null {
   if (!cv) return null;
   const t = new THREE.CanvasTexture(cv);
   t.colorSpace = THREE.SRGBColorSpace;
-  t.anisotropy = 2;
+  t.anisotropy = 4;
   cache.set(kind, t);
   return t;
 }

@@ -11,7 +11,8 @@ import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPa
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { angleTo, clamp } from '../core/vec';
 import { CLASSES } from '../data/enemies';
-import { shipById } from '../data/ships';
+import { LEGENDS } from '../data/legends';
+import { SHIPS, shipById } from '../data/ships';
 import { recipeOf } from '../data/upgrades';
 import type { HullRecipe } from '../data/types';
 import type { GameMap } from '../sim/map';
@@ -25,7 +26,7 @@ import { Ocean } from './ocean';
 import { Sky } from './sky';
 import { Wakes } from './wakes';
 import { heightAt, ride } from './waves';
-import { ProceduralShip, setShipTime } from './ships/procedural';
+import { ProceduralShip, prewarmShips, setShipLights, setShipTime, setShipView, shipQuality } from './ships/procedural';
 import type { ShipModel } from './ships/ShipModel';
 import { STRIKE_WINDOW, BOARD_TIME } from '../sim/combat';
 
@@ -45,6 +46,8 @@ function modelFor(R: HullRecipe, weak?: { fwd: number; side: -1 | 1 }[]): ShipMo
 }
 
 interface Hulk { m: ShipModel; t: number; x: number; z: number; h: number; boarded: boolean }
+
+const WHITE = new THREE.Color(1, 1, 1);
 
 export class View {
   renderer: THREE.WebGLRenderer;
@@ -87,6 +90,7 @@ export class View {
   private flash = 0;
   private lightning = 0;
   private orbit = 2.3;
+  private shade = new THREE.Color();
   private seaT = 0;
   private dragYaw = 0;
 
@@ -97,8 +101,11 @@ export class View {
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.shadowMap.enabled = high;
-    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.renderer.shadowMap.type = THREE.PCFShadowMap;
     this.pmrem = new THREE.PMREMGenerator(this.renderer);
+    shipQuality(high, this.renderer.capabilities.getMaxAnisotropy());
+    prewarmShips([...SHIPS.map(recipeOf), ...Object.values(CLASSES).map((c) => c.recipe), ...LEGENDS.map((l) => l.recipe)]);
+    this.scene.fog = new THREE.Fog('#CFE0DF', 380, 1500);
 
     this.camera = new THREE.PerspectiveCamera(42, 1, 0.5, 5000);
 
@@ -146,6 +153,7 @@ export class View {
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
     this.fx.setViewport(h * dpr, this.camera.fov);
+    setShipView(this.camera.fov, h * dpr);
   }
 
   setReduced(on: boolean) {
@@ -203,6 +211,7 @@ export class View {
     this.playerShip = id;
     this.player = modelFor(recipeOf(shipById(id)));
     this.player.setShadows(this.tier === 'high');
+    this.player.fog?.(0.35);
     this.scene.add(this.player.root);
   }
 
@@ -220,6 +229,31 @@ export class View {
 
   /** Spin the showcase camera by a drag. */
   nudgeOrbit(d: number) { this.dragYaw += d; }
+
+  /** For the console: put any recipe at anchor where the showcase ship rides, and look
+   *  at her from `zoom` times closer. `bf.inspect('foe', 'frigate')`. */
+  inspect(R: HullRecipe | null, zoom = 1) {
+    if (this.showcase) this.drop(this.showcase);
+    this.showcase = null;
+    this.showcaseId = R ? `inspect:${JSON.stringify(R).length}` : '';
+    this.zoom = zoom;
+    if (!R) return;
+    this.showcase = modelFor(R);
+    this.showcase.setShadows(this.tier === 'high');
+    this.scene.add(this.showcase.root);
+  }
+  zoom = 1;
+  /** For the console: how shot up the showcase ship is, 0..1. */
+  showDamage = 0;
+  /** For the console: a camera at `pos` looking at `look`, both relative to the showcase
+   *  ship's anchorage and in her frame (x forward, y up, z starboard). null to let go. */
+  peek(pos: [number, number, number] | null, look: [number, number, number] = [0, 3, 0]) {
+    this.peekAt = pos ? { pos, look } : null;
+  }
+  private peekAt: { pos: [number, number, number]; look: [number, number, number] } | null = null;
+  /** For the console: hold the showcase orbit still, at an angle. */
+  orbitAt(a: number) { this.orbit = a; this.dragYaw = 0; this.spin = false; }
+  private spin = true;
 
   private drop(m: ShipModel) {
     this.scene.remove(m.root);
@@ -241,7 +275,16 @@ export class View {
     for (const e of events) {
       const x = e.x as number, z = e.y as number;
       switch (e.k) {
-        case 'cannon': this.fx.muzzle(x, Y + 0.6, z, e.dx as number, e.dy as number); if (e.i === 0) this.shake(0.12); break;
+        case 'cannon': {
+          this.fx.muzzle(x, Y + 0.6, z, e.dx as number, e.dy as number);
+          if (e.i === 0) {
+            this.shake(0.12);
+            // which side fired: the shot's direction against her starboard beam
+            const h = w.ship.h, side = (e.dx as number) * -Math.sin(h) + (e.dy as number) * Math.cos(h) > 0 ? 1 : -1;
+            this.player?.fired?.(side);
+          }
+          break;
+        }
         case 'bow': this.fx.muzzle(x, Y, z, Math.cos(e.h as number), Math.sin(e.h as number), 0.6); break;
         case 'foe-fire': this.foeFire(w, e); break;
         case 'thud': if (e.rock) this.fx.splash(x, z, t); else this.fx.thud(x, Y + 1, z); break;
@@ -273,6 +316,7 @@ export class View {
     if (!foe || !m) { this.fx.muzzle(e.x as number, 3, e.y as number, 0, 0); return; }
     const side = e.side as -1 | 1 | undefined;
     if (side) {
+      m.fired?.(side);
       const ports = m.gunPorts(side);
       const [dx, dz] = sideVec(foe.h, side === 1 ? 1 : 0);
       const n = Math.min(ports.length, (e.n as number) || ports.length);
@@ -319,6 +363,12 @@ export class View {
     // light and air
     const a = this.air;
     this.renderer.toneMappingExposure = a.exposure * (1 + this.lightning * 0.6);
+    const fog = this.scene.fog as THREE.Fog;
+    fog.color.copy(a.horizon); fog.near = a.fogNear; fog.far = a.fogFar;
+    // Lanterns and stern windows: a glow by day, bright at dusk and in weather.
+    const low = Math.max(0, 1 - a.sun.y * 1.6), dim = Math.max(0, 1 - a.sunIntensity / 2.6);
+    this.shade.copy(a.hemiSky).lerp(WHITE, 0.55).multiplyScalar(clamp(0.35 + a.sunIntensity * 0.25, 0.4, 1));
+    setShipLights(0.25 + low * 1.4 + dim, this.shade);
     this.sun.color.copy(a.sunColor);
     this.sun.intensity = a.sunIntensity;
     this.hemi.color.copy(a.hemiSky);
@@ -371,6 +421,7 @@ export class View {
     });
     // blink while she has grace
     p.root.visible = !(s.invuln > 0 && Math.floor(t * 12) % 2 === 0 && w.phase !== 'lost');
+    p.ready?.(w.phase !== 'lost');
     const fx = Math.cos(s.h), fz = Math.sin(s.h);
     this.wakes.track(0, s.x - fx * s.len * 0.45, s.y - fz * s.len * 0.45, s.beam, s.v, dt, t);
     this.fx.bowSpray(s.x + fx * s.len * 0.5, r.heave + 0.5, s.y + fz * s.len * 0.5, s.v);
@@ -407,8 +458,10 @@ export class View {
       fill: struck ? 0.05 : clamp(e.sail * (e.v / Math.max(1, e.maxSpeed) + 0.5), 0.2, 1),
       struck, damage: 1 - e.hull / e.hullMax, t,
     });
+    m.ready?.(e.state === 'engage');
     m.portsOpen(e.broadSide, e.broad > 0);
     m.portsOpen(e.broadSide === 1 ? -1 : 1, false);
+    m.detail?.(this.camera.position.distanceTo(m.root.position));
     if (e.ports && m.weakPoints) m.weakPoints(e.ports.map((p) => !p.dead));
     const fx = Math.cos(e.h), fz = Math.sin(e.h);
     this.wakes.track(e.id, e.x - fx * e.len * 0.45, e.y - fz * e.len * 0.45, e.beam, e.v, dt, t);
@@ -537,7 +590,8 @@ export class View {
     m.root.visible = this.mode === 'title' || this.mode === 'shipyard' || this.mode === 'port';
     const at = this.anchorage();
     const r = ride(at.x, at.z, at.h, m.len, m.beam, t);
-    m.pose({ x: at.x, z: at.z, h: at.h, heave: r.heave, pitch: r.pitch, roll: r.roll, fill: this.mode === 'port' ? 0.15 : 0.55, struck: false, damage: 0, t });
+    m.pose({ x: at.x, z: at.z, h: at.h, heave: r.heave, pitch: r.pitch, roll: r.roll, fill: this.mode === 'port' ? 0.15 : 0.7, struck: false, damage: this.showDamage, t });
+    m.ready?.(this.mode !== 'port');
     void dt;
   }
 
@@ -576,21 +630,26 @@ export class View {
       const pos = new THREE.Vector3(h.x + 70, 26, h.y + 110);
       return { pos, look, rate: 1.6 };
     }
+    if (this.peekAt) {
+      const c = Math.cos(at.h), sn = Math.sin(at.h);
+      const w = ([x, y, z]: [number, number, number]) => new THREE.Vector3(at.x + x * c - z * sn, y, at.z + x * sn + z * c);
+      return { pos: w(this.peekAt.pos), look: w(this.peekAt.look), rate: 30 };
+    }
     // title and shipyard: a slow orbit round the ship at anchor
     const shipyard = this.mode === 'shipyard';
-    const d = (shipyard ? 1.9 : 2.3) * len + 24;
+    const d = ((shipyard ? 1.9 : 2.3) * len + 24) / this.zoom;
     const ang = this.orbit + this.dragYaw;
     const look = new THREE.Vector3(at.x, 0.3 * len, at.z);
     // Push the ship to the right of frame so the left-hand column has open sea behind it.
     if (aspect > 1) { const k = len * (shipyard ? 0.45 : 0.6); look.x -= Math.sin(ang) * k; look.z += Math.cos(ang) * k; }
-    const pos = new THREE.Vector3(at.x + Math.cos(ang) * d, 4 + len * 0.22, at.z + Math.sin(ang) * d);
+    const pos = new THREE.Vector3(at.x + Math.cos(ang) * d, 4 + (len * 0.22) / Math.sqrt(this.zoom), at.z + Math.sin(ang) * d);
     return { pos, look, rate: 1.8 };
   }
 
   private dtLast = 1 / 60;
   private moveCamera(dt: number, t: number) {
     this.dtLast = dt;
-    if (this.mode === 'title' || this.mode === 'shipyard') this.orbit += dt * (this.mode === 'shipyard' ? 0.12 : 0.05);
+    if ((this.mode === 'title' || this.mode === 'shipyard') && this.spin) this.orbit += dt * (this.mode === 'shipyard' ? 0.12 : 0.05);
     const { pos, look, rate } = this.target();
     const k = 1 - Math.exp(-dt * rate);
     this.camPos.lerp(pos, k);

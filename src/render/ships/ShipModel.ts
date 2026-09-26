@@ -24,8 +24,16 @@ export interface ShipModel {
   pose(p: ShipPose): void;
   /** Open (or close) a side's ports — the frigate's tell. */
   portsOpen(side: -1 | 1, open: boolean): void;
+  /** Clear for action: lids up, guns run out. */
+  ready?(on: boolean): void;
+  /** A side has fired: its guns recoil and are run out again. */
+  fired?(side: -1 | 1): void;
   /** A legendary's weak points: show the live ones, hide the dead. */
   weakPoints?(alive: boolean[]): void;
+  /** How far she is from the camera, so fine work can be dropped when nobody could see it. */
+  detail?(distance: number): void;
+  /** How much of the fog she takes, 0..1. */
+  fog?(k: number): void;
   setShadows(on: boolean): void;
   dispose(): void;
 }

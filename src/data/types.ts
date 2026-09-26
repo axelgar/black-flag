@@ -9,7 +9,10 @@ export interface Palette {
   rail: string;     // gunwale, masts, spars
   sail: string;
   trim: string;     // port lids, stern gallery, her owner's colour
+  inside?: string;  // the inboard face of her bulwarks — warships painted them red
 }
+
+export type Emblem = 'none' | 'cross' | 'skull';
 
 export type Rig = 'square' | 'fore-aft' | 'lateen' | 'none';
 export type Stern = 'transom' | 'castle' | 'galleon' | 'pointed';
@@ -34,6 +37,17 @@ export interface HullRecipe {
   oars?: boolean;
   flag: FlagKind;
   palette: Palette;
+  /** How weathered her canvas is at full hull: 0 new from the loft, 0.3 a ghost. Shot adds to it. */
+  tatter?: number;
+  /** Painted on her main canvas, in `ink`. */
+  emblem?: Emblem;
+  ink?: string;
+  /** Carved and gilded stern and head. Galleons have it whether it is asked for or not. */
+  gilt?: boolean;
+  /** Bow chasers on her foredeck, where they can be seen. */
+  chasers?: boolean;
+  /** A square topsail over a fore-and-aft foremast: a topsail schooner. */
+  squareTops?: boolean;
 }
 
 /** A ship model is either built from a recipe or loaded. Every ShipModel honours both. */

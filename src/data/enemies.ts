@@ -8,13 +8,15 @@
 
 import type { FoeClass, Palette } from './types';
 
+// The Spanish line in 1715: ochre sides, black wales, a red band through the ports, red
+// inside the bulwarks, and the Cross of Burgundy on her courses.
 const SPANISH: Palette = {
-  hull: '#5A4029', wale: '#1F1A15', bottom: '#2A2019', deck: '#B08C5A',
-  rail: '#2C2015', sail: '#E9E0C8', trim: '#9A2E26',
+  hull: '#6A4A2C', wale: '#A33A2A', bottom: '#D8CFB8', deck: '#B08C5A',
+  rail: '#1E1712', sail: '#EFE7D2', trim: '#C9A13B', inside: '#8A2E24',
 };
 const TARRED: Palette = {
   hull: '#2B2420', wale: '#150F0B', bottom: '#120E0B', deck: '#6B5438',
-  rail: '#120D09', sail: '#8C7D66', trim: '#C4501E',
+  rail: '#120D09', sail: '#8C7D66', trim: '#C4501E', inside: '#2B2420',
 };
 
 export const CLASSES: Record<string, FoeClass> = {
@@ -81,7 +83,7 @@ export const CLASSES: Record<string, FoeClass> = {
     recipe: {
       length: 15, beam: 4.4, freeboard: 1.3, draft: 1.1, sheer: 0.4, stern: 'transom',
       forecastle: false, bowsprit: false, masts: 1, rig: 'square', mastHeight: 0.8, tiers: 1,
-      gunsPerSide: 0, gunDecks: 0, flag: 'crimson', palette: TARRED,
+      gunsPerSide: 0, gunDecks: 0, flag: 'crimson', palette: TARRED, tatter: 0.22, emblem: 'none',
     },
   },
 };

@@ -11,8 +11,8 @@ export const LEGENDS: LegendDef[] = [
     recipe: {
       length: 64, beam: 17, freeboard: 6.4, draft: 5, sheer: 2.2, stern: 'galleon',
       forecastle: true, bowsprit: true, masts: 3, rig: 'square', mastHeight: 0.85, tiers: 3,
-      gunsPerSide: 11, gunDecks: 3, flag: 'spain',
-      palette: { hull: '#6A5234', wale: '#2A1F12', bottom: '#8A5A36', deck: '#C7A470', rail: '#33260F', sail: '#F2EAD4', trim: '#C9A227' },
+      gunsPerSide: 11, gunDecks: 3, flag: 'spain', gilt: true,
+      palette: { hull: '#7A5A36', wale: '#1E1812', bottom: '#DCD3BC', deck: '#C7A470', rail: '#1E1812', sail: '#F6F0DE', trim: '#D9B23C', inside: '#8A2E24' },
     },
   },
   {
@@ -22,8 +22,8 @@ export const LEGENDS: LegendDef[] = [
     recipe: {
       length: 58, beam: 15, freeboard: 5.6, draft: 4.6, sheer: 1.9, stern: 'galleon',
       forecastle: true, bowsprit: true, masts: 3, rig: 'square', mastHeight: 0.9, tiers: 3,
-      gunsPerSide: 9, gunDecks: 2, flag: 'crimson',
-      palette: { hull: '#1C1A20', wale: '#7B2B3A', bottom: '#0B0A0D', deck: '#4C4552', rail: '#0B0A0D', sail: '#2A2732', trim: '#7B2B3A' },
+      gunsPerSide: 9, gunDecks: 2, flag: 'crimson', gilt: true, tatter: 0.14, emblem: 'none',
+      palette: { hull: '#1C1A20', wale: '#7B2B3A', bottom: '#0B0A0D', deck: '#4C4552', rail: '#0B0A0D', sail: '#2A2732', trim: '#7B2B3A', inside: '#3A1219' },
     },
   },
   {
@@ -33,8 +33,8 @@ export const LEGENDS: LegendDef[] = [
     recipe: {
       length: 62, beam: 16.5, freeboard: 6.2, draft: 5, sheer: 2, stern: 'galleon',
       forecastle: true, bowsprit: true, masts: 3, rig: 'square', mastHeight: 0.9, tiers: 3,
-      gunsPerSide: 10, gunDecks: 3, flag: 'england',
-      palette: { hull: '#4A2C22', wale: '#D8B040', bottom: '#8E5A34', deck: '#C39A63', rail: '#241009', sail: '#F0E7D2', trim: '#1E3E7A' },
+      gunsPerSide: 10, gunDecks: 3, flag: 'england', gilt: true, emblem: 'none',
+      palette: { hull: '#3A2A20', wale: '#D8B040', bottom: '#B87A48', deck: '#C39A63', rail: '#16100B', sail: '#F0E7D2', trim: '#1E3E7A', inside: '#8A2E24' },
     },
   },
   {
@@ -44,8 +44,8 @@ export const LEGENDS: LegendDef[] = [
     recipe: {
       length: 56, beam: 15.5, freeboard: 5.8, draft: 4.8, sheer: 2.1, stern: 'galleon',
       forecastle: true, bowsprit: true, masts: 3, rig: 'square', mastHeight: 0.88, tiers: 3,
-      gunsPerSide: 9, gunDecks: 2, flag: 'gold',
-      palette: { hull: '#6C4A26', wale: '#D9A441', bottom: '#B07A3A', deck: '#D3AE6B', rail: '#2C1C0C', sail: '#F6EFDA', trim: '#D9A441' },
+      gunsPerSide: 9, gunDecks: 2, flag: 'gold', gilt: true, emblem: 'cross',
+      palette: { hull: '#6C4A26', wale: '#D9A441', bottom: '#B87A48', deck: '#D3AE6B', rail: '#2C1C0C', sail: '#F6EFDA', trim: '#D9A441', inside: '#8A2E24' },
     },
   },
 ];

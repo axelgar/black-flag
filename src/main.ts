@@ -5,7 +5,9 @@
 // which is what makes a seeded run replay the same on a 60Hz phone and a 120Hz one.
 
 import './ui/app.css';
-import { legendFor } from './data/legends';
+import { legendById, legendFor } from './data/legends';
+import { CLASSES } from './data/enemies';
+import { recipeOf } from './data/upgrades';
 import { sailCount } from './data/waves';
 import { shipById } from './data/ships';
 import { session, save, meet, beat, nav } from './state/session';
@@ -331,4 +333,9 @@ requestAnimationFrame(() => setTimeout(() => document.getElementById('boot')?.cl
   view, session, get world() { return world; },
   /** Drive the clock by hand — for a background tab, where requestAnimationFrame sleeps. */
   pump(seconds: number, fps = 60) { for (let t = 0; t < seconds; t += 1 / fps) tick(1 / fps); document.getElementById('boot')?.classList.add('gone'); },
+  /** Look at any hull in the game at anchor: `inspect('foe', 'manowar')`, `inspect('legend', 'dama', 2)`. */
+  inspect(kind: 'ship' | 'foe' | 'legend', id: string, zoom = 1) {
+    const R = kind === 'foe' ? CLASSES[id]?.recipe : kind === 'legend' ? legendById(id).recipe : recipeOf(shipById(id));
+    view.inspect(R ?? null, zoom);
+  },
 };
