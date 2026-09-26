@@ -644,9 +644,13 @@ export class View {
     const at = this.anchorage();
     const len = this.showcase?.len ?? 30;
     if (this.mode === 'port') {
+      // in the harbour, looking up at the town over your own ship's quarter, drifting a
+      // little from side to side as if the boat you are sitting in swings to her anchor
       const h = this.map.harbour, n = this.map.nassau;
-      const look = new THREE.Vector3((h.x + n.x) / 2 + 8, 6, (h.y + n.y) / 2 + 20);
-      const pos = new THREE.Vector3(h.x + 70, 26, h.y + 110);
+      const sway = Math.sin(this.seaT * 0.07) * 14;
+      // (the port's ledger is on the right: the town sits in the open two-thirds of the frame)
+      const look = new THREE.Vector3(n.x + 30, 8, n.y + n.r * 0.3);
+      const pos = new THREE.Vector3(h.x + 52 + sway, 20, h.y + 60);
       return { pos, look, rate: 1.6 };
     }
     if (this.peekAt) {

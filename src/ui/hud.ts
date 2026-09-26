@@ -258,16 +258,25 @@ function minimap(w: World, yaw: number) {
     const bc = b.getContext('2d')!;
     bc.fillStyle = 'rgba(18,58,74,.9)';
     bc.beginPath(); bc.arc(R, R, R - 2, 0, Math.PI * 2); bc.fill();
-    for (const is of w.map.islands) {
-      bc.fillStyle = is.kind === 'nassau' ? '#E3CF9E' : is.kind === 'rock' ? '#8C8374' : '#6E9D55';
+    const coast = (is: (typeof w.map.islands)[number], grow: number) => {
       bc.beginPath();
       is.radii.forEach((r, i) => {
         const a = (i / is.radii.length) * Math.PI * 2;
-        const x = R + (is.x + Math.cos(a) * r) * scale, y = R + (is.y + Math.sin(a) * r) * scale;
+        const x = R + (is.x + Math.cos(a) * (r + grow)) * scale, y = R + (is.y + Math.sin(a) * (r + grow)) * scale;
         if (i) bc.lineTo(x, y); else bc.moveTo(x, y);
       });
-      bc.closePath(); bc.fill();
+      bc.closePath();
+    };
+    // the shallows first, pale round every coast, then the land on them
+    bc.fillStyle = 'rgba(96,196,196,.28)';
+    for (const is of w.map.islands) { coast(is, 26); bc.fill(); }
+    for (const is of w.map.islands) {
+      bc.fillStyle = is.kind === 'nassau' ? '#E3CF9E' : is.kind === 'rock' ? '#8C8374' : is.kind === 'sand' ? '#D9C58E' : '#6E9D55';
+      coast(is, 0); bc.fill();
     }
+    bc.fillStyle = 'rgba(242,231,206,.55)';
+    bc.font = '600 13px ui-monospace, monospace'; bc.textAlign = 'center'; bc.textBaseline = 'top';
+    bc.fillText('N', R, 5);
     bc.fillStyle = 'rgba(220,240,240,.4)';
     for (const k of w.map.reefs) { bc.beginPath(); bc.arc(R + k.x * scale, R + k.y * scale, 1.6, 0, Math.PI * 2); bc.fill(); }
     h.mapBase = b; h.mapSeed = w.map.seed;
@@ -285,6 +294,11 @@ function minimap(w: World, yaw: number) {
     c.fillStyle = isPrize(e) ? '#F6F1E1' : e.L ? '#FF7A3C' : e.state === 'engage' ? '#E0533F' : 'rgba(224,83,63,.5)';
     c.beginPath(); c.arc(x, y, e.L ? 4.5 : 3, 0, Math.PI * 2); c.fill();
   }
+  // cargo afloat, and spouts
+  c.fillStyle = '#FFD36A';
+  for (const d of w.drops) { if (d.dead) continue; const [x, y] = P(d.x, d.y); c.beginPath(); c.arc(x, y, 2.2, 0, Math.PI * 2); c.fill(); }
+  c.strokeStyle = 'rgba(235,245,245,.85)'; c.lineWidth = 1.5;
+  for (const p of w.spouts) { const [x, y] = P(p.x, p.y); c.beginPath(); c.arc(x, y, 3.5, 0, Math.PI * 1.6); c.stroke(); }
   // you, and the way the camera looks
   const [sx, sy] = P(w.ship.x, w.ship.y);
   c.save();

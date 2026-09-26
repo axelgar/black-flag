@@ -124,6 +124,37 @@ by one procedural shipwright in `src/render/ships/`. No models or image files ar
   - rope: keeps a line at least a pixel wide and fades it by coverage instead of letting it crawl;
   - bunting: flags and pennants.
 
+### How the world is drawn
+
+The land and sea are procedural too, and built once per chart.
+
+- **Islands** (`render/land/ground.ts`). Each island is a heightfield shaped to the chart's
+  coastline, so what you see is what you run aground on:
+  - jungle hills round an off-centre summit, with ridges and gullies;
+  - rock islands cut in ledged cliffs up to a craggy top;
+  - sand cays of dunes.
+
+  The ground shader paints sand, grass, rock and dirt from one texture in world space.
+  Strata stand up on cliff faces, and the ground is wet at the water's edge.
+- **Plants and rocks** (`land/flora.ts`). Palms with curved trunks and leaflet fronds, a
+  jungle canopy, scrub and hardwoods, and boulders grown from 3D noise. Each island's
+  plants are one mesh that sways in the wind.
+- **Nassau** (`land/nassau.ts`). A town laid out on the island's own slope:
+  - terraced rows of plastered houses following the bay;
+  - warehouses and a tavern on the quay, a church, the governor's house;
+  - a pirate camp on the beach;
+  - a bastioned fort with its guns, and a lighthouse whose beam sweeps at dusk;
+  - piers with boats, and a market square.
+- **Sea** (`ocean.ts`).
+  - Gerstner swell, and caustics in the shallows.
+  - Surf that breaks in lengths, and a foam collar and bow wave on every hull.
+  - Everything painted on the water rides the same swell through shared uniforms (`waves.ts`).
+- **Sky** (`sky.ts`). Cumulus lit by stepping toward the sun, with cirrus above.
+- **Flotsam** (`flotsam.ts`). Floating cargo in gold rings, and waterspouts.
+
+For the console, `bf.view.eye([x, y, z], [lx, ly, lz])` puts the camera anywhere in world
+coordinates.
+
 A ship is five draws. Geometry is built once per recipe and shared, and every recipe is
 prebuilt in idle time at start-up. The phone tier builds lighter hulls: fewer stations and
 cylinder sides, sparser ratlines, half the crew. In the console,
@@ -147,8 +178,12 @@ src/
     world.ts     the tick
   render/      three.js; reads a world, never writes one
     view.ts      renderer, camera modes, sync, event → effect
-    ocean.ts     Gerstner swell, shore-distance shallows and surf, glint, foam, hull wash
-    sky.ts  atmosphere.ts  islands.ts  builder.ts  wakes.ts  fx.ts  markers.ts  waves.ts
+    ocean.ts     Gerstner swell, shallows and caustics, surf, glint, foam, hull wash
+    islands.ts   builds every island from the chart
+    land/        ground.ts (heightfields, ground shader), flora.ts (palms, canopy, rocks),
+                 nassau.ts (the town, fort, light and quays), paint.ts (land textures)
+    flotsam.ts   floating cargo and waterspouts
+    sky.ts  atmosphere.ts  noise.ts  builder.ts  wakes.ts  fx.ts  markers.ts  waves.ts
     ships/       the shipwright: procedural.ts (a ship on the water), form.ts (her lines),
                  hull.ts, rig.ts, crew.ts, paint.ts (timber and canvas textures),
                  materials.ts (her shaders), mesh.ts, flags.ts, ShipModel.ts
