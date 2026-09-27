@@ -101,6 +101,12 @@ tough. This rule is cheap to set now and very hard to change later.
 
 ## 4. Let the game hold more than one player
 
+> **Built 27 September 2026.** `World.players`, one `Input` per captain, shot and shells
+> with an owner and a team, the Spanish hunting the nearest captain, and a `pvp` switch.
+> Checked against eight single-player battles recorded before the change: all eight
+> replay byte for byte. The view draws other captains' ships; `bf.crew()` previews one.
+> Not built: the network. A server still has to step the world and send it out.
+
 **Now.** The world has exactly one player ship (`ship: Player` in `src/sim/types.ts`), and 26
 places in the simulation assume it. Plunder, notoriety and lives are stored on the world,
 not on a player. There is one `Input`. Cannonballs belong to one of two fixed sides

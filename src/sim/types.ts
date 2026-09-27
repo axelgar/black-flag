@@ -29,7 +29,22 @@ export type Side = 0 | 1;  // 0 = port (left), 1 = starboard (right)
 
 export interface Buffs { powder: number; heavy: number; chain: number; swivel: number }
 
+/**
+ * A player's ship. A world holds one for a game on your own and several for a shared
+ * sea; each ship has her own hull, guns, controls, takings and notoriety. Her `id` is her
+ * place in `World.players`, and the Spanish are numbered after the last of them.
+ */
 export interface Player extends Vessel {
+  seat: string;            // who is sailing her: the server's player id, or '' on your own
+  shipId: string;
+  stats: ShipStats;
+  team: number;            // shot hits anyone not on the firer's team. The Spanish are 0
+  plunder: number;
+  heat: number;            // her notoriety, 0..HEAT_MAX
+  lives: number;
+  boarded: number;
+  sunk: number;
+  out: boolean;            // her last life is gone: no longer hunted, hit or steered
   cool: [number, number];  // reload left on each side
   volley: { side: Side; next: number; fired: number; t: number } | null;
   bowCool: number;
@@ -68,6 +83,7 @@ export interface Foe extends Vessel {
   broadSide: -1 | 1;
   strikeT: number;
   struckOnce: boolean;
+  by: number;                  // the captain who last hurt her: her escape is on that one's notoriety
   spentT: number;
   hunter: boolean;
   chase: number;               // brulote gathering way
@@ -84,10 +100,15 @@ export interface Shot {
   x: number; y: number; vx: number; vy: number;
   r: number; dmg: number; foe: boolean; kind: 'ball' | 'chain';
   pierce: number; age: number; life: number; dead: boolean;
-  from: number;                // who fired it — a ship does not hit herself
+  from: number;                // the last ship it went through (at first, whoever fired it): not hit twice
+  by: number;                  // the captain who fired it, or -1 for the Spanish
+  team: number;                // it hits anyone not on this team
 }
 
-export interface Mark { x: number; y: number; r: number; t: number; max: number; own: boolean; dmg: number; done: boolean }
+/** A shell falling. `by` is the captain who threw it, or -1 for the Spanish; `at` is the
+ *  captain it was meant for (-1 for none), whose refit clears it; `own` is any captain's,
+ *  for the renderer's colours. */
+export interface Mark { x: number; y: number; r: number; t: number; max: number; own: boolean; by: number; at: number; dmg: number; done: boolean }
 export interface Drop { id: number; x: number; y: number; kind: DropId; dur: number; age: number; dead: boolean }
 export interface Spout { id: number; x: number; y: number; r: number; vx: number; vy: number; age: number; life: number }
 export interface Squad { x: number; y: number }
@@ -106,11 +127,11 @@ export interface Input {
 export interface World {
   seed: string;
   wave: number;
-  shipId: string;
   map: GameMap;
   plan: WavePlan;
-  stats: ShipStats;
   reduce: boolean;
+  /** Whether captains' shot hurts other captains. Off, a shared sea is a crew. */
+  pvp: boolean;
   r: Rng;
   weather: Weather;
   t: number;
@@ -118,16 +139,13 @@ export interface World {
   quiet: number;
   nextId: number;
   phase: Phase;
-  heat: number;
-  plunder: number;
-  lives: number;
-  boarded: number;
-  sunk: number;
   speedMul: number;
   reloadMul: number;
   drift: { x: number; y: number };
   shake: number;
-  ship: Player;
+  players: Player[];
+  /** Host flag: whose eyes the view, the HUD and the sound are behind. Never read by the sim. */
+  focus: number;
   foes: Foe[];
   shots: Shot[];
   drops: Drop[];
@@ -143,3 +161,26 @@ export interface World {
 export const ev = (w: World, k: string, o: Record<string, unknown> = {}) => {
   if (w.events.length < 96) w.events.push({ k, ...o });
 };
+
+/** The captain the host is looking through. */
+export const you = (w: World): Player => w.players[w.focus] ?? w.players[0];
+
+/** Is this event about one captain in particular, and is it not the one on screen? Toasts,
+ *  haptics and the hurt sound are for your own ship; smoke and splashes are for everyone. */
+export const theirs = (w: World, e: GameEvent) => typeof e.p === 'number' && e.p !== you(w).id;
+
+/** Every captain still in it. */
+export const afloat = (w: World) => w.players.filter((p) => !p.out);
+
+/** The captain nearest a point, of those still in it. With nobody left (the last one went
+ *  down this very tick) it is the nearest wreck, so the Spanish close on it as they did. */
+export function nearest(w: World, x: number, y: number): Player | null {
+  let best: Player | null = null, bd = Infinity;
+  const all = !w.players.some((p) => !p.out);
+  for (const p of w.players) {
+    if (p.out && !all) continue;
+    const d = Math.hypot(p.x - x, p.y - y);
+    if (d < bd) { best = p; bd = d; }
+  }
+  return best;
+}

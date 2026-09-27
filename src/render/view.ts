@@ -17,7 +17,7 @@ import { recipeOf } from '../data/upgrades';
 import type { HullRecipe } from '../data/types';
 import type { GameMap } from '../sim/map';
 import { sideVec } from '../sim/combat';
-import type { Foe, GameEvent, World } from '../sim/types';
+import { theirs, you, type Foe, type GameEvent, type Player, type World } from '../sim/types';
 import { Air, type Look } from './atmosphere';
 import { Flotsam } from './flotsam';
 import { Fx } from './fx';
@@ -81,6 +81,8 @@ export class View {
   private player: ShipModel | null = null;
   private playerShip = '';
   private foes = new Map<number, ShipModel>();
+  /** Every other captain's ship on a shared sea, by her id. */
+  private crew = new Map<number, ShipModel>();
   private hulks: Hulk[] = [];
   private showcase: ShipModel | null = null;
   private showcaseId = '';
@@ -283,6 +285,8 @@ export class View {
     this.world = w;
     for (const m of this.foes.values()) this.drop(m);
     this.foes.clear();
+    for (const m of this.crew.values()) this.drop(m);
+    this.crew.clear();
     for (const h of this.hulks) this.drop(h.m);
     this.hulks = [];
     this.fx.clear();
@@ -294,8 +298,8 @@ export class View {
     if (w) {
       this.setMap(w.map);
       this.setLook(w.weather, true);
-      this.setPlayerShip(w.shipId);
-      this.camYaw = w.ship.h;
+      this.setPlayerShip(you(w).shipId);
+      this.camYaw = you(w).h;
       this.snapCamera();
     }
   }
@@ -374,14 +378,17 @@ export class View {
     const Y = 2.2;
     for (const e of events) {
       const x = e.x as number, z = e.y as number;
+      // Smoke and splashes are for everyone's ship; the shake and the flashes only for yours.
+      const other = theirs(w, e);
       switch (e.k) {
         case 'cannon': {
           this.fx.muzzle(x, Y + 0.6, z, e.dx as number, e.dy as number);
           if (e.i === 0) {
-            this.shake(0.12);
+            if (!other) this.shake(0.12);
             // which side fired: the shot's direction against her starboard beam
-            const h = w.ship.h, side = (e.dx as number) * -Math.sin(h) + (e.dy as number) * Math.cos(h) > 0 ? 1 : -1;
-            this.player?.fired?.(side);
+            const by = w.players[e.p as number] ?? you(w);
+            const h = by.h, side = (e.dx as number) * -Math.sin(h) + (e.dy as number) * Math.cos(h) > 0 ? 1 : -1;
+            (other ? this.crew.get(by.id) : this.player)?.fired?.(side);
           }
           break;
         }
@@ -394,15 +401,15 @@ export class View {
         case 'sunk': this.sink(e.id as number, !!e.boarded); break;
         case 'board': this.fx.sparkle(x, 4, z, 40); break;
         case 'take': this.fx.sparkle(x, 1, z, 16); break;
-        case 'hit': this.fx.thud(x, Y + 1, z); this.shake(0.4); break;
-        case 'ram': this.fx.thud(x, Y, z); this.fx.wood.spawn(x, 2, z, 8, 6); this.shake(0.6); break;
-        case 'ground': this.fx.splash(w.ship.x, w.ship.y, t, true); this.shake(0.5); break;
+        case 'hit': this.fx.thud(x, Y + 1, z); if (!other) this.shake(0.4); break;
+        case 'ram': this.fx.thud(x, Y, z); this.fx.wood.spawn(x, 2, z, 8, 6); if (!other) this.shake(0.6); break;
+        case 'ground': this.fx.splash(x, z, t, true); if (!other) this.shake(0.5); break;
         case 'mortar': this.fx.muzzle(e.fromX as number, 4, e.fromY as number, 0, 0, 1.4); break;
         case 'mortar-in': this.fx.muzzle(x, 5, z, 0, 0, 1.4); break;
         case 'fireship': this.fx.explode(x, 2, z, true, t); this.shake(0.8); break;
         case 'port-down': this.fx.explode(x, 4, z, false, t); break;
-        case 'refit': this.whiteout(0.8); break;
-        case 'dead': this.whiteout(0.5, '#8E2B24'); break;
+        case 'refit': if (!other) this.whiteout(0.8); break;
+        case 'dead': if (!other) this.whiteout(0.5, '#8E2B24'); break;
         case 'alert': { const m = this.foes.get(e.id as number); if (m) this.marks.alert(e.id as number, x, m.height + 6, z); break; }
         case 'legend-down': this.shake(1.4); this.whiteout(0.35, '#FFD36A'); break;
         default: break;
@@ -527,7 +534,7 @@ export class View {
   }
 
   private syncWorld(w: World, dt: number, t: number) {
-    const s = w.ship;
+    const s = you(w);
     const p = this.player!;
     p.root.visible = true;
     const r = ride(s.x, s.y, s.h, s.len, s.beam, t);
@@ -541,11 +548,24 @@ export class View {
     p.root.visible = !(s.invuln > 0 && Math.floor(t * 12) % 2 === 0 && w.phase !== 'lost');
     p.ready?.(w.phase !== 'lost');
     const fx = Math.cos(s.h), fz = Math.sin(s.h);
-    this.wakes.track(0, s.x - fx * s.len * 0.45, s.y - fz * s.len * 0.45, s.beam, s.v, dt, t);
+    this.wakes.track(s.id, s.x - fx * s.len * 0.45, s.y - fz * s.len * 0.45, s.beam, s.v, dt, t);
     if (!lost) this.ocean.hull(s.x, s.y, s.h, s.len, s.beam, s.v / s.maxSpeed);
     this.fx.bowSpray(s.x + fx * s.len * 0.5, r.heave + 0.5, s.y + fz * s.len * 0.5, s.v);
     const dmg = 1 - s.hull / s.hullMax;
     if (dmg > 0.35) this.fx.burn(s.x, r.heave + 3, s.y, dmg, dt);
+
+    // the other captains
+    for (const o of w.players) {
+      if (o === s) continue;
+      let m = this.crew.get(o.id);
+      if (!m) {
+        m = modelFor(recipeOf(shipById(o.shipId)));
+        m.setShadows(this.tier === 'high');
+        this.scene.add(m.root);
+        this.crew.set(o.id, m);
+      }
+      this.poseCaptain(o, m, dt, t);
+    }
 
     // foes
     const live = new Set<number>();
@@ -566,6 +586,24 @@ export class View {
     this.syncShots(w, t);
     this.syncMarks(w, t);
     this.flotsam.sync(w, t, this.fx, this.scene.fog as THREE.Fog);
+  }
+
+  /** Another captain's ship, sailing as yours does; down by the head once she is out. */
+  private poseCaptain(o: Player, m: ShipModel, dt: number, t: number) {
+    const r = ride(o.x, o.y, o.h, o.len, o.beam, t);
+    const heel = clamp(-o.rot * o.v * 0.035, -0.2, 0.2);
+    m.pose({
+      x: o.x, z: o.y, h: o.h, heave: r.heave - (o.out ? 3 : 0), pitch: r.pitch, roll: r.roll + heel + (o.out ? 0.4 : 0),
+      fill: clamp(o.sail * (o.v / o.maxSpeed + 0.4), 0.15, 1), struck: false, damage: 1 - o.hull / o.hullMax, t,
+    });
+    m.root.visible = !(o.invuln > 0 && Math.floor(t * 12) % 2 === 0 && !o.out);
+    m.ready?.(!o.out);
+    m.detail?.(this.camera.position.distanceTo(m.root.position));
+    const fx = Math.cos(o.h), fz = Math.sin(o.h);
+    this.wakes.track(o.id, o.x - fx * o.len * 0.45, o.y - fz * o.len * 0.45, o.beam, o.out ? 0 : o.v, dt, t);
+    if (!o.out) this.ocean.hull(o.x, o.y, o.h, o.len, o.beam, o.v / o.maxSpeed);
+    const dmg = 1 - o.hull / o.hullMax;
+    if (dmg > 0.35 || o.out) this.fx.burn(o.x, r.heave + 3, o.y, o.out ? 0.9 : dmg, dt);
   }
 
   private poseFoe(e: Foe, m: ShipModel, dt: number, t: number) {
@@ -636,7 +674,7 @@ export class View {
     this.shells.instanceMatrix.needsUpdate = true;
 
     // prizes: a ring counting down her window, filling as you board her
-    const sh = w.ship;
+    const sh = you(w);
     for (const e of w.foes) {
       if (e.state !== 'struck' || e.strikeT <= 0) continue;
       const ring = M.prizeRings.get();
@@ -651,7 +689,7 @@ export class View {
     M.foeRings.end(); M.ownRings.end(); M.prizeRings.end();
 
     // broadside fans: brighter when loaded, brighter still when something is in the arc
-    const range = w.stats.range;
+    const range = sh.stats.range;
     for (let i = 0; i < 2; i++) {
       const side = (i === 0 ? -1 : 1) as -1 | 1;
       const fan = M.fans[i];
@@ -668,7 +706,7 @@ export class View {
         if ((dx * vx + dy * vy) / d > Math.cos(0.36)) { bears = true; break; }
       }
       const u = (fan.material as THREE.ShaderMaterial).uniforms;
-      const load = 1 - sh.cool[i] / (w.stats.reload || 1);
+      const load = 1 - sh.cool[i] / (sh.stats.reload || 1);
       u.uLoad.value = load;
       u.uAlpha.value = bears ? (load >= 1 ? 0.55 : 0.25) : 0.06;
       u.uColor.value.set(bears && load >= 1 ? '#FFD36A' : '#F6E7C0');
@@ -735,7 +773,7 @@ export class View {
     const w = this.world;
     const aspect = this.camera.aspect;
     if (this.mode === 'play' && w) {
-      const s = w.ship;
+      const s = you(w);
       // Swing round behind her — but hold the bearing while a thumb is on the stick (see
       // holdYaw), and pick the swing up again gently once it lets go.
       this.yawFollow = this.holdYaw ? 0 : Math.min(1, this.yawFollow + this.dtLast / 0.8);

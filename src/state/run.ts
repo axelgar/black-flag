@@ -4,7 +4,7 @@
 // run. bankWave, once she is careened, is the only thing allowed to. Coming about and
 // running for home both just throw the world away, and the run is where she left it.
 
-import type { World } from '../sim/types';
+import { you, type World } from '../sim/types';
 import { save, session, type Run, type RunSummary } from './session';
 
 export function newRun(seed: string, ship: string): Run {
@@ -27,12 +27,13 @@ export function runSeed(run: Run) {
 
 /** A wave survived and careened — the run's carry-over into the next one. */
 export function bankWave(run: Run, w: World): Run {
+  const me = you(w);
   run.wave = w.wave + 1;
-  run.plunder = w.plunder;
-  run.lives = w.lives;
-  run.heat = w.heat;
-  run.boarded = w.boarded;
-  run.sunk = w.sunk;
+  run.plunder = me.plunder;
+  run.lives = me.lives;
+  run.heat = me.heat;
+  run.boarded = me.boarded;
+  run.sunk = me.sunk;
   run.legends = (run.legends || 0) + (w.plan.boss ? 1 : 0);
   run.time += w.t;
   // Careening IS the repair — hull and shells come back full at the beach, because the
@@ -49,12 +50,13 @@ export function endRun(run: Run, w: World | null): RunSummary {
   const time = run.time + (w ? w.t : 0);
   rec.runs++;
   rec.bestWave = Math.max(rec.bestWave, wave);
-  const plunder = w ? w.plunder : run.plunder;
+  const me = w ? you(w) : null;
+  const plunder = me ? me.plunder : run.plunder;
   rec.bestPlunder = Math.max(rec.bestPlunder, plunder);
   rec.bestTime = Math.max(rec.bestTime, time);
   // The world's tallies are cumulative for the whole run, so the run's totals go in whole.
-  const boarded = w ? w.boarded : run.boarded;
-  const sunk = w ? w.sunk : run.sunk;
+  const boarded = me ? me.boarded : run.boarded;
+  const sunk = me ? me.sunk : run.sunk;
   rec.boarded += boarded;
   rec.sunk += sunk;
   const out = { wave, time, plunder, boarded, sunk, ship: run.ship };

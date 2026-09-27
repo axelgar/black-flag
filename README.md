@@ -110,6 +110,37 @@ links, as decided: anyone with the link gets the ship.
 `npm run qr -- https://your.site` writes a printable SVG and PNG per code. Write the same
 URL, plus `?src=nfc`, to each ship's tag.
 
+## More than one captain
+
+The simulation holds any number of captains (`World.players`), which is the base a shared
+sea is built on. On your own it holds one, and a world of one replays byte for byte as the
+game did before there could be more.
+
+- **Each captain has their own.** Their own ship, stats, helm and guns, and their own
+  plunder, notoriety, lives, boardings and sinkings. `step(w, dt, inputs)` takes one
+  `Input` per captain, in `players` order, every tick. A captain's `id` is their place in the
+  list; the Spanish are numbered after the last of them. `seat` holds the server's player id.
+- **What happens is on whoever did it.** Every ball and shell records its captain (`by`)
+  and team. A sinking, a boarding, the plunder and the notoriety go to the captain who did
+  it. A prize that escapes is on the notoriety of the one who made her strike. Hunters come
+  for whoever flies the most flags.
+- **Crew or rivals.** Captains on one team cannot hurt each other. `create({ pvp: true })`
+  puts each on a team of their own, and their broadsides, chasers and mortar then find
+  other captains too; a wound says who dealt it.
+- **The Spanish hunt the nearest captain they can see.** Squadrons put to sea in each
+  captain's part of the chart in turn, out of sight of all of them.
+- **Out, not over.** A captain whose last life goes is out: no longer hunted, hit or
+  steered. The wave is lost when nobody is left, and home when every captain still afloat
+  is in Nassau.
+- **The screen is one captain's.** `World.focus` says whose eyes the view, the HUD and the
+  sound are behind. Other captains' ships are drawn and shown on the minimap (crew in teal,
+  rivals in amber); their wounds, pickups and boardings are not toasted, buzzed or shaken
+  on your screen.
+
+In the console, `bf.crew('kestrel')` sails the current wave again with another captain's
+ship abreast of yours, to see a shared sea before there is a server to fill one. She
+holds her course.
+
 ## The server
 
 Supabase: Postgres, and sign-in for guests who never sign up. `src/net/cloud.ts` is the
@@ -225,7 +256,7 @@ src/
     ai.ts        patrol → sight → engage → struck → spent; legendary patterns
     combat.ts    broadsides, shot, damage, striking, boarding, the mortar
     spawn.ts     squadrons, hunters, early legendaries
-    world.ts     the tick
+    world.ts     the tick: every captain's helm and guns, then the Spanish, shot, hulls
   render/      three.js; reads a world, never writes one
     view.ts      renderer, camera modes, sync, event → effect
     ocean.ts     Gerstner swell, shallows and caustics, surf, glint, foam, hull wash
@@ -260,6 +291,10 @@ public/        manifest.webmanifest and the icons it names
 - waves 1–20 each end, won or lost, never stalled (driven by a bot captain in `tests/bot.ts`)
 - every unlock code resolves to a ship, codes survive case and dash mangling, and a v1
   save migrates
+- a shared sea: each ship answers her own captain's helm; a sinking, a boarding and an escaped
+  prize land on the captain who caused them; crew cannot hurt each other and rivals can;
+  a captain out of lives is out while the others sail on; a refit clears only the shells
+  meant for that ship; home waits for every captain afloat; two captains replay byte for byte
 - the server's rules (`tests/db.test.ts`): a player is made on first ask; a tap unlocks
   once and counts every time; unknown and switched-off codes unlock nothing; a phone
   reads only its own rows and cannot write any table; the server's register matches the

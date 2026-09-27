@@ -10,10 +10,26 @@ import type { Group } from '../data/waves';
 import type { LegendDef } from '../data/types';
 import { MAP_R, EDGE, openWater } from './map';
 import { hostile } from './combat';
-import { ev, type Foe, type World } from './types';
+import { afloat, ev, nearest, type Foe, type Player, type World } from './types';
 
 const FAR = 430;   // a squadron never puts to sea closer to you than this
 const FIRST = [360, 560];   // …except the first of a wave, which is on the horizon, not over it
+
+/** Whose part of the sea the next squadron puts to sea in: each captain in turn. */
+function turn(w: World): Player {
+  const a = afloat(w);
+  return a.length ? a[w.squads.length % a.length] : w.players[0];
+}
+
+/** How far a point is from the nearest captain still in it. */
+function gap(w: World, p: { x: number; y: number }): number {
+  let d = Infinity;
+  for (const s of w.players) if (!s.out) d = Math.min(d, Math.hypot(p.x - s.x, p.y - s.y));
+  return d;
+}
+
+/** The spawn point furthest from every captain. */
+const furthest = (w: World) => w.map.spawns.reduce((a, b) => (gap(w, b) > gap(w, a) ? b : a));
 
 export function addFoe(w: World, cls: string, x: number, y: number, h: number, squad: number): Foe {
   const C = CLASSES[cls];
@@ -26,7 +42,7 @@ export function addFoe(w: World, cls: string, x: number, y: number, h: number, s
     state: 'patrol', alert: false, squad,
     wp: { x, y }, wpT: 0, seeT: w.r() * 0.3, orbit: w.r() < 0.5 ? 1 : -1,
     cool: 1 + w.r() * 1.5, coolAlt: 2 + w.r() * 2, broad: 0, broadSide: 1,
-    strikeT: 0, struckOnce: false, spentT: 0, hunter: false, chase: 0, slow: 0,
+    strikeT: 0, struckOnce: false, by: -1, spentT: 0, hunter: false, chase: 0, slow: 0,
     ph: w.r() * TAU, ports: null, phase: 0, flash: 0, detour: 0, seen: false,
   };
   if (cls === 'brulote') { e.state = 'engage'; e.alert = true; }
@@ -36,7 +52,8 @@ export function addFoe(w: World, cls: string, x: number, y: number, h: number, s
 
 export function addLegend(w: World, L: LegendDef, x: number, y: number): Foe {
   const R = L.recipe;
-  const h = Math.atan2(w.ship.y - y, w.ship.x - x);
+  const q = nearest(w, x, y) ?? w.players[0];
+  const h = Math.atan2(q.y - y, q.x - x);
   const e: Foe = {
     id: w.nextId++, cls: 'legend', C: null, L, x, y, h, v: L.speed * 0.5, rot: 0, sail: 1,
     len: R.length, beam: R.beam, maxSpeed: L.speed * PACE, accel: L.speed * PACE * 0.2, turnRate: L.turn * HELM,
@@ -45,7 +62,7 @@ export function addLegend(w: World, L: LegendDef, x: number, y: number): Foe {
     state: 'engage', alert: true, squad: newSquad(w, x, y),
     wp: { x, y }, wpT: 0, seeT: 0, orbit: 1,
     cool: 4, coolAlt: 4, broad: 0, broadSide: 1,
-    strikeT: 0, struckOnce: false, spentT: 0, hunter: false, chase: 0, slow: 0, ph: 0,
+    strikeT: 0, struckOnce: false, by: -1, spentT: 0, hunter: false, chase: 0, slow: 0, ph: 0,
     // Her weak points: ports split between both sides, spread along her length.
     ports: Array.from({ length: L.ports }, (_, i) => {
       const per = Math.ceil(L.ports / 2);
@@ -65,14 +82,15 @@ function newSquad(w: World, x: number, y: number): number {
   return w.squads.length - 1;
 }
 
-/** Somewhere to put to sea from: a point on the rim or in the lee of an island, far from you. */
+/** Somewhere to put to sea from: a point on the rim or in the lee of an island, in one
+ *  captain's part of the sea and far from every captain. */
 function anchor(w: World): { x: number; y: number } {
-  const s = w.ship, m = w.map;
+  const s = turn(w), m = w.map;
   // The first squadron of a wave puts to sea close enough to be found in the first half
   // minute. A minute of empty sailing was the first thing a play-test complained about.
   const first = w.gi === 0 || w.squads.length === 0;
   const lo = first ? FIRST[0] : FAR, hi = first ? FIRST[1] : 780;
-  const far = (p: { x: number; y: number }) => Math.hypot(p.x - s.x, p.y - s.y) > lo;
+  const far = (p: { x: number; y: number }) => gap(w, p) > lo;
   const options: { x: number; y: number }[] = m.spawns.filter(far);
   for (const is of m.islands) {
     if (is.kind === 'nassau') continue;
@@ -101,7 +119,7 @@ function place(w: World, x: number, y: number, pad: number): { x: number; y: num
 }
 
 export function spawnGroup(w: World, g: Group) {
-  const s = w.ship;
+  const s = turn(w);
   if (g.cls === 'spout') {
     // 160–280m off, inside the open chart. Clamping a point to the middle of the chart
     // instead could drop one on top of a ship sailing near its edge.
@@ -120,15 +138,15 @@ export function spawnGroup(w: World, g: Group) {
   }
   if (g.cls === 'legend') {
     const L = legendById(g.legend!);
-    const far = w.map.spawns.reduce((a, b) =>
-      Math.hypot(b.x - s.x, b.y - s.y) > Math.hypot(a.x - s.x, a.y - s.y) ? b : a);
+    const far = furthest(w);
     addLegend(w, L, far.x, far.y);
     return;
   }
 
   const A = anchor(w);
   const sq = newSquad(w, A.x, A.y);
-  const h = Math.atan2(s.y - A.y, s.x - A.x);
+  const q = nearest(w, A.x, A.y) ?? s;
+  const h = Math.atan2(q.y - A.y, q.x - A.x);
   const C = CLASSES[g.cls];
   const fx = Math.cos(h), fy = Math.sin(h), px = -fy, py = fx;
   const gap = C.recipe.length * 1.4 + 12;
@@ -173,19 +191,22 @@ export function release(w: World, dt: number) {
 export function hunt(w: World, dt: number) {
   let hunters = 0;
   for (const e of w.foes) if (e.hunter && hostile(e)) hunters++;
-  const s = w.ship;
+  // Notoriety is a captain's own. The hunters come for whoever is flying the most flags.
+  let s: Player | null = null;
+  for (const p of w.players) if (!p.out && (!s || p.heat > s.heat)) s = p;
+  if (!s) return;
 
   // Hunters ride along with a wave; they do not outlast it. Once the last of the fleet
   // is off the water, nobody new comes, or a notorious captain could never get home.
   let fleet = w.gi < w.plan.groups.length;
   for (const e of w.foes) if (!e.hunter && hostile(e)) { fleet = true; break; }
-  if (w.heat >= HUNTER_AT && fleet) {
+  if (s.heat >= HUNTER_AT && fleet) {
     w.hunterT -= dt;
     if (w.hunterT <= 0 && hunters < 2) {
-      // From the nearest point on the rim that is still out of sight.
-      const opts = w.map.spawns.filter((p) => Math.hypot(p.x - s.x, p.y - s.y) > 380);
+      // From the point on the rim nearest her that is still out of everyone's sight.
+      const opts = w.map.spawns.filter((p) => gap(w, p) > 380);
       const p = opts.length ? opts.reduce((a, b) =>
-        Math.hypot(b.x - s.x, b.y - s.y) < Math.hypot(a.x - s.x, a.y - s.y) ? b : a) : w.map.spawns[0];
+        Math.hypot(b.x - s!.x, b.y - s!.y) < Math.hypot(a.x - s!.x, a.y - s!.y) ? b : a) : w.map.spawns[0];
       const e = addFoe(w, HUNTER_CLASS, p.x, p.y, Math.atan2(s.y - p.y, s.x - p.x), newSquad(w, p.x, p.y));
       e.hunter = true; e.state = 'engage'; e.alert = true;
       w.hunterT = 16;
@@ -194,10 +215,9 @@ export function hunt(w: World, dt: number) {
   }
   // The same rule as the hunters: once the fleet is off the water nobody new comes, or a
   // wave already won could be opened again by a legendary nobody asked for.
-  if (fleet && w.heat >= EARLY_LEGEND_AT && !w.earlyLegend && !w.plan.boss && !w.boss) {
+  if (fleet && s.heat >= EARLY_LEGEND_AT && !w.earlyLegend && !w.plan.boss && !w.boss) {
     w.earlyLegend = true;
-    const far = w.map.spawns.reduce((a, b) =>
-      Math.hypot(b.x - s.x, b.y - s.y) > Math.hypot(a.x - s.x, a.y - s.y) ? b : a);
+    const far = furthest(w);
     addLegend(w, LEGENDS[Math.floor(w.r() * LEGENDS.length)], far.x, far.y);
   }
 }

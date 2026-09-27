@@ -13,7 +13,7 @@ import { shipById } from './data/ships';
 import { session, save, meet, beat, nav, sea } from './state/session';
 import { bankWave, endRun as foldRun, newRun, reales, runSeed } from './state/run';
 import * as Wo from './sim/world';
-import type { World } from './sim/types';
+import { theirs, you, type Input as Helm, type World } from './sim/types';
 import { View, detectTier } from './render/view';
 import * as A from './audio/audio';
 import * as S from './ui/screens';
@@ -192,7 +192,7 @@ function dock() {
 
 /** A prize near enough that letting go of the stick should bring her alongside. */
 function prizeClose(w: World) {
-  const s = w.ship;
+  const s = you(w);
   for (const e of w.foes) {
     if (!Wo.isPrize(e)) continue;
     const reach = (e.len + s.len) * 0.5 * 0.85 + 12;
@@ -206,7 +206,8 @@ function prizeClose(w: World) {
 function logSightings(w: World) {
   for (const e of w.foes) {
     if (e.seen) continue;
-    if (e.state === 'patrol' && Math.hypot(e.x - w.ship.x, e.y - w.ship.y) > 320) continue;
+    const me = you(w);
+    if (e.state === 'patrol' && Math.hypot(e.x - me.x, e.y - me.y) > 320) continue;
     e.seen = true;
     meet(e.L ? e.L.id : e.cls);
   }
@@ -214,6 +215,8 @@ function logSightings(w: World) {
 
 function handle(events: World['events']) {
   for (const e of events) {
+    // another captain's boarding, refit or wound is theirs to hear about, not yours
+    if (theirs(world!, e)) continue;
     switch (e.k) {
       case 'board': toast('BOARDED', `+${reales(e.reales as number)} REALES`); buzz(24); break;
       case 'strike': toast('SHE STRIKES', 'COME ALONGSIDE TO BOARD HER'); break;
@@ -223,7 +226,7 @@ function handle(events: World['events']) {
       case 'legend-down': beat(e.id as string); toast(e.name as string, 'STRUCK FROM THE LIST'); break;
       case 'lost-prize': toast('SHE GOT AWAY', 'AND SHE WILL TALK'); break;
       case 'rim': if (world!.t - rimSaid > 12) { rimSaid = world!.t; toast('THE EDGE OF THE CHART', 'THE CURRENT TURNS YOU BACK'); } break;
-      case 'won': toast('THE SEA IS CLEAR', `MAKE FOR NASSAU · ${reales(world!.plunder)} REALES`); break;
+      case 'won': toast('THE SEA IS CLEAR', `MAKE FOR NASSAU · ${reales(you(world!).plunder)} REALES`); break;
       case 'hit': buzz(18); break;
       default: break;
     }
@@ -241,7 +244,7 @@ function settle() {
   if (world!.phase === 'docked') {
     bankWave(run, world!);
     save();
-    track('wave_end', { wave: world!.wave, plunder: world!.plunder, ship: run.ship });
+    track('wave_end', { wave: world!.wave, plunder: you(world!).plunder, ship: run.ship });
   } else {
     session.lastRun = foldRun(run, world);
     track('run_end', { reason: 'sunk', ...session.lastRun });
@@ -429,15 +432,21 @@ function tick(dt: number) {
   if (!paused && world && (world.phase === 'fight' || world.phase === 'clear')) {
     acc += dt;
     let n = 0;
-    while (acc >= FIXED && n < 10) { Wo.step(world, FIXED, Input.read(view.yaw, n === 0)); acc -= FIXED; n++; }
+    while (acc >= FIXED && n < 10) {
+      // this device steers the captain it is looking through; every other ship holds her course
+      const helm: Helm[] = [];
+      helm[world.focus] = Input.read(view.yaw, n === 0);
+      Wo.step(world, FIXED, helm);
+      acc -= FIXED; n++;
+    }
     if (n === 10) acc = 0;                          // a long stall is a dropped frame, not a debt
 
     if (world.events.length) {
       const evs = world.events.slice();
       world.events.length = 0;
       view.consume(evs, world);
-      A.listen(world.ship.x, world.ship.y, view.yaw);
-      A.consume(evs);
+      A.listen(you(world).x, you(world).y, view.yaw);
+      A.consume(evs, (e) => theirs(world!, e));
       handle(evs);
     }
     logSightings(world);
@@ -446,7 +455,7 @@ function tick(dt: number) {
 
   if (!paused && world && (world.phase === 'lost' || world.phase === 'docked') && outcome === 0) {
     outcome = world.phase === 'docked' ? 0.9 : 2.4;
-    if (world.phase === 'lost') toast(`THE ${shipById(world.shipId).name.toUpperCase()} IS LOST`, 'ALL HANDS');
+    if (world.phase === 'lost') toast(`THE ${shipById(you(world).shipId).name.toUpperCase()} IS LOST`, 'ALL HANDS');
     else view.whiteout(0.25, '#FFE7B0');
     settle();
   }
@@ -489,6 +498,17 @@ setTimeout(() => { void connect(); }, 1200);
   view, session, get world() { return world; },
   /** Drive the clock by hand — for a background tab, where requestAnimationFrame sleeps. */
   pump(seconds: number, fps = 60) { for (let t = 0; t < seconds; t += 1 / fps) tick(1 / fps); document.getElementById('boot')?.classList.add('gone'); },
+  /** A shared sea before there is a server: this wave again from the top, with another
+   *  captain's ship abreast of yours. She holds her course; the sim, the view, the HUD
+   *  and the minimap treat her as they will a real one. `crew('kestrel')`. */
+  crew(ship = 'kestrel', pvp = false) {
+    const run = session.run;
+    if (!run) return 'no run at sea';
+    world = Wo.create({ seed: run.seed, wave: run.wave, players: [runSeed(run), { ship }], pvp, reduce: reduced() });
+    view.setWorld(world);
+    acc = 0; outcome = 0;
+    return world.players.map((p) => `${p.id}: ${p.shipId}`);
+  },
   /** Look at any hull in the game at anchor: `inspect('foe', 'manowar')`, `inspect('legend', 'dama', 2)`. */
   inspect(kind: 'ship' | 'foe' | 'legend', id: string, zoom = 1) {
     const R = kind === 'foe' ? CLASSES[id]?.recipe : kind === 'legend' ? legendById(id).recipe : recipeOf(shipById(id));

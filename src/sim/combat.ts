@@ -7,7 +7,7 @@ import { HEAT_MAX, heatBoarded, heatSunk } from '../data/notoriety';
 import { PACE } from '../data/pace';
 import { lineOfSight } from './map';
 import { inHull } from './sailing';
-import { ev, type Foe, type Input, type Side, type Vessel, type World } from './types';
+import { afloat, ev, nearest, type Foe, type Input, type Player, type Side, type Vessel, type World } from './types';
 
 export const STRIKE_AT = 0.25;    // hull fraction at which the colours come down
 export const STRIKE_WINDOW = 6;   // seconds a prize stays boardable. The number.
@@ -35,10 +35,14 @@ export function sideVec(h: number, side: Side): [number, number] {
 export const isPrize = (e: Foe) => e.state === 'struck' && e.strikeT > 0 && !e.dead;
 export const hostile = (e: Foe) => !e.dead && (e.state === 'patrol' || e.state === 'engage');
 
-/* ------------------------------------------------------------ the Jackdaw -- */
+/* ------------------------------------------------------------ a captain's guns -- */
 
-export function playerGuns(w: World, dt: number, input: Input) {
-  const s = w.ship, st = w.stats;
+/** Whether a captain's shot can hurt this ship: every Spaniard, and another captain only
+ *  on another team. */
+const enemy = (s: Player, o: Player) => o !== s && !o.out && o.team !== s.team;
+
+export function playerGuns(w: World, s: Player, dt: number, input: Input) {
+  const st = s.stats;
   s.cool[0] = Math.max(0, s.cool[0] - dt);
   s.cool[1] = Math.max(0, s.cool[1] - dt);
 
@@ -54,10 +58,10 @@ export function playerGuns(w: World, dt: number, input: Input) {
       s.want[side] = false;
       s.volley = { side, next: 0, fired: 0, t: 0 };
       s.cool[side] = reload;
-      ev(w, 'broadside', { side, n: st.gunsPerSide });
+      ev(w, 'broadside', { side, n: st.gunsPerSide, p: s.id });
     }
   }
-  if (s.volley) volley(w, dt);
+  if (s.volley) volley(w, s, dt);
 
   // Bow chasers look after themselves: nearest ship forward of the beam, if any.
   const gun = st.bowGun;
@@ -65,7 +69,7 @@ export function playerGuns(w: World, dt: number, input: Input) {
   if (gun || swivel) {
     s.bowCool -= dt;
     if (s.bowCool <= 0) {
-      const g = gun ?? { reload: 1.1, dmg: 0.5 * (1 + (w.stats.dmg - 1)), range: 130 };
+      const g = gun ?? { reload: 1.1, dmg: 0.5 * (1 + (st.dmg - 1)), range: 130 };
       const tgt = nearestAhead(w, s, g.range, 0.75);
       if (tgt) {
         const [ax, ay] = lead(s.x, s.y, tgt, BOW_SHOT);
@@ -74,8 +78,9 @@ export function playerGuns(w: World, dt: number, input: Input) {
         w.shots.push({
           x: bx, y: by, vx: ((ax - s.x) / d) * BOW_SHOT + Math.cos(s.h) * s.v, vy: ((ay - s.y) / d) * BOW_SHOT + Math.sin(s.h) * s.v,
           r: 0.9, dmg: g.dmg, foe: false, kind: 'ball', pierce: 1, age: 0, life: g.range / BOW_SHOT, dead: false, from: s.id,
+          by: s.id, team: s.team,
         });
-        ev(w, 'bow', { x: bx, y: by, h: s.h });
+        ev(w, 'bow', { x: bx, y: by, h: s.h, p: s.id });
         s.bowCool = g.reload * (swivel ? 0.5 : 1);
       } else {
         s.bowCool = 0.15;
@@ -85,16 +90,16 @@ export function playerGuns(w: World, dt: number, input: Input) {
 
   // The mortar lands where the reticle is: on the nearest ship ahead if there is one to
   // lock, otherwise a cable's length off the bow.
-  s.aim = mortarAim(w);
+  s.aim = mortarAim(w, s);
   if (input.mortar && s.shells > 0 && s.aim) {
     s.shells--;
-    w.marks.push({ x: s.aim.x, y: s.aim.y, r: 26, t: MORTAR_FUSE, max: MORTAR_FUSE, own: true, dmg: 7, done: false });
-    ev(w, 'mortar', { x: s.aim.x, y: s.aim.y, fromX: s.x, fromY: s.y, fuse: MORTAR_FUSE });
+    w.marks.push({ x: s.aim.x, y: s.aim.y, r: 26, t: MORTAR_FUSE, max: MORTAR_FUSE, own: true, by: s.id, at: -1, dmg: 7, done: false });
+    ev(w, 'mortar', { x: s.aim.x, y: s.aim.y, fromX: s.x, fromY: s.y, fuse: MORTAR_FUSE, p: s.id });
   }
 }
 
-function volley(w: World, dt: number) {
-  const s = w.ship, st = w.stats, V = s.volley!;
+function volley(w: World, s: Player, dt: number) {
+  const st = s.stats, V = s.volley!;
   V.t += dt;
   const n = st.gunsPerSide;
   const chain = s.buffs.chain > 0, heavy = s.buffs.heavy > 0;
@@ -114,25 +119,30 @@ function volley(w: World, dt: number) {
       x: px, y: py, vx: Math.cos(a) * sp + fx * s.v, vy: Math.sin(a) * sp + fy * s.v,
       r: chain ? 2.2 : 0.9, dmg, foe: false, kind: chain ? 'chain' : 'ball',
       pierce: heavy || chain ? 2 : 1, age: 0, life: st.range / sp, dead: false, from: s.id,
+      by: s.id, team: s.team,
     });
-    ev(w, 'cannon', { x: px, y: py, dx: sx, dy: sy, i });
+    ev(w, 'cannon', { x: px, y: py, dx: sx, dy: sy, i, p: s.id });
     V.fired++;
     V.next += VOLLEY_GAP;
   }
   if (V.fired >= n) s.volley = null;
 }
 
-function nearestAhead(w: World, s: Vessel, range: number, cone: number): Foe | null {
-  let best: Foe | null = null, bd = range;
+function nearestAhead(w: World, s: Player, range: number, cone: number): Vessel | null {
+  let best = null as Vessel | null, bd = range;
+  const consider = (e: Vessel) => {
+    const dx = e.x - s.x, dy = e.y - s.y, d = Math.hypot(dx, dy);
+    if (d > bd) return;
+    if (Math.abs(wrap(Math.atan2(dy, dx) - s.h)) > cone) return;
+    if (!lineOfSight(w.map, s.x, s.y, e.x, e.y)) return;
+    best = e; bd = d;
+  };
   for (const e of w.foes) {
     if (!hostile(e) && !isPrize(e)) continue;
     if (isPrize(e)) continue;                   // chasers do not waste powder on a prize
-    const dx = e.x - s.x, dy = e.y - s.y, d = Math.hypot(dx, dy);
-    if (d > bd) continue;
-    if (Math.abs(wrap(Math.atan2(dy, dx) - s.h)) > cone) continue;
-    if (!lineOfSight(w.map, s.x, s.y, e.x, e.y)) continue;
-    best = e; bd = d;
+    consider(e);
   }
+  for (const o of w.players) if (enemy(s, o)) consider(o);
   return best;
 }
 
@@ -143,18 +153,21 @@ export function lead(x: number, y: number, t: Vessel, speed: number, k = 1): [nu
   return [t.x + Math.cos(t.h) * t.v * tt, t.y + Math.sin(t.h) * t.v * tt];
 }
 
-export function mortarAim(w: World): { x: number; y: number; lock: number } | null {
-  const s = w.ship;
-  let best: Foe | null = null, bd = 240;
+export function mortarAim(w: World, s: Player): { x: number; y: number; lock: number } | null {
+  let best = null as Vessel | null, bd = 240;
+  const consider = (e: Vessel) => {
+    const dx = e.x - s.x, dy = e.y - s.y, d = Math.hypot(dx, dy);
+    if (d < 45 || d > bd) return;
+    if (Math.abs(wrap(Math.atan2(dy, dx) - s.h)) > 0.9) return;
+    best = e; bd = d;
+  };
   for (const e of w.foes) {
     // not a prize: the chasers leave them be, and so does the mortar — a shell that sinks
     // the ship you were coming alongside is not what the reticle was asked for
     if (e.dead || e.state === 'spent' || isPrize(e)) continue;
-    const dx = e.x - s.x, dy = e.y - s.y, d = Math.hypot(dx, dy);
-    if (d < 45 || d > bd) continue;
-    if (Math.abs(wrap(Math.atan2(dy, dx) - s.h)) > 0.9) continue;
-    best = e; bd = d;
+    consider(e);
   }
+  for (const o of w.players) if (enemy(s, o)) consider(o);
   if (best) {
     const [x, y] = lead(s.x, s.y, best, 1e9);
     const tt = MORTAR_FUSE;
@@ -171,6 +184,7 @@ export function foeShot(w: World, e: Foe, x: number, y: number, ang: number, dmg
   w.shots.push({
     x, y, vx: Math.cos(ang) * speed + Math.cos(e.h) * e.v, vy: Math.sin(ang) * speed + Math.sin(e.h) * e.v,
     r: 1, dmg, foe: true, kind: 'ball', pierce: 1, age: 0, life: range / speed, dead: false, from: e.id,
+    by: -1, team: 0,
   });
   e.flash = 1;
 }
@@ -189,12 +203,13 @@ export function foeBroadside(w: World, e: Foe, side: -1 | 1, n: number, dmg: num
   ev(w, 'foe-fire', { x: e.x, y: e.y, id: e.id, side, n, big: n >= 5 });
 }
 
-/** She has seen you, and so has everyone in earshot of her guns. */
-export function raise(w: World, e: Foe) {
-  if (e.state !== 'patrol') return;
+/** She has seen a captain (or been shot at by one), and so has everyone in earshot of
+ *  her guns. */
+export function raise(w: World, e: Foe, s: Player | null = nearest(w, e.x, e.y)) {
+  if (e.state !== 'patrol' || !s) return;
   e.state = 'engage';
   e.alert = true;
-  e.orbit = angleTo(e.h, Math.atan2(w.ship.y - e.y, w.ship.x - e.x)) > 0 ? -1 : 1;
+  e.orbit = angleTo(e.h, Math.atan2(s.y - e.y, s.x - e.x)) > 0 ? -1 : 1;
   ev(w, 'alert', { id: e.id, x: e.x, y: e.y });
   for (const o of w.foes) {
     if (o === e || o.squad !== e.squad || o.state !== 'patrol') continue;
@@ -210,12 +225,13 @@ export function raise(w: World, e: Foe) {
 /** The one rule the whole game turns on: a ship that can strike her colours always gets
  *  to, exactly once, instead of dying. So every kill is a decision you made with a white
  *  flag already up. */
-export function hurt(w: World, e: Foe, dmg: number, x: number, y: number) {
+export function hurt(w: World, e: Foe, dmg: number, x: number, y: number, by: Player) {
   if (e.dead) return;
-  if (e.L) return hurtLegend(w, e, dmg, x, y);
+  e.by = by.id;
+  if (e.L) return hurtLegend(w, e, dmg, x, y, by);
   e.hull -= dmg;
   e.hit = 1;
-  raise(w, e);
+  raise(w, e, by);
 
   if (e.strikes && !e.struckOnce && e.hull <= e.hullMax * STRIKE_AT) {
     e.struckOnce = true;
@@ -225,10 +241,10 @@ export function hurt(w: World, e: Foe, dmg: number, x: number, y: number) {
     ev(w, 'strike', { id: e.id, x: e.x, y: e.y });
     return;
   }
-  if (e.hull <= 0) { e.hull = 0; sink(w, e, false); }
+  if (e.hull <= 0) { e.hull = 0; sink(w, e, false, by); }
 }
 
-function hurtLegend(w: World, e: Foe, dmg: number, x: number, y: number) {
+function hurtLegend(w: World, e: Foe, dmg: number, x: number, y: number, by: Player) {
   // Gun ports are the weak point, and the only way to hurt her fast. Everywhere else is
   // oak a foot thick.
   let best = null, bd = 7.5;
@@ -248,33 +264,34 @@ function hurtLegend(w: World, e: Foe, dmg: number, x: number, y: number) {
     e.hull -= dmg * 0.5;
   }
   e.hit = 1;
-  if (e.hull <= 0) { e.hull = 0; sink(w, e, false); }
+  if (e.hull <= 0) { e.hull = 0; sink(w, e, false, by); }
 }
 
-export function sink(w: World, e: Foe, byBoard: boolean) {
+/** She is gone: sunk, or boarded by `by`, who takes what she carried and answers for it. */
+export function sink(w: World, e: Foe, byBoard: boolean, by: Player) {
   if (e.dead) return;
   e.dead = true;
   const reales = e.reales;
 
   if (byBoard) {
-    w.plunder += reales * 2;
-    w.boarded++;
-    w.heat = clamp(w.heat + heatBoarded(e.hullMax), 0, HEAT_MAX);
-    w.ship.hull = Math.min(w.ship.hullMax, w.ship.hull + w.stats.boardRepair);
-    ev(w, 'board', { id: e.id, x: e.x, y: e.y, reales: reales * 2 });
+    by.plunder += reales * 2;
+    by.boarded++;
+    by.heat = clamp(by.heat + heatBoarded(e.hullMax), 0, HEAT_MAX);
+    by.hull = Math.min(by.hullMax, by.hull + by.stats.boardRepair);
+    ev(w, 'board', { id: e.id, x: e.x, y: e.y, reales: reales * 2, p: by.id });
   } else {
-    w.plunder += reales;
-    w.sunk++;
+    by.plunder += reales;
+    by.sunk++;
     // Only a ship that had already struck costs you notoriety. With the broadside in
     // your hands, that is always a decision and never a side effect.
-    if (e.struckOnce) w.heat = clamp(w.heat + heatSunk(e.hullMax), 0, HEAT_MAX);
-    ev(w, 'boom', { id: e.id, x: e.x, y: e.y, big: !!e.L || e.cls === 'manowar', reales });
+    if (e.struckOnce) by.heat = clamp(by.heat + heatSunk(e.hullMax), 0, HEAT_MAX);
+    ev(w, 'boom', { id: e.id, x: e.x, y: e.y, big: !!e.L || e.cls === 'manowar', reales, p: by.id });
   }
-  ev(w, 'sunk', { id: e.id, boarded: byBoard });
+  ev(w, 'sunk', { id: e.id, boarded: byBoard, p: by.id });
 
   if (e.cls === 'brulote') {
     // She goes up whether she reached you or not — dying is her attack too.
-    w.marks.push({ x: e.x, y: e.y, r: 24, t: 0.25, max: 0.25, own: false, dmg: 9, done: false });
+    w.marks.push({ x: e.x, y: e.y, r: 24, t: 0.25, max: 0.25, own: false, by: -1, at: by.id, dmg: 9, done: false });
     ev(w, 'fireship', { x: e.x, y: e.y });
   }
   if (e.L) {
@@ -290,31 +307,37 @@ export function sink(w: World, e: Foe, byBoard: boolean) {
 
 export type Harm = 'shot' | 'shell' | 'ram' | 'ground' | 'spout';
 
-export function wound(w: World, dmg: number, src: Harm, x = w.ship.x, y = w.ship.y) {
-  const s = w.ship;
-  if (w.phase === 'lost' || s.invuln > 0) return;
+/** A captain hurt. `by` is the captain who did it, on a sea where they fight each other. */
+export function wound(w: World, s: Player, dmg: number, src: Harm, x = s.x, y = s.y, by: Player | null = null) {
+  if (w.phase === 'lost' || s.out || s.invuln > 0) return;
   s.hull -= dmg;
   s.hit = 1;
   w.shake = Math.max(w.shake, 0.5);
-  ev(w, 'hit', { x, y, dmg, src });
+  ev(w, 'hit', { x, y, dmg, src, p: s.id, by: by?.id });
   if (s.hull > 0) return;
 
   s.hull = 0;
-  w.lives--;
-  if (w.lives <= 0) { w.phase = 'lost'; ev(w, 'dead', {}); return; }
+  s.lives--;
+  if (s.lives <= 0) {
+    // Her last life. On your own that is the end; on a shared sea she is out, and the
+    // rest sail on without her until there is nobody left.
+    s.out = true;
+    ev(w, 'dead', { p: s.id, by: by?.id });
+    if (!afloat(w).length) w.phase = 'lost';
+    return;
+  }
   // Refit: full hull, grace, and the water round you cleared of everything already in
   // the air, so the frame you come back on is not the frame you die on again.
   s.hull = s.hullMax;
   s.invuln = 2.5;
-  for (const sh of w.shots) if (sh.foe && Math.hypot(sh.x - s.x, sh.y - s.y) < 260) sh.dead = true;
-  for (const m of w.marks) if (!m.own) m.done = true;
-  ev(w, 'refit', { lives: w.lives });
+  for (const sh of w.shots) if (sh.team !== s.team && Math.hypot(sh.x - s.x, sh.y - s.y) < 260) sh.dead = true;
+  for (const m of w.marks) if (m.at === s.id) m.done = true;
+  ev(w, 'refit', { lives: s.lives, p: s.id });
 }
 
 /* ------------------------------------------------------------ shot in air -- */
 
 export function flyShots(w: World, dt: number) {
-  const s = w.ship;
   for (const sh of w.shots) {
     if (sh.dead) continue;
     sh.x += sh.vx * dt; sh.y += sh.vy * dt; sh.age += dt;
@@ -324,20 +347,34 @@ export function flyShots(w: World, dt: number) {
       continue;
     }
     if (sh.foe) {
-      if (s.invuln <= 0 && inHull(s, sh.x, sh.y, sh.r)) { sh.dead = true; wound(w, sh.dmg, 'shot', sh.x, sh.y); }
+      // Spanish shot: the first captain in its way
+      const s = w.players.find((p) => !p.out && p.team !== sh.team && p.invuln <= 0 && inHull(p, sh.x, sh.y, sh.r));
+      if (s) { sh.dead = true; wound(w, s, sh.dmg, 'shot', sh.x, sh.y); }
       else hitLand(w, sh);
       continue;
     }
+    const by = w.players[sh.by];
     for (const e of w.foes) {
       if (e.dead || e.state === 'spent' || e.id === sh.from) continue;
       if (Math.abs(e.x - sh.x) > e.len || Math.abs(e.y - sh.y) > e.len) continue;
       if (!inHull(e, sh.x, sh.y, sh.r)) continue;
-      hurt(w, e, sh.dmg, sh.x, sh.y);
+      hurt(w, e, sh.dmg, sh.x, sh.y, by);
       if (sh.kind === 'chain') e.slow = 4;
       ev(w, 'thud', { x: sh.x, y: sh.y, id: e.id });
       if (--sh.pierce <= 0) { sh.dead = true; break; }
       // A ball that goes through keeps going, but not through the same ship twice.
       sh.from = e.id;
+    }
+    // and another captain, when captains are fighting each other
+    for (const p of w.players) {
+      if (sh.dead) break;
+      if (p.id === sh.from || !enemy(by, p) || p.invuln > 0) continue;
+      if (Math.abs(p.x - sh.x) > p.len || Math.abs(p.y - sh.y) > p.len) continue;
+      if (!inHull(p, sh.x, sh.y, sh.r)) continue;
+      wound(w, p, sh.dmg, 'shot', sh.x, sh.y, by);
+      ev(w, 'thud', { x: sh.x, y: sh.y, id: p.id });
+      if (--sh.pierce <= 0) sh.dead = true;
+      sh.from = p.id;
     }
     if (!sh.dead) hitLand(w, sh);
   }
@@ -366,16 +403,21 @@ export function landMarks(w: World, dt: number) {
     m.t -= dt;
     if (m.t > 0) continue;
     m.done = true;
-    if (m.own) {
+    if (m.by >= 0) {
+      const by = w.players[m.by];
       for (const e of w.foes) {
         if (e.dead || e.state === 'spent') continue;
         // The shell's own landing point, not the ship's centre — a mortar dropped on a
         // legendary's gun ports has to count as a gun-port hit.
-        if (Math.hypot(e.x - m.x, e.y - m.y) < m.r + e.len * 0.3) hurt(w, e, m.dmg, m.x, m.y);
+        if (Math.hypot(e.x - m.x, e.y - m.y) < m.r + e.len * 0.3) hurt(w, e, m.dmg, m.x, m.y, by);
+      }
+      for (const p of w.players) {
+        if (enemy(by, p) && Math.hypot(p.x - m.x, p.y - m.y) < m.r + p.beam * 0.5) wound(w, p, m.dmg, 'shell', m.x, m.y, by);
       }
     } else {
-      const s = w.ship;
-      if (Math.hypot(s.x - m.x, s.y - m.y) < m.r + s.beam * 0.5) wound(w, m.dmg, 'shell', m.x, m.y);
+      for (const s of w.players) {
+        if (!s.out && Math.hypot(s.x - m.x, s.y - m.y) < m.r + s.beam * 0.5) wound(w, s, m.dmg, 'shell', m.x, m.y);
+      }
     }
     w.shake = Math.max(w.shake, 0.6);
     ev(w, 'boom', { x: m.x, y: m.y, big: m.r > 20, splash: true });
@@ -389,8 +431,7 @@ export function landMarks(w: World, dt: number) {
  * tearing past her, counts up; BOARD_TIME of it and she is yours. Drift out of reach
  * and the count starts again — a boarding is a commitment, not a brush past.
  */
-export function boarding(w: World, dt: number) {
-  const s = w.ship;
+export function boarding(w: World, s: Player, dt: number) {
   let best: Foe | null = null, bd = 1e9;
   for (const e of w.foes) {
     if (!isPrize(e)) continue;
@@ -401,5 +442,5 @@ export function boarding(w: World, dt: number) {
   if (!best || Math.abs(s.v) > s.maxSpeed * BOARD_SPEED) { s.board = null; return; }
   if (!s.board || s.board.id !== best.id) s.board = { id: best.id, t: 0 };
   s.board.t += dt;
-  if (s.board.t >= BOARD_TIME) { s.board = null; sink(w, best, true); }
+  if (s.board.t >= BOARD_TIME) { s.board = null; sink(w, best, true, s); }
 }

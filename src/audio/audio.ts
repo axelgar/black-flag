@@ -234,11 +234,16 @@ function note(at: number, i: number) {
   }
 }
 
-/** The world's events, turned into things you can hear. Mirrors the view's consume(). */
-export function consume(events: GameEvent[]) {
+/** Sounds that are only ever your own ship's: another captain's wound is not yours to feel. */
+const PERSONAL = new Set(['hit', 'board', 'take', 'refit', 'ram', 'ground']);
+
+/** The world's events, turned into things you can hear. Mirrors the view's consume().
+ *  `theirs` says which belong to another captain, to be heard only where they happen. */
+export function consume(events: GameEvent[], theirs: (e: GameEvent) => boolean = () => false) {
   if (!ready()) return;
   let guns = 0;
   for (const e of events) {
+    if (PERSONAL.has(e.k) && theirs(e)) continue;
     const at = place(e.x as number | undefined, e.y as number | undefined);
     switch (e.k) {
       case 'cannon': if (guns++ < 3) cannon(at); break;

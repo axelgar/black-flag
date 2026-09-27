@@ -6,7 +6,7 @@ import { heatFlags, HUNTER_AT } from '../data/notoriety';
 import { reales } from '../state/run';
 import { BOARD_SPEED, STRIKE_WINDOW, hostile, isPrize } from '../sim/combat';
 import { EDGE, MAP_R } from '../sim/map';
-import type { World } from '../sim/types';
+import { you, type World } from '../sim/types';
 import type { View } from '../render/view';
 import * as A from '../audio/audio';
 import { attachStick, fire, sailLevel, steering, usedTouch } from './input';
@@ -124,29 +124,29 @@ const SAILS = ['HOVE TO', 'TOPSAILS', 'HALF SAIL', 'ALL PLAIN SAIL'];
 
 export function hudTick(w: World | null, view: View, dt: number) {
   if (!hud || !w) return;
-  const L = hud.last, s = w.ship;
+  const L = hud.last, s = you(w);
   const hp = Math.max(0, s.hull / s.hullMax);
   if (Math.abs(((L.hp as number) ?? -1) - hp) > 0.004) {
     hud.fill.style.width = `${(hp * 100).toFixed(1)}%`;
     hud.bar.classList.toggle('low', hp < 0.34);
     L.hp = hp;
   }
-  const lives = `${w.lives}/${w.stats.lives}`;
-  if (L.lives !== lives) { hud.lives.innerHTML = HEARTS(w.lives, Math.max(w.lives, w.stats.lives)); L.lives = lives; }
-  if (L.coin !== w.plunder) { hud.coin.textContent = `${reales(w.plunder)} R`; L.coin = w.plunder; }
+  const lives = `${s.lives}/${s.stats.lives}`;
+  if (L.lives !== lives) { hud.lives.innerHTML = HEARTS(s.lives, Math.max(s.lives, s.stats.lives)); L.lives = lives; }
+  if (L.coin !== s.plunder) { hud.coin.textContent = `${reales(s.plunder)} R`; L.coin = s.plunder; }
   if (L.wave !== w.wave) { hud.wave.textContent = `WAVE ${w.wave}`; L.wave = w.wave; }
   if (L.shells !== s.shells) {
     hud.shells.textContent = String(s.shells);
     hud.mortar.disabled = s.shells <= 0;
     L.shells = s.shells;
   }
-  const flags = heatFlags(w.heat);
+  const flags = heatFlags(s.heat);
   if (L.flags !== flags) {
     hud.flags.forEach((f, i) => f.classList.toggle('on', i < flags));
     hud.flagbox.classList.toggle('hot', flags >= HUNTER_AT);
     L.flags = flags;
   }
-  A.setHeat(w.heat);
+  A.setHeat(s.heat);
 
   const boss = w.boss;
   if (!!boss !== !!L.boss) { hud.boss.classList.toggle('on', !!boss); L.boss = !!boss; }
@@ -169,13 +169,13 @@ export function hudTick(w: World | null, view: View, dt: number) {
   for (const e of w.foes) {
     if (!hostile(e) && !isPrize(e)) continue;
     const dx = e.x - s.x, dy = e.y - s.y, d = Math.hypot(dx, dy);
-    if (d > w.stats.range + e.len * 0.4) continue;
+    if (d > s.stats.range + e.len * 0.4) continue;
     const side = -Math.sin(s.h) * dx + Math.cos(s.h) * dy;       // + starboard
     if (Math.abs(side) / d > 0.93) bears[side > 0 ? 1 : 0] = true;
   }
   aimGuns(s.h - view.yaw);
   [hud.gunL, hud.gunR].forEach((g, i) => {
-    const load = 1 - s.cool[i] / (w.stats.reload || 1);
+    const load = 1 - s.cool[i] / (s.stats.reload || 1);
     g.style.setProperty('--load', load.toFixed(3));
     g.classList.toggle('ready', load >= 1);
     g.classList.toggle('bears', bears[i] && load >= 1);
@@ -226,7 +226,7 @@ function readInsets() {
 
 /** Arrows round the edge for what matters and is off screen; labels over prizes. */
 function pointers(w: World, view: View) {
-  const h = hud!;
+  const h = hud!, me = you(w);
   const W = h.root.clientWidth, H = h.root.clientHeight;
   const cx = W / 2, cy = H / 2;
   let n = 0, nl = 0;
@@ -234,7 +234,7 @@ function pointers(w: World, view: View) {
     const p = view.project(x, 4, y);
     if (p && p.on) return p;
     // Off screen: point along the bearing, as the camera sees it — forward is up.
-    const rel = Math.atan2(y - w.ship.y, x - w.ship.x) - view.yaw;
+    const rel = Math.atan2(y - me.y, x - me.x) - view.yaw;
     const a = Math.atan2(-Math.cos(rel), Math.sin(rel));
     // On a ring round the edge, inside the notch, and then out from under whatever of the
     // HUD it landed on: along the edge it is on, to the near side of the obstacle.
@@ -273,7 +273,7 @@ function pointers(w: World, view: View) {
     if (isPrize(e)) {
       const on = arrow(e.x, e.y, 'prize');
       if (on) {
-        const s = w.ship;
+        const s = me;
         const boarding = s.board && s.board.id === e.id;
         const d = Math.hypot(e.x - s.x, e.y - s.y);
         const reach = (e.len + s.len) * 0.5 * 0.85 + 12;
@@ -293,7 +293,7 @@ function pointers(w: World, view: View) {
   // Nobody has found you yet: the lookout calls the nearest sail, so the start of a wave is
   // a heading and not a minute of empty sea.
   if (w.phase === 'fight' && !w.foes.some((e) => e.state === 'engage')) {
-    const s = w.ship;
+    const s = me;
     let best = null as World['foes'][number] | null, bd = 1e9;
     for (const e of w.foes) {
       if (e.state !== 'patrol') continue;
@@ -316,7 +316,7 @@ function pointers(w: World, view: View) {
 
 /** North-up chart of the sea round you: islands, Nassau, anyone who has seen you. */
 function minimap(w: World, yaw: number) {
-  const h = hud!;
+  const h = hud!, me = you(w);
   const cv = h.map, c = cv.getContext('2d')!;
   const S = cv.width, R = S / 2;
   const scale = R / MAP_R;
@@ -364,7 +364,7 @@ function minimap(w: World, yaw: number) {
   c.beginPath(); c.arc(hx, hy, 5, 0, Math.PI * 2); c.stroke();
   for (const e of w.foes) {
     if (e.state === 'spent') continue;
-    if (e.state === 'patrol' && Math.hypot(e.x - w.ship.x, e.y - w.ship.y) > 260) continue;
+    if (e.state === 'patrol' && Math.hypot(e.x - me.x, e.y - me.y) > 260) continue;
     const [x, y] = P(e.x, e.y);
     c.fillStyle = isPrize(e) ? '#F6F1E1' : e.L ? '#FF7A3C' : e.state === 'engage' ? '#E0533F' : 'rgba(224,83,63,.5)';
     c.beginPath(); c.arc(x, y, e.L ? 4.5 : 3, 0, Math.PI * 2); c.fill();
@@ -374,13 +374,23 @@ function minimap(w: World, yaw: number) {
   for (const d of w.drops) { if (d.dead) continue; const [x, y] = P(d.x, d.y); c.beginPath(); c.arc(x, y, 2.2, 0, Math.PI * 2); c.fill(); }
   c.strokeStyle = 'rgba(235,245,245,.85)'; c.lineWidth = 1.5;
   for (const p of w.spouts) { const [x, y] = P(p.x, p.y); c.beginPath(); c.arc(x, y, 3.5, 0, Math.PI * 1.6); c.stroke(); }
+  // the other captains: crew in teal, rivals in amber
+  for (const o of w.players) {
+    if (o === me || o.out) continue;
+    const [ox, oy] = P(o.x, o.y);
+    c.save();
+    c.translate(ox, oy); c.rotate(o.h);
+    c.fillStyle = o.team === me.team ? '#8FD1C1' : '#F0A340';
+    c.beginPath(); c.moveTo(5.5, 0); c.lineTo(-4, 3.2); c.lineTo(-2.4, 0); c.lineTo(-4, -3.2); c.closePath(); c.fill();
+    c.restore();
+  }
   // you, and the way the camera looks
-  const [sx, sy] = P(w.ship.x, w.ship.y);
+  const [sx, sy] = P(me.x, me.y);
   c.save();
   c.translate(sx, sy);
   c.fillStyle = 'rgba(242,231,206,.12)';
   c.beginPath(); c.moveTo(0, 0); c.arc(0, 0, 34, yaw - 0.55, yaw + 0.55); c.closePath(); c.fill();
-  c.rotate(w.ship.h);
+  c.rotate(me.h);
   c.fillStyle = '#F2E7CE';
   c.beginPath(); c.moveTo(7, 0); c.lineTo(-5, 4); c.lineTo(-3, 0); c.lineTo(-5, -4); c.closePath(); c.fill();
   c.restore();

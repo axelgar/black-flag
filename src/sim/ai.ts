@@ -14,7 +14,7 @@ import { MAP_R, EDGE, lineOfSight, openWater, shoreDist } from './map';
 import { FOE_LAY, FOE_SHOT, foeBroadside, foeShot, isPrize, lead, raise, sideVec } from './combat';
 import { ground, helm, rim } from './sailing';
 import { POINT_BLANK, SIGHT } from './weather';
-import { ev, type Foe, type Vessel, type World } from './types';
+import { ev, nearest, type Foe, type Player, type Vessel, type World } from './types';
 import { addFoe } from './spawn';
 
 const SEARCH_SPEED = 12 * PACE;   // a squadron's search sweeps toward where you were last heard of
@@ -32,7 +32,8 @@ export function stepFoe(w: World, e: Foe, dt: number) {
     // seconds. A prize that lingers on the chart after her window reads as a ship you
     // have somehow failed to sink.
     e.spentT += dt;
-    heading = Math.atan2(e.y - w.ship.y, e.x - w.ship.x); sail = 1;
+    const q = nearest(w, e.x, e.y);
+    heading = q ? Math.atan2(e.y - q.y, e.x - q.x) : e.h; sail = 1;
   } else if (e.state === 'struck') {
     e.strikeT -= dt;
     heading = null; sail = 0;
@@ -40,7 +41,8 @@ export function stepFoe(w: World, e: Foe, dt: number) {
       e.state = 'spent';
       // She got away with a crew who saw your face. That is the price of leaving prizes
       // on the water, and it is what makes the flags climb for a captain who never boards.
-      w.heat = clamp(w.heat + heatEscaped(e.hullMax), 0, HEAT_MAX);
+      const by = w.players[e.by] ?? w.players[0];
+      by.heat = clamp(by.heat + heatEscaped(e.hullMax), 0, HEAT_MAX);
       ev(w, 'lost-prize', { id: e.id, x: e.x, y: e.y });
     }
   } else if (e.state === 'patrol') {
@@ -64,7 +66,8 @@ function patrol(w: World, e: Foe, dt: number): [number, number] {
   e.seeT -= dt;
   if (e.seeT <= 0) {
     e.seeT = 0.3;
-    if (sees(w, e)) { raise(w, e); return engage(w, e, dt); }
+    const seen = sees(w, e);
+    if (seen) { raise(w, e, seen); return engage(w, e, dt); }
   }
   const sq = w.squads[e.squad];
   e.wpT -= dt;
@@ -80,10 +83,11 @@ function patrol(w: World, e: Foe, dt: number): [number, number] {
   return [Math.atan2(e.wp.y - e.y, e.wp.x - e.x), 0.55];
 }
 
-/** Squadron centres drift toward the Jackdaw, the way word travels along a coast. */
+/** Squadron centres drift toward the nearest captain, the way word travels along a coast. */
 export function sweep(w: World, dt: number) {
-  const s = w.ship;
   for (const sq of w.squads) {
+    const s = nearest(w, sq.x, sq.y);
+    if (!s) return;
     const dx = s.x - sq.x, dy = s.y - sq.y, d = Math.hypot(dx, dy);
     if (d < 60) continue;
     sq.x += (dx / d) * SEARCH_SPEED * dt;
@@ -91,13 +95,17 @@ export function sweep(w: World, dt: number) {
   }
 }
 
-export function sees(w: World, e: Foe): boolean {
-  const s = w.ship;
-  const d = Math.hypot(s.x - e.x, s.y - e.y);
-  if (d < POINT_BLANK) return true;
+/** The nearest captain she can see, or null. */
+export function sees(w: World, e: Foe): Player | null {
   const sight = (e.C ? e.C.sight : 500) * SIGHT[w.weather];
-  if (d > sight) return false;
-  return lineOfSight(w.map, e.x, e.y, s.x, s.y);
+  let best: Player | null = null, bd = Infinity;
+  for (const s of w.players) {
+    if (s.out) continue;
+    const d = Math.hypot(s.x - e.x, s.y - e.y);
+    if (d >= bd) continue;
+    if (d < POINT_BLANK || (d <= sight && lineOfSight(w.map, e.x, e.y, s.x, s.y))) { best = s; bd = d; }
+  }
+  return best;
 }
 
 /* ---------------------------------------------------------------- engage -- */
@@ -114,8 +122,10 @@ function orbitHeading(e: Foe, tx: number, ty: number, pref: number): number {
   return bearing + e.orbit * (Math.PI / 2) * (1 - corr);
 }
 
+/** Engaged, she goes after the nearest captain still in it. */
 function engage(w: World, e: Foe, dt: number): [number, number] {
-  const s = w.ship, C = e.C!;
+  const s = nearest(w, e.x, e.y), C = e.C!;
+  if (!s) return [e.h, 0.5];
   const dx = s.x - e.x, dy = s.y - e.y, d = Math.hypot(dx, dy);
 
   if (e.cls === 'lancha') {
@@ -136,7 +146,7 @@ function engage(w: World, e: Foe, dt: number): [number, number] {
   } else if (e.seeT < 0) e.seeT = 0.3;
 
   const heading = d > C.range * 2.2 ? Math.atan2(dy, dx) : orbitHeading(e, s.x, s.y, C.prefRange);
-  guns(w, e, dt, d);
+  guns(w, e, s, dt, d);
   return [heading, d > C.prefRange * 1.6 ? 1 : 0.75];
 }
 
@@ -148,8 +158,8 @@ function beamTo(e: Foe, x: number, y: number): { side: -1 | 1; square: number } 
   return { side, square: Math.abs(Math.sin(off)) };
 }
 
-function guns(w: World, e: Foe, dt: number, d: number) {
-  const s = w.ship, C = e.C!;
+function guns(w: World, e: Foe, s: Player, dt: number, d: number) {
+  const C = e.C!;
   e.cool -= dt;
   e.coolAlt -= dt;
   if (w.phase === 'lost') return;
@@ -171,7 +181,7 @@ function guns(w: World, e: Foe, dt: number, d: number) {
       w.marks.push({
         x: s.x + Math.cos(s.h) * s.v * 1.2 + (w.r() - 0.5) * 60,
         y: s.y + Math.sin(s.h) * s.v * 1.2 + (w.r() - 0.5) * 60,
-        r: 18, t: 1.7, max: 1.7, own: false, dmg: 5, done: false,
+        r: 18, t: 1.7, max: 1.7, own: false, by: -1, at: s.id, dmg: 5, done: false,
       });
     }
     ev(w, 'mortar-in', { x: e.x, y: e.y, id: e.id });
@@ -204,7 +214,8 @@ function guns(w: World, e: Foe, dt: number, d: number) {
 /* --------------------------------------------------------------- legends -- */
 
 function legend(w: World, e: Foe, dt: number): [number, number] {
-  const s = w.ship, L = e.L!;
+  const s = nearest(w, e.x, e.y), L = e.L!;
+  if (!s) return [e.h, 0.5];
   const frac = e.hull / e.hullMax;
   const phase = frac > 0.66 ? 0 : frac > 0.33 ? 1 : 2;
   if (phase !== e.phase) { e.phase = phase; e.cool = 1.4; ev(w, 'legend-phase', { n: phase, id: e.id }); }
@@ -253,7 +264,7 @@ function legend(w: World, e: Foe, dt: number): [number, number] {
       w.marks.push({
         x: s.x + Math.cos(s.h) * s.v * 1.3 + (w.r() - 0.5) * 90,
         y: s.y + Math.sin(s.h) * s.v * 1.3 + (w.r() - 0.5) * 90,
-        r: 18, t: 1.6, max: 1.6, own: false, dmg: 5, done: false,
+        r: 18, t: 1.6, max: 1.6, own: false, by: -1, at: s.id, dmg: 5, done: false,
       });
     }
     ev(w, 'mortar-in', { x: e.x, y: e.y, id: e.id });

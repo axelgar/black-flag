@@ -6,16 +6,16 @@
 import { wrap } from '../src/core/vec';
 import { hostile, isPrize } from '../src/sim/world';
 import { avoid } from '../src/sim/ai';
-import type { Foe, Input, World } from '../src/sim/types';
+import type { Foe, Input, Player, World } from '../src/sim/types';
 
-export function bot(w: World, i: number, opts: { board?: boolean; mortar?: boolean } = {}): Input {
-  const out = think(w, i, opts);
-  if (out.heading != null) out.heading = avoid(w, w.ship, out.heading);
+/** One captain's helm for this tick: the first captain's, unless told whose. */
+export function bot(w: World, i: number, opts: { board?: boolean; mortar?: boolean } = {}, s: Player = w.players[0]): Input {
+  const out = think(w, s, i, opts);
+  if (out.heading != null) out.heading = avoid(w, s, out.heading);
   return out;
 }
 
-function think(w: World, i: number, opts: { board?: boolean; mortar?: boolean }): Input {
-  const s = w.ship;
+function think(w: World, s: Player, i: number, opts: { board?: boolean; mortar?: boolean }): Input {
   const board = opts.board ?? true;
   const input: Input = { heading: null, rudder: 0, sail: 1, fireL: false, fireR: false, mortar: false };
 
@@ -45,7 +45,7 @@ function think(w: World, i: number, opts: { board?: boolean; mortar?: boolean })
       input.heading = b - orbit * (Math.PI / 2) * (1 - corr);
     }
     const off = wrap(b - s.h);
-    if (d < w.stats.range * 0.95 && Math.abs(Math.sin(off)) > 0.88) {
+    if (d < s.stats.range * 0.95 && Math.abs(Math.sin(off)) > 0.88) {
       if (off > 0) input.fireR = true; else input.fireL = true;
     }
     if (opts.mortar && i % 600 === 0 && s.aim?.lock) input.mortar = true;
