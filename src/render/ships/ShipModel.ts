@@ -34,6 +34,8 @@ export interface ShipModel {
   detail?(distance: number): void;
   /** How much of the fog she takes, 0..1. */
   fog?(k: number): void;
+  /** How much of her is left as she leaves the chart, 1 whole .. 0 gone. */
+  fade?(k: number): void;
   setShadows(on: boolean): void;
   dispose(): void;
 }

@@ -18,6 +18,7 @@ import * as A from '../audio/audio';
 import { track } from '../analytics';
 import { buzz } from './haptics';
 import { hudHtml, mountHud } from './hud';
+import { touchUi } from './input';
 import { silhouette } from './silhouette';
 
 export interface Screen { html: string; mount?: (root: HTMLElement) => (() => void) | void; covered?: boolean }
@@ -27,7 +28,7 @@ const $$ = <T extends HTMLElement = HTMLElement>(s: string, r: ParentNode = docu
 const esc = (s: unknown) => String(s ?? '').replace(/[<>&"]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' }[c]!));
 const emit = (name: string, detail?: unknown) => window.dispatchEvent(new CustomEvent(name, { detail }));
 const backTo = (fallback: string) => (nav.from && !nav.from.startsWith('/unlock') ? `#${nav.from}` : fallback);
-const isTouch = () => matchMedia('(pointer: coarse)').matches;
+const isTouch = touchUi;
 
 const topbar = (label: string, back: string) => `
   <div class="top">
@@ -56,10 +57,11 @@ export function title(v: View): Screen {
     html: `
     <div class="screen">
       <div class="side">
-        <div class="eyebrow">${esc(ship.name)} · West Indies · 1715</div>
-        <div class="disp" style="font-size:clamp(44px,8vw,64px);line-height:.92;letter-spacing:.05em;text-shadow:0 6px 24px rgba(4,16,22,.75)">BLACK<br>FLAG</div>
-        <div class="sub" style="max-width:330px">Open water, a Spanish fleet that hunts on sight, and a white flag that turns every enemy into a prize.</div>
-        <div class="grow"></div>
+        <div class="mid">
+          <div class="eyebrow">${esc(ship.name)} · West Indies · 1715</div>
+          <div class="disp titlemark">BLACK <br>FLAG</div>
+          <div class="sub tsub">Open water, a Spanish fleet that hunts on sight, and a white flag that turns every enemy into a prize.</div>
+        </div>
         ${run ? `
           <button class="cta gold" data-go="#/play">
             <div><b>Back to sea</b><span>${esc(shipById(run.ship).name)} · WAVE ${run.wave} · ${reales(run.plunder)} REALES</span></div><i>→</i></button>
@@ -128,15 +130,16 @@ export function shipyard(v: View): Screen {
     <div class="screen">
       <div class="side" style="width:min(460px,56vw)">
         ${topbar('SHIPYARD', backTo('#/'))}
-        <div class="yard">${cards}</div>
-        <div class="rule" style="margin:6px 0"></div>
-        <div>
-          <div class="eyebrow">${esc(def.rank)} · ${b.gunsPerSide} guns a side${b.bowGun ? ' · bow chasers' : ''}</div>
-          <div class="disp" style="font-size:28px;margin:6px 0 8px">${own ? esc(def.name) : 'Not yet yours'}</div>
-          <div class="sub" style="font-size:13.5px">${own ? esc(def.blurb) : 'Every ship on the register has her own code. Scan hers with your phone\'s camera and she is yours.'}</div>
+        <div class="mid">
+          <div class="yard">${cards}</div>
+          <div class="rule" style="margin:6px 0"></div>
+          <div>
+            <div class="eyebrow">${esc(def.rank)} · ${b.gunsPerSide} guns a side${b.bowGun ? ' · bow chasers' : ''}</div>
+            <div class="disp yardname">${own ? esc(def.name) : 'Not yet yours'}</div>
+            <div class="sub" style="font-size:13.5px">${own ? esc(def.blurb) : 'Every ship on the register has her own code. Scan hers with your phone\'s camera and she is yours.'}</div>
+          </div>
+          ${statBars(pick)}
         </div>
-        ${statBars(pick)}
-        <div class="grow"></div>
         ${own ? `
           <button class="cta ${chosen ? 'ghost' : 'gold'}" data-choose ${chosen ? 'disabled' : ''}>
             <div><b>${chosen ? 'Your ship' : 'Sail her'}</b><span>${chosen ? 'SHE IS WHAT YOU PUT TO SEA IN' : session.run ? 'FROM YOUR NEXT RUN' : 'SHE IS WHAT YOU PUT TO SEA IN'}</span></div><i>${chosen ? '✓' : '→'}</i></button>
@@ -272,26 +275,31 @@ export function port(v: View): Screen {
     html: `
     <div class="screen">
       <div class="portsheet">
-        <div class="eyebrow">Nassau · hove down</div>
-        <div class="disp" style="font-size:28px;margin:6px 0 4px">Careened at Nassau</div>
+        <div class="porthead">
+          <div>
+            <div class="eyebrow">Nassau · hove down</div>
+            <div class="disp porttitle">Careened at Nassau</div>
+          </div>
+          <div class="chips">
+            <button class="chip" data-go="#/">Title</button>
+            <button class="chip icon burger" data-go="#/menu" aria-label="Articles"></button>
+          </div>
+        </div>
         <div class="mono" style="font-size:10.5px;color:var(--gold)">${reales(run.plunder)} REALES IN THE HOLD</div>
         <div class="mono" style="font-size:9.5px;opacity:.6;margin-top:6px">${esc(def.name)} · ${now.hullMax} HULL · ${now.gunsPerSide} GUNS A SIDE · ${run.lives < 0 ? now.lives : run.lives} LIVES</div>
         <div class="rule"></div>
-        ${UPGRADES.map(row).join('')}
-        <button class="up" data-bribe ${canBribe ? '' : 'disabled'}>
-          <div class="t">
-            <b>Bribe the harbourmaster</b><span>notoriety ${HEAT.bribe} · ${heatFlags(run.heat)} flags flying</span>
-            <div class="pips">${Array.from({ length: 5 }, (_, i) => `<i class="${i < heatFlags(run.heat) ? 'on' : ''}"></i>`).join('')}</div>
-          </div>
-          <div class="p ${canBribe ? '' : 'no'}">${reales(bribe)}</div>
-        </button>
-        <div style="height:10px"></div>
+        <div class="mid">
+          ${UPGRADES.map(row).join('')}
+          <button class="up" data-bribe ${canBribe ? '' : 'disabled'}>
+            <div class="t">
+              <b>Bribe the harbourmaster</b><span>notoriety ${HEAT.bribe} · ${heatFlags(run.heat)} flags flying</span>
+              <div class="pips">${Array.from({ length: 5 }, (_, i) => `<i class="${i < heatFlags(run.heat) ? 'on' : ''}"></i>`).join('')}</div>
+            </div>
+            <div class="p ${canBribe ? '' : 'no'}">${reales(bribe)}</div>
+          </button>
+        </div>
         <button class="cta gold" data-go="#/play">
           <div><b>Set sail</b><span>WAVE ${run.wave}${run.wave % 5 === 0 ? ' · SOMETHING LARGE IS WAITING' : ''}</span></div><i>→</i></button>
-        <div class="chips" style="margin-top:10px">
-          <button class="chip" data-go="#/">Title</button>
-          <button class="chip icon burger" data-go="#/menu" aria-label="Articles"></button>
-        </div>
       </div>
     </div>`,
     mount(root) {
@@ -332,15 +340,18 @@ export function dead(v: View): Screen {
     html: `
     <div class="screen">
       <div class="side">
-        <div class="eyebrow" style="color:#E0533F">The ${esc(shipById(s.ship).name)} is lost</div>
-        <div class="disp" style="font-size:44px">Wave ${s.wave}</div>
-        ${best ? '<div class="mono" style="font-size:10.5px;color:var(--gold)">DEEPEST YOU HAVE BEEN</div>' : ''}
-        <div class="rule" style="margin:6px 0"></div>
-        <div class="stat"><span class="k">Plunder</span><span class="v gold">${reales(s.plunder)}</span></div>
-        <div class="stat"><span class="k">Boarded</span><span class="v">${s.boarded}</span></div>
-        <div class="stat"><span class="k">Sent down</span><span class="v">${s.sunk}</span></div>
-        <div class="stat"><span class="k">Time at sea</span><span class="v">${clock(s.time)}</span></div>
-        <div class="grow"></div>
+        <div class="mid">
+          <div class="eyebrow" style="color:#E0533F">The ${esc(shipById(s.ship).name)} is lost</div>
+          <div class="disp deadwave">Wave ${s.wave}</div>
+          ${best ? '<div class="mono" style="font-size:10.5px;color:var(--gold)">DEEPEST YOU HAVE BEEN</div>' : ''}
+          <div class="rule" style="margin:6px 0"></div>
+          <div class="stats">
+            <div class="stat"><span class="k">Plunder</span><span class="v gold">${reales(s.plunder)}</span></div>
+            <div class="stat"><span class="k">Boarded</span><span class="v">${s.boarded}</span></div>
+            <div class="stat"><span class="k">Sent down</span><span class="v">${s.sunk}</span></div>
+            <div class="stat"><span class="k">Time at sea</span><span class="v">${clock(s.time)}</span></div>
+          </div>
+        </div>
         <button class="cta gold" data-new><div><b>Fit out another</b><span>NEW RUN</span></div><i>⚓</i></button>
         <div class="chips">
           <button class="chip" data-go="#/shipyard">Shipyard</button>

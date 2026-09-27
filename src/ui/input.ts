@@ -1,8 +1,9 @@
 // Hands on the ship. Three ways to sail her, one Input out:
 //
 //   touch     a floating stick on the left half of the screen — push the way you want
-//             to go, relative to the camera; how far you push is how much canvas she
-//             sets. Let go and she holds her course and her sail. Gun buttons on the right.
+//             to go, relative to the screen; how far you push is how much canvas she
+//             sets. Let go and she holds her course, easing to half sail if she was
+//             carrying more. Gun buttons on the right.
 //   keyboard  A/D (or ←/→) put the helm over, W/S (or ↑/↓) set and take in sail a step
 //             at a time. Q/E fire port and starboard, Space the mortar.
 //   mouse     left button fires to port, right button to starboard.
@@ -20,8 +21,24 @@ const state = {
   touched: false,
 };
 
+/** Is this a touch screen? A coarse main pointer says so, and so does the first finger
+ *  on the glass — a tablet with a keyboard case or a touch-screen laptop reports a fine
+ *  pointer, and without this would get a HUD with no stick to sail by. */
+let fingers = false;
+export const touchUi = () => fingers || matchMedia('(pointer: coarse)').matches;
+addEventListener('pointerdown', (e) => {
+  if (e.pointerType !== 'touch' || fingers) return;
+  const was = touchUi();
+  fingers = true;
+  if (!was) dispatchEvent(new Event('bf:touch'));
+}, { capture: true });
+
 export const sailLevel = () => state.sail;
 export const usedTouch = () => state.touched;
+/** Is a thumb on the stick? While it is, the chase camera holds its bearing: the stick is
+ *  read against the screen, and a screen that turned under the thumb would have a stick
+ *  held off to one side chase the ship round in circles for ever. */
+export const steering = () => state.stick != null;
 
 export function resetHelm() {
   state.level = 2; state.sail = LEVELS[2]; state.stick = null;
@@ -90,12 +107,13 @@ export function attachStick(zone: HTMLElement): () => void {
     if (id != null) return;
     id = e.pointerId;
     state.touched = true;
-    zone.setPointerCapture(e.pointerId);
+    // Capture can refuse a pointer the browser has already let go of; the stick must not.
+    try { zone.setPointerCapture(e.pointerId); } catch { /* keep steering without it */ }
     const b = zone.getBoundingClientRect();
     ox = e.clientX - b.left; oy = e.clientY - b.top;
     base.style.left = `${ox}px`; base.style.top = `${oy}px`;
     knob.style.left = `${ox}px`; knob.style.top = `${oy}px`;
-    zone.classList.add('on');
+    zone.classList.add('on', 'used');
     state.stick = { dx: 0, dy: 0, m: 0 };
     e.preventDefault();
   };
@@ -118,6 +136,9 @@ export function attachStick(zone: HTMLElement): () => void {
     if (e.pointerId !== id) return;
     id = null;
     state.stick = null;
+    // A thumb that lets go near a prize wants her alongside, not tearing past; full sail
+    // is for a thumb that is pushing for it. There is no other way to shorten sail on glass.
+    if (state.level > 2) { state.level = 2; state.sail = LEVELS[2]; }
     zone.classList.remove('on');
   };
   zone.addEventListener('pointerdown', down);

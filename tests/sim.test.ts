@@ -14,7 +14,7 @@ import { SHIPS, shipById } from '../src/data/ships';
 import { UPGRADES, bribeCost, shipStats } from '../src/data/upgrades';
 import { isBossWave, waveBudget, wavePlan, waveWeather } from '../src/data/waves';
 import { addFoe, crowd } from '../src/sim/spawn';
-import { lineOfSight, openWater, islandSd } from '../src/sim/map';
+import { EDGE, MAP_R, lineOfSight, openWater, islandSd } from '../src/sim/map';
 import { sees } from '../src/sim/ai';
 import type { Foe, Input, World } from '../src/sim/types';
 import * as Wo from '../src/sim/world';
@@ -172,6 +172,35 @@ describe('the chart', () => {
     expect(e.state).toBe('engage');
   });
 
+  it('the rim current swings her round instead of pinning her', () => {
+    const w = lab('rim');
+    const s = w.ship;
+    // Just inside the current, pointing straight out, helm and canvas hard for the edge.
+    const a = 0.7, d = MAP_R - EDGE + 4;
+    s.x = Math.cos(a) * d; s.y = Math.sin(a) * d; s.h = a; s.v = s.maxSpeed;
+    const out: Input = { ...idle, heading: a, sail: 1 };
+    let far = 0, t = 0, said = false;
+    while (t < 20) {
+      Wo.step(w, DT, out);
+      far = Math.max(far, Math.hypot(s.x, s.y));
+      said ||= w.events.some((e) => e.k === 'rim');
+      w.events.length = 0;
+      t += DT;
+      if (!s.rim && Math.hypot(s.x, s.y) < MAP_R - EDGE) break;
+    }
+    expect(said).toBe(true);
+    expect(far).toBeLessThan(MAP_R);
+    // she came about and is back inside with way on, not pinned against the current
+    expect(Math.hypot(s.x, s.y)).toBeLessThan(MAP_R - EDGE);
+    expect(s.v).toBeGreaterThan(s.maxSpeed * 0.5);
+    expect(Math.cos(s.h - Math.atan2(-s.y, -s.x))).toBeGreaterThan(0.3);
+    // and well inside the chart, the helm is hers again
+    s.x = 0; s.y = 300; s.h = 0; s.rim = false;
+    Wo.step(w, DT, { ...idle, heading: 1, sail: 1 });
+    expect(s.rim).toBe(false);
+    expect(s.h).toBeGreaterThan(0);
+  });
+
   it('a squadron hears its own open fire', () => {
     const w = lab('squad');
     const a = abeam(w, 'brig', 400);
@@ -213,6 +242,12 @@ describe('the surrender window', () => {
     expect(Math.abs(held - Wo.STRIKE_WINDOW)).toBeLessThan(DT * 2);
     expect(e.state).toBe('spent');
     expect(Wo.isPrize(e)).toBe(false);
+
+    // And then she is gone — off the water in ESCAPE_TIME, not sailing the chart as a ghost.
+    let fled = 0;
+    while (w.foes.includes(e) && fled < 60) { Wo.step(w, DT, idle); fled += DT; }
+    expect(w.foes.includes(e)).toBe(false);
+    expect(Math.abs(fled - Wo.ESCAPE_TIME)).toBeLessThan(DT * 2);
   });
 
   it('a struck ship can be sunk by broadside — and it costs notoriety (v2 departure)', () => {

@@ -5,7 +5,7 @@
 
 import * as THREE from 'three';
 import type { GameMap } from '../sim/map';
-import { shoreDist } from '../sim/map';
+import { EDGE, MAP_R, shoreDist } from '../sim/map';
 import type { Air } from './atmosphere';
 import { packed, seaUniforms, swell } from './waves';
 
@@ -59,6 +59,7 @@ uniform vec3 uShoreRect;
 uniform vec4 uHulls[${MAX_HULLS}];   // x, z, heading, half-length at the waterline
 uniform vec4 uHullB[${MAX_HULLS}];   // half-beam, -, way (0..1), reach squared
 uniform int uHullN;
+uniform vec2 uRim;                   // where the rim current starts, and the chart's edge
 varying vec3 vWorld;
 varying vec3 vN;
 varying float vCrest;
@@ -79,6 +80,13 @@ vec2 ripples(vec2 p, float t) {
   float nx = noise(a + vec2(e, 0.0)) + 0.5 * noise(b + vec2(e * 2.4, 0.0));
   float nz = noise(a + vec2(0.0, e)) + 0.5 * noise(b + vec2(0.0, e * 2.4));
   return vec2(n0 - nx, n0 - nz) * 1.6;
+}
+
+// The rim current's streaks: long along the way it runs, thin across it. Measured in arc
+// length round the chart, so they are the same size wherever you meet them.
+float rimStreak(float along, float rr) {
+  vec2 q = vec2(along * 0.02 + uTime * 0.15, rr * 0.5);
+  return smoothstep(0.64, 0.9, noise(q) * 0.6 + noise(q * vec2(2.7, 2.1) + 4.7) * 0.42);
 }
 
 void main() {
@@ -152,9 +160,22 @@ void main() {
   col *= 1.0 - lee * 0.22;
   float froth = smoothstep(0.35, 0.8, n2 * 0.75 + noise(vWorld.xz * 1.7 + uTime * 0.6) * 0.5);
   float foam = clamp(max(max(crestFoam * 0.4, surf) * (0.75 + n2 * 0.35), collar * froth * 1.3), 0.0, 1.0);
+  // The edge of the chart: a current racing round the world, darker and streaked white,
+  // so a captain sees it coming instead of finding it by feel. Two angles, each seamed on
+  // the far side from the other, and blended, so the streaks have no join.
+  float rr = length(vWorld.xz);
+  float rimK = smoothstep(uRim.x - 70.0, uRim.x + 15.0, rr);
+  if (rimK > 0.0) {
+    float a1 = atan(vWorld.z, vWorld.x), a2 = atan(-vWorld.z, -vWorld.x);
+    float streak = mix(rimStreak(a1 * rr, rr), rimStreak(a2 * rr, rr), smoothstep(0.55, 0.85, abs(a1) / 3.14159265));
+    col = mix(col, col * vec3(0.62, 0.74, 0.84), rimK * 0.6);
+    foam = max(foam, streak * rimK * (0.4 + 0.3 * n2));
+  }
   col = mix(col, uFoam * (0.7 + 0.3 * ndl), foam);
 
   float fog = smoothstep(uFogNear, uFogFar, dist);
+  // and past it, a wall of sea mist: the world stops, and says so
+  fog = max(fog, smoothstep(uRim.y - 40.0, uRim.y + 110.0, rr) * 0.9);
   col = mix(col, uHorizon, fog);
   gl_FragColor = vec4(col, 1.0);
   #include <tonemapping_fragment>
@@ -221,6 +242,7 @@ export class Ocean {
         uHullB: { value: Array.from({ length: MAX_HULLS }, () => new THREE.Vector4()) },
         uHullN: { value: 0 },
         uShoreRect: { value: new THREE.Vector3(-SHORE_SIZE / 2, -SHORE_SIZE / 2, SHORE_SIZE) },
+        uRim: { value: new THREE.Vector2(MAP_R - EDGE, MAP_R) },
       },
     });
     this.mesh = new THREE.Mesh(high ? polarGrid(190, 160) : polarGrid(130, 112), this.mat);

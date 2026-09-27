@@ -304,7 +304,22 @@ export class ProceduralShip implements ShipModel {
   }
 
   /** Far off, her rigging is below a pixel's worth of anything. */
-  detail(distance: number) { this.ropes.visible = distance < 520; }
+  detail(distance: number) { this.ropes.visible = distance < 520 && this.faded > 0.55; }
+
+  /** Going, 1..0: she dissolves into the haze. Her lines and colours go first — they are
+   *  too fine to dither — and a ship that is half there casts no shadow. */
+  private faded = 1;
+  fade(k: number) {
+    if (k === this.faded) return;
+    this.faded = k;
+    this.timber.userData.u.uFade.value = k;
+    if (this.canvas) this.canvas.u.uFade.value = k;
+    if (k <= 0.55) this.ropes.visible = false;
+    this.flag.visible = k > 0.35;
+    if (this.pennant) this.pennant.visible = k > 0.35;
+    for (const m of this.weak) if (k < 1) m.visible = false;
+    if (k < 1 && this.solid.castShadow) this.setShadows(false);
+  }
 
   /** How much the fog takes of her: the player's own ship stays readable in it. */
   fog(k: number) {

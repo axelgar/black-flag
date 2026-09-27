@@ -13,14 +13,14 @@ import { shipById } from '../data/ships';
 import { shipStats } from '../data/upgrades';
 import { wavePlan } from '../data/waves';
 import { stepFoe, sweep } from './ai';
-import { boarding, flyShots, hostile, hurt, landMarks, playerGuns, sink, wound } from './combat';
-import { MAP_R, makeMap, type GameMap } from './map';
-import { ground, helm, hullGap, rim, separate } from './sailing';
+import { ESCAPE_TIME, boarding, flyShots, hostile, hurt, landMarks, playerGuns, sink, wound } from './combat';
+import { makeMap, type GameMap } from './map';
+import { ground, helm, hullGap, rim, rimHelm, separate } from './sailing';
 import { hunt, release } from './spawn';
 import { stormDrift } from './weather';
 import { ev, type Input, type Player, type World } from './types';
 
-export { STRIKE_WINDOW, STRIKE_AT, BOARD_TIME, isPrize, hostile, sideVec } from './combat';
+export { STRIKE_WINDOW, STRIKE_AT, BOARD_TIME, ESCAPE_TIME, isPrize, hostile, sideVec } from './combat';
 
 /** The bit of a run a wave starts from. Read, never written — see bankWave. */
 export interface RunSeed {
@@ -59,7 +59,7 @@ export function create(opts: { seed?: string; wave?: number; run?: RunSeed; redu
     shells: stats.shellsMax, shellsMax: stats.shellsMax,
     invuln: 1.5, ramT: 0, groundT: 0,
     buffs: { powder: 0, heavy: 0, chain: 0, swivel: 0 },
-    board: null, aim: null,
+    board: null, aim: null, rim: false,
   };
   return {
     seed, wave, shipId: def.id, map, plan, stats, reduce,
@@ -115,7 +115,10 @@ export function step(w: World, dt: number, input: Input = NO_INPUT): World {
 
 function sail(w: World, dt: number, input: Input) {
   const s = w.ship;
-  helm(s, dt, input.heading, input.rudder, input.sail);
+  const was = s.rim;
+  const back = rimHelm(s);
+  if (back != null && !was) ev(w, 'rim', { x: s.x, y: s.y });
+  helm(s, dt, back ?? input.heading, back != null ? 0 : input.rudder, input.sail);
   s.x += w.drift.x * dt;
   s.y += w.drift.y * dt;
 
@@ -140,7 +143,7 @@ function sail(w: World, dt: number, input: Input) {
       if (s.groundT <= 0) { wound(w, 5, 'ground'); s.groundT = 1; s.v *= 0.5; ev(w, 'ground', { x: s.x, y: s.y, reef: true }); }
     }
   }
-  rim(s, dt);
+  rim(s, dt, 0.5);
 
   s.invuln = Math.max(0, s.invuln - dt);
   s.ramT = Math.max(0, s.ramT - dt);
@@ -223,7 +226,7 @@ function cull(w: World) {
   keep(w.shots, (s) => !s.dead);
   keep(w.foes, (e) => {
     if (e.dead) return false;
-    if (e.state === 'spent' && (Math.hypot(e.x, e.y) > MAP_R - 10 || e.spentT > 40)) {
+    if (e.state === 'spent' && e.spentT >= ESCAPE_TIME) {
       ev(w, 'gone', { id: e.id });
       return false;
     }

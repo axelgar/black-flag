@@ -49,10 +49,18 @@ body{font-family:'Instrument Sans',system-ui,sans-serif;color:var(--parch);-webk
 /* A left-hand column over the sea: the title, the shipyard list, the summary. */
 .side{position:absolute;top:0;bottom:0;left:0;width:min(440px,52vw);
   padding:calc(var(--st) + 26px) 28px calc(var(--sb) + 22px) calc(var(--gut) + 10px);
-  display:flex;flex-direction:column;gap:12px;overflow:auto;
+  display:flex;flex-direction:column;gap:12px;overflow:hidden;
   background:linear-gradient(90deg,rgba(5,16,22,.86) 0%,rgba(5,16,22,.62) 70%,rgba(5,16,22,0) 100%)}
-.side::-webkit-scrollbar{width:0}
 .side .grow{flex:1}
+/* What a column says scrolls in the middle; what it asks you to do stays on screen below
+   it, however short the phone. The last few pixels fade, so a list that goes on says so. */
+.mid{flex:1 1 auto;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:12px;padding-bottom:14px;
+  -webkit-mask:linear-gradient(#000 calc(100% - 16px),transparent);mask:linear-gradient(#000 calc(100% - 16px),transparent)}
+.mid::-webkit-scrollbar{width:0}
+.titlemark{font-size:clamp(44px,8vw,64px);line-height:.92;letter-spacing:.05em;text-shadow:0 6px 24px rgba(4,16,22,.75)}
+.tsub{max-width:330px}
+.yardname{font-size:28px;margin:6px 0 8px}
+.deadwave{font-size:44px}
 
 .chips{display:flex;gap:8px;flex-wrap:wrap}
 .chip{display:inline-flex;align-items:center;justify-content:center;gap:7px;border-radius:var(--r-chip);
@@ -129,11 +137,15 @@ body{font-family:'Instrument Sans',system-ui,sans-serif;color:var(--parch);-webk
 .bars .b i{display:block;height:100%;background:var(--gold);border-radius:4px;transition:width .3s}
 
 /* Nassau's sheet: on the right, so the town and the careened ship stay in view. */
-.portsheet{position:absolute;top:0;bottom:0;right:0;width:min(400px,50vw);overflow:auto;z-index:6;
+.portsheet{position:absolute;top:0;bottom:0;right:0;width:min(400px,50vw);overflow:hidden;z-index:6;
+  display:flex;flex-direction:column;
   padding:calc(var(--st) + 22px) var(--gutr) calc(var(--sb) + 22px) 22px;
   background:rgba(8,20,26,.86);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
   box-shadow:-22px 0 44px -22px rgba(0,0,0,.6)}
-.portsheet::-webkit-scrollbar{width:0}
+.portsheet .mid{gap:0;flex:1 1 auto;margin-bottom:10px}
+.porthead{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
+.porthead .chips{flex:none;flex-wrap:nowrap}
+.porttitle{font-size:28px;margin:6px 0 4px}
 .up{display:flex;width:100%;gap:12px;align-items:center;padding:12px 14px;border:0;text-align:left;cursor:pointer;
   border-radius:var(--r-card);background:rgba(242,231,206,.055);color:var(--parch);
   box-shadow:inset 0 0 0 1px rgba(242,231,206,.1);font:inherit;margin-bottom:8px}
@@ -216,8 +228,9 @@ body{font-family:'Instrument Sans',system-ui,sans-serif;color:var(--parch);-webk
 .joy .knob{position:absolute;width:56px;height:56px;margin:-28px 0 0 -28px;border-radius:50%;
   background:rgba(242,231,206,.85);box-shadow:0 4px 14px rgba(0,0,0,.4);display:none}
 .joy.on .base,.joy.on .knob{display:block}
-.joy .hint{position:absolute;left:calc(var(--gut) + 40px);bottom:calc(var(--sb) + 40px);
-  font:500 10px 'JetBrains Mono',monospace;letter-spacing:.16em;color:rgba(242,231,206,.45)}
+.joy .hint{position:absolute;left:var(--gut);bottom:calc(var(--sb) + 44px);
+  font:500 10px 'JetBrains Mono',monospace;letter-spacing:.16em;color:rgba(242,231,206,.55);transition:opacity .6s}
+.joy.used .hint,.joy.on .hint{opacity:0}
 
 .sailgauge{position:absolute;left:var(--gut);bottom:calc(var(--sb) + 18px);display:flex;gap:4px;align-items:flex-end}
 .sailgauge i{width:12px;border-radius:2px;background:rgba(242,231,206,.18)}
@@ -226,6 +239,7 @@ body{font-family:'Instrument Sans',system-ui,sans-serif;color:var(--parch);-webk
 
 .keys{position:absolute;left:50%;bottom:calc(var(--sb) + 14px);transform:translateX(-50%);
   font:500 9.5px 'JetBrains Mono',monospace;letter-spacing:.14em;color:rgba(242,231,206,.42);text-transform:uppercase;white-space:nowrap}
+@media (max-width:1100px){.keys{display:none}}
 
 /* off-screen pointers to what matters */
 .pointers{position:absolute;inset:0;pointer-events:none}
@@ -262,13 +276,33 @@ body{font-family:'Instrument Sans',system-ui,sans-serif;color:var(--parch);-webk
 
 /* short landscape phones: tighten everything that stacks */
 @media (max-height:430px){
-  .side{gap:9px;padding-top:calc(var(--st) + 16px)}
+  .side{gap:9px;padding-top:calc(var(--st) + 14px);padding-bottom:calc(var(--sb) + 14px)}
+  .mid{gap:9px}
+  .titlemark{font-size:clamp(34px,11vh,46px)}
+  .titlemark br{display:none}
+  .tsub{font-size:13px;line-height:1.4}
+  .yardname{font-size:22px;margin:4px 0}
+  .hullcard{padding:6px 10px}
+  .hullcard svg{width:58px;height:33px}
+  .deadwave{font-size:34px}
+  .stats{display:grid;grid-template-columns:1fr 1fr;column-gap:18px}
+  .stat{padding:6px 0}
+  .stat .v{font-size:16px}
+  .portsheet{padding-top:calc(var(--st) + 14px);padding-bottom:calc(var(--sb) + 14px)}
+  .porttitle{font-size:21px;margin:4px 0 2px}
+  .portsheet .rule{margin:10px 0}
+  .up{padding:9px 12px;margin-bottom:6px}
+  .top{margin-bottom:10px}
   .cta{padding:11px 16px}
   .cta b{font-size:15px}
   .gun{width:74px;height:74px}
   .gun.mortar{width:54px;height:54px}
   .minimap{width:92px;height:92px}
   .toast b{font-size:26px}
+}
+
+@media (max-height:360px){
+  .tsub{display:none}
 }
 
 @media (prefers-reduced-motion:reduce){

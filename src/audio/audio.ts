@@ -36,7 +36,7 @@ function brownNoise(seconds = 2) {
 
 /** Must be called from a gesture — browsers will not start a context otherwise. */
 export function unlock() {
-  if (ac) { if (session.sound) void ac.resume(); return; }
+  if (ac) { if (session.sound && ac.state !== 'running') ac.resume().catch(() => {}); return; }
   const Ctx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
   if (!Ctx) return;
   ac = new Ctx();
@@ -64,7 +64,7 @@ export function unlock() {
 export function prefs() {
   if (!ac) { if (session.sound) unlock(); return; }
   master.gain.setTargetAtTime(session.sound ? 0.9 : 0, now(), 0.05);
-  if (session.sound) void ac.resume();
+  if (session.sound) ac.resume().catch(() => {});
 }
 
 /** Storm weather thickens the sea bed; port quietens it. */

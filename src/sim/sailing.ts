@@ -59,15 +59,34 @@ export function ground(m: GameMap, s: Vessel): number {
 }
 
 /** The rim current: gentle at first, then a wall. The chart has an edge and it says so. */
-export function rim(s: Vessel, dt: number) {
+export function rim(s: Vessel, dt: number, k = 1.4) {
   const d = Math.hypot(s.x, s.y);
   const inner = MAP_R - EDGE;
   if (d <= inner) return;
   const nx = s.x / d, ny = s.y / d;
   const over = d - inner;
-  s.x -= nx * over * 1.4 * dt;
-  s.y -= ny * over * 1.4 * dt;
+  s.x -= nx * over * k * dt;
+  s.y -= ny * over * k * dt;
   if (d > MAP_R) { s.x = nx * MAP_R; s.y = ny * MAP_R; }
+}
+
+/**
+ * The rim current takes her head. A current that only shoves reads as a helm that has
+ * stopped answering — she slews sideways, or sits there with her canvas full — so past
+ * its edge the current swings her round instead, bow back toward the middle of the
+ * chart, and gives the helm back once she is pointing in. Returns the bearing it is
+ * steering her for, or null while the helm is hers.
+ */
+export function rimHelm(s: Vessel & { rim: boolean }): number | null {
+  const d = Math.hypot(s.x, s.y);
+  const inward = Math.atan2(-s.y, -s.x);
+  const in_ = Math.cos(angleTo(s.h, inward));
+  if (s.rim) {
+    if (in_ > 0.92 || d < MAP_R - EDGE - 40) s.rim = false;
+  } else if (d > MAP_R - EDGE && in_ < 0.5) {
+    s.rim = true;
+  }
+  return s.rim ? inward : null;
 }
 
 /** Where along her length the bow, waist and stern are. Collision works off these. */

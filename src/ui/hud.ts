@@ -5,11 +5,11 @@
 import { heatFlags, HUNTER_AT } from '../data/notoriety';
 import { reales } from '../state/run';
 import { BOARD_SPEED, STRIKE_WINDOW, hostile, isPrize } from '../sim/combat';
-import { MAP_R } from '../sim/map';
+import { EDGE, MAP_R } from '../sim/map';
 import type { World } from '../sim/types';
 import type { View } from '../render/view';
 import * as A from '../audio/audio';
-import { attachStick, fire, sailLevel, usedTouch } from './input';
+import { attachStick, fire, sailLevel, steering, usedTouch } from './input';
 import { buzz } from './haptics';
 
 const $ = <T extends HTMLElement = HTMLElement>(s: string, r: ParentNode = document) => r.querySelector(s) as T;
@@ -52,8 +52,8 @@ export function hudHtml(touch: boolean) {
       <button class="chip icon" data-go="#/pause" aria-label="Heave to">❙❙</button>
     </div>
     <div class="toast" id="h-toast"></div>
-    ${touch ? '<div class="joy" id="h-joy"><div class="base"></div><div class="knob"></div><div class="hint">DRAG TO SAIL</div></div>' : ''}
-    <div class="sailgauge" id="h-sail" style="${touch ? 'display:none' : ''}">
+    ${touch ? `<div class="joy${usedTouch() ? ' used' : ''}" id="h-joy"><div class="base"></div><div class="knob"></div><div class="hint">DRAG TO SAIL · PUSH HARD FOR FULL SAIL</div></div>` : ''}
+    <div class="sailgauge" id="h-sail">
       <i style="height:8px"></i><i style="height:13px"></i><i style="height:18px"></i><span id="h-sailtxt">HALF SAIL</span>
     </div>
     <div class="guns">
@@ -149,7 +149,7 @@ export function hudTick(w: World | null, view: View, dt: number) {
     g.classList.toggle('bears', bears[i] && load >= 1);
   });
 
-  if (!usedTouch() || hud.sail[0].offsetParent) {
+  {
     const lvl = Math.round(sailLevel() * 3);
     if (L.sail !== lvl) {
       hud.sail.forEach((el, i) => el.classList.toggle('on', i < lvl));
@@ -212,7 +212,7 @@ function pointers(w: World, view: View) {
         const secs = `${Math.ceil(e.strikeT)}s`;
         // The one rule about boarding nobody can see: you have to be alongside, not tearing past.
         const text = boarding ? 'BOARDING…'
-          : d < reach && s.v > s.maxSpeed * BOARD_SPEED ? `EASE OFF TO BOARD · ${secs}`
+          : d < reach && s.v > s.maxSpeed * BOARD_SPEED ? `${steering() ? 'LET GO' : 'EASE OFF'} TO BOARD · ${secs}`
           : d < reach * 3 ? `COME ALONGSIDE · ${secs}` : `PRIZE · ${secs}`;
         label(e.x, e.len * 0.6 + 8, e.y, text, 'prize');
       }
@@ -258,6 +258,12 @@ function minimap(w: World, yaw: number) {
     const bc = b.getContext('2d')!;
     bc.fillStyle = 'rgba(18,58,74,.9)';
     bc.beginPath(); bc.arc(R, R, R - 2, 0, Math.PI * 2); bc.fill();
+    // the rim current: a darker band round the edge, and a dashed line where it takes you
+    bc.fillStyle = 'rgba(4,16,22,.55)';
+    bc.beginPath(); bc.arc(R, R, R - 2, 0, Math.PI * 2); bc.arc(R, R, (MAP_R - EDGE) * scale, 0, Math.PI * 2, true); bc.fill();
+    bc.strokeStyle = 'rgba(242,231,206,.3)'; bc.lineWidth = 1.5; bc.setLineDash([4, 5]);
+    bc.beginPath(); bc.arc(R, R, (MAP_R - EDGE) * scale, 0, Math.PI * 2); bc.stroke();
+    bc.setLineDash([]);
     const coast = (is: (typeof w.map.islands)[number], grow: number) => {
       bc.beginPath();
       is.radii.forEach((r, i) => {
@@ -289,6 +295,7 @@ function minimap(w: World, yaw: number) {
   c.strokeStyle = w.phase === 'clear' ? '#FFD36A' : 'rgba(217,164,65,.6)'; c.lineWidth = 2;
   c.beginPath(); c.arc(hx, hy, 5, 0, Math.PI * 2); c.stroke();
   for (const e of w.foes) {
+    if (e.state === 'spent') continue;
     if (e.state === 'patrol' && Math.hypot(e.x - w.ship.x, e.y - w.ship.y) > 260) continue;
     const [x, y] = P(e.x, e.y);
     c.fillStyle = isPrize(e) ? '#F6F1E1' : e.L ? '#FF7A3C' : e.state === 'engage' ? '#E0533F' : 'rgba(224,83,63,.5)';

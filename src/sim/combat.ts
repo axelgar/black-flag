@@ -12,6 +12,7 @@ export const STRIKE_AT = 0.25;    // hull fraction at which the colours come dow
 export const STRIKE_WINDOW = 6;   // seconds a prize stays boardable. The number.
 export const BOARD_TIME = 0.8;    // seconds alongside it takes to put a crew across
 export const BOARD_SPEED = 0.9;   // faster than this fraction of her best and you are tearing past, not alongside
+export const ESCAPE_TIME = 4;     // seconds a prize that got away takes to make sail and vanish into the haze
 const VOLLEY_GAP = 0.055;         // a broadside ripples bow to stern, it does not clap
 const MORTAR_FUSE = 1.3;
 const FOE_SHOT = 88;

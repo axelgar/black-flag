@@ -35,6 +35,14 @@ float bfNoise(vec3 x) {
              mix(mix(bfHash(i + vec3(0.0, 0.0, 1.0)), bfHash(i + vec3(1.0, 0.0, 1.0)), f.x), mix(bfHash(i + vec3(0.0, 1.0, 1.0)), bfHash(i + vec3(1.0, 1.0, 1.0)), f.x), f.y), f.z);
 }`;
 
+/** A ship leaving the chart dissolves rather than popping: an ordered dither against the
+ *  fade, so she needs no blending, no sorting and no second program to go. */
+const FADE = /* glsl */ `
+uniform float uFade;
+float bfBayer2(vec2 a) { a = floor(a); return fract(dot(a, vec2(0.5, a.y * 0.75))); }
+float bfBayer(vec2 a) { return bfBayer2(0.5 * a) * 0.25 + bfBayer2(a); }`;
+const FADE_CUT = /* glsl */ `if (uFade < 0.999 && bfBayer(gl_FragCoord.xy) >= uFade) discard;`;
+
 /** Fog, scaled per material: the player's own ship keeps her colours in a fog bank. */
 const FOG = /* glsl */ `
 #ifdef USE_FOG
@@ -53,6 +61,7 @@ export interface TimberUniforms {
   uGlow: { value: THREE.Vector2 };    // light in the ports, larboard and starboard
   uScorch: { value: number };
   uFogK: { value: number };
+  uFade: { value: number };
 }
 
 export function timberMaterial(map: THREE.Texture, bump: boolean, masonry?: THREE.Texture): THREE.MeshStandardMaterial & { userData: { u: TimberUniforms } } {
@@ -62,6 +71,7 @@ export function timberMaterial(map: THREE.Texture, bump: boolean, masonry?: THRE
     uGlow: { value: new THREE.Vector2(0, 0) },
     uScorch: { value: 0 },
     uFogK: { value: 1 },
+    uFade: { value: 1 },
   };
   m.userData.u = u;
   m.defines = {};
@@ -113,6 +123,7 @@ varying vec2 vTuv;
 varying vec3 vLocal;
 varying float vPort;
 ${NOISE}
+${FADE}
 float bfPick(vec4 t, vec4 t2, float k) {
   return k < 0.5 ? t.r : k < 1.5 ? t.g : k < 2.5 ? t.b : k < 3.5 ? t.a : k < 4.5 ? 1.0
     : k < 5.5 ? t2.r : k < 6.5 ? t2.g : k < 7.5 ? t2.b : t2.a;
@@ -125,6 +136,7 @@ vec3 bfBump(vec3 surf_pos, vec3 surf_norm, vec2 dHdxy, float faceDirection) {
   return normalize(abs(fDet) * surf_norm - vGrad);
 }`)
       .replace('#include <color_fragment>', /* glsl */ `#include <color_fragment>
+${FADE_CUT}
 vec4 bfTex = texture2D(uTimber, vTuv);
 #ifdef BF_MASONRY
 vec4 bfTex2 = texture2D(uMasonry, vTuv);
@@ -180,6 +192,7 @@ export interface CanvasUniforms {
   uTatter: { value: number };
   uPhase: { value: number };
   uFogK: { value: number };
+  uFade: { value: number };
 }
 
 const SAIL_VERTEX_HEAD = /* glsl */ `#include <common>
@@ -204,7 +217,7 @@ export function canvasMaterial(map: THREE.Texture, color: string, ink: string, a
 } {
   const mat = new THREE.MeshStandardMaterial({ color, roughness: 0.94, metalness: 0, side: THREE.DoubleSide });
   mat.alphaToCoverage = a2c;
-  const u: CanvasUniforms = { uFill: { value: 1 }, uTatter: { value: 0 }, uPhase: { value: Math.random() * 20 }, uFogK: { value: 1 } };
+  const u: CanvasUniforms = { uFill: { value: 1 }, uTatter: { value: 0 }, uPhase: { value: Math.random() * 20 }, uFogK: { value: 1 }, uFade: { value: 1 } };
   const shared = { uCanvas: { value: map }, uTime: shipTime, uInk: { value: new THREE.Color(ink) } };
   if (a2c) mat.defines = { BF_A2C: '' };
   mat.onBeforeCompile = (sh) => {
@@ -215,8 +228,10 @@ export function canvasMaterial(map: THREE.Texture, color: string, ink: string, a
 uniform sampler2D uCanvas;
 uniform float uTatter, uFogK;
 uniform vec3 uInk;
-varying vec2 vCuv;`)
+varying vec2 vCuv;
+${FADE}`)
       .replace('#include <color_fragment>', /* glsl */ `#include <color_fragment>
+${FADE_CUT}
 vec4 bfC = texture2D(uCanvas, vCuv);
 float bfCut = bfC.a - uTatter;
 #ifdef BF_A2C

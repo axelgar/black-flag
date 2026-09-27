@@ -29,7 +29,7 @@ import { Wakes } from './wakes';
 import { heightAt, ride } from './waves';
 import { ProceduralShip, prewarmShips, setShipLights, setShipTime, setShipView, shipQuality } from './ships/procedural';
 import type { ShipModel } from './ships/ShipModel';
-import { STRIKE_WINDOW, BOARD_TIME } from '../sim/combat';
+import { STRIKE_WINDOW, BOARD_TIME, ESCAPE_TIME } from '../sim/combat';
 
 export type Mode = 'title' | 'shipyard' | 'port' | 'play' | 'none';
 export type Tier = 'low' | 'high';
@@ -465,23 +465,26 @@ export class View {
 
   private poseFoe(e: Foe, m: ShipModel, dt: number, t: number) {
     const r = ride(e.x, e.y, e.h, e.len, e.beam, t);
-    const struck = e.state === 'struck' || e.state === 'spent';
+    const struck = e.state === 'struck';
+    // A prize that got away makes sail and fades into the haze on her way out.
+    const left = e.state === 'spent' ? clamp(1 - e.spentT / ESCAPE_TIME, 0, 1) : 1;
     const heel = clamp(-e.rot * e.v * 0.03, -0.15, 0.15);
-    const list = struck ? 0.12 : 0;
+    const list = struck ? 0.12 : left < 1 ? 0.06 : 0;
     m.pose({
-      x: e.x, z: e.y, h: e.h, heave: r.heave - (struck ? 0.4 : 0), pitch: r.pitch, roll: r.roll + heel + list,
+      x: e.x, z: e.y, h: e.h, heave: r.heave - (struck ? 0.4 : left < 1 ? 0.2 : 0), pitch: r.pitch, roll: r.roll + heel + list,
       fill: struck ? 0.05 : clamp(e.sail * (e.v / Math.max(1, e.maxSpeed) + 0.5), 0.2, 1),
-      struck, damage: 1 - e.hull / e.hullMax, t,
+      struck: struck || left < 1, damage: 1 - e.hull / e.hullMax, t,
     });
     m.ready?.(e.state === 'engage');
     m.portsOpen(e.broadSide, e.broad > 0);
     m.portsOpen(e.broadSide === 1 ? -1 : 1, false);
     m.detail?.(this.camera.position.distanceTo(m.root.position));
     if (e.ports && m.weakPoints) m.weakPoints(e.ports.map((p) => !p.dead));
+    m.fade?.(left);
     const fx = Math.cos(e.h), fz = Math.sin(e.h);
-    this.wakes.track(e.id, e.x - fx * e.len * 0.45, e.y - fz * e.len * 0.45, e.beam, e.v, dt, t);
-    this.ocean.hull(e.x, e.y, e.h, e.len, e.beam, e.v / Math.max(1, e.maxSpeed));
-    const dmg = 1 - e.hull / e.hullMax;
+    this.wakes.track(e.id, e.x - fx * e.len * 0.45, e.y - fz * e.len * 0.45, e.beam, e.v * left, dt, t);
+    if (left > 0.4) this.ocean.hull(e.x, e.y, e.h, e.len, e.beam, e.v / Math.max(1, e.maxSpeed));
+    const dmg = (1 - e.hull / e.hullMax) * left;
     if (dmg > 0.4) this.fx.burn(e.x, r.heave + 2 + e.len * 0.05, e.y, dmg, dt);
     if (e.cls === 'brulote' && e.state === 'engage') this.fx.burn(e.x, r.heave + 2, e.y, 0.9, dt);
   }
@@ -628,7 +631,10 @@ export class View {
     const aspect = this.camera.aspect;
     if (this.mode === 'play' && w) {
       const s = w.ship;
-      this.camYaw += angleTo(this.camYaw, s.h) * Math.min(1, this.dtLast * 1.1);
+      // Swing round behind her — but hold the bearing while a thumb is on the stick (see
+      // holdYaw), and pick the swing up again gently once it lets go.
+      this.yawFollow = this.holdYaw ? 0 : Math.min(1, this.yawFollow + this.dtLast / 0.8);
+      this.camYaw += angleTo(this.camYaw, s.h) * Math.min(1, this.dtLast * 1.1 * this.yawFollow * this.yawFollow);
       let fight = false;
       for (const e of w.foes) if (e.state === 'engage' && Math.hypot(e.x - s.x, e.y - s.y) < 240) { fight = true; break; }
       const base = (aspect >= 1 ? this.chase.dist : (this.chase.dist * 1.23) / Math.sqrt(aspect));
@@ -670,6 +676,10 @@ export class View {
   }
 
   private dtLast = 1 / 60;
+  /** Set while the touch stick is held: the chase camera stops swinging round behind the
+   *  ship, so the screen the stick is read against holds still under the thumb. */
+  holdYaw = false;
+  private yawFollow = 1;
   /** The chase camera: how far back (landscape), and how steeply it looks down. */
   chase = { dist: 135, pitch: 0.72 };
   /** The player's own pull on the chase camera, from the mouse wheel: under 1 is closer. */

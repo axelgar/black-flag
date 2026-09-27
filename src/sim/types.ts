@@ -40,6 +40,7 @@ export interface Player extends Vessel {
   buffs: Buffs;
   board: { id: number; t: number } | null;
   aim: { x: number; y: number; lock: number } | null;   // where the mortar would land now
+  rim: boolean;            // the rim current has her head, and the helm is not hers until she points back in
 }
 
 export type FoeState = 'patrol' | 'engage' | 'struck' | 'spent';

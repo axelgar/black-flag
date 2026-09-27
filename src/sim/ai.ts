@@ -27,10 +27,11 @@ export function stepFoe(w: World, e: Foe, dt: number) {
   let sail = 0.5;
 
   if (e.state === 'spent') {
-    // Abandoned and running for home. Nothing to gain, so get her off the chart.
+    // She got away: all plain sail, stern to you, and gone into the haze in a few
+    // seconds. A prize that lingers on the chart after her window reads as a ship you
+    // have somehow failed to sink.
     e.spentT += dt;
-    const out = Math.atan2(e.y, e.x);
-    heading = out; sail = 0.8;
+    heading = Math.atan2(e.y - w.ship.y, e.x - w.ship.x); sail = 1;
   } else if (e.state === 'struck') {
     e.strikeT -= dt;
     heading = null; sail = 0;
@@ -49,7 +50,7 @@ export function stepFoe(w: World, e: Foe, dt: number) {
     [heading, sail] = engage(w, e, dt);
   }
 
-  if (heading != null && e.state !== 'spent') heading = avoid(w, e, heading);
+  if (heading != null) heading = avoid(w, e, heading);
   const mul = w.speedMul * (e.slow > 0 ? 0.55 : 1) * (e.cls === 'brulote' ? 1 + Math.min(0.9, e.chase * 0.12) : 1);
   helm(e, dt, heading, 0, sail, e.state === 'struck' ? 1 : mul);
   ground(w.map, e);

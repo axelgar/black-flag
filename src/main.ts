@@ -38,6 +38,7 @@ let acc = 0;
 let outcome = 0;                 // seconds left on the little pause after a wave ends
 let pendingToast: [string, string] | null = null;
 let covered = false;
+let rimSaid = -1e9;             // when the rim current was last announced, so it is not nagged
 
 /* ---------------------------------------------------------------- input -- */
 
@@ -49,7 +50,10 @@ app.addEventListener('wheel', (e) => {
   e.preventDefault();
   view.chaseZoom = Math.min(1.35, Math.max(0.45, view.chaseZoom * Math.exp(e.deltaY * 0.0012)));
 }, { passive: false });
-addEventListener('pointerdown', () => A.unlock(), { once: true });
+// Sound may only start from a gesture, and on glass a touch becomes one when it lifts,
+// not when it lands (iOS is strict about it). So every kind of tap asks, which also
+// wakes the sound again after the phone has been locked.
+for (const k of ['pointerdown', 'pointerup', 'touchend', 'click'] as const) addEventListener(k, () => A.unlock(), { capture: true, passive: true });
 
 /* ------------------------------------------------------------ run flow --- */
 
@@ -63,7 +67,7 @@ function startWave() {
   const run = session.run!;
   world = Wo.create({ seed: run.seed, wave: run.wave, run: runSeed(run), reduce: reduced() });
   view.setWorld(world);
-  acc = 0; outcome = 0;
+  acc = 0; outcome = 0; rimSaid = -1e9;
   Input.resetHelm();
   A.setSea(world.weather);
   const p = world.plan;
@@ -158,6 +162,7 @@ function handle(events: World['events']) {
       case 'legend': if (!world!.plan.boss) toast(e.name as string, 'OUT OF SCHEDULE · FIVE FLAGS'); break;
       case 'legend-down': beat(e.id as string); toast(e.name as string, 'STRUCK FROM THE LIST'); break;
       case 'lost-prize': toast('SHE GOT AWAY', 'AND SHE WILL TALK'); break;
+      case 'rim': if (world!.t - rimSaid > 12) { rimSaid = world!.t; toast('THE EDGE OF THE CHART', 'THE CURRENT TURNS YOU BACK'); } break;
       case 'won': toast('THE SEA IS CLEAR', `MAKE FOR NASSAU · ${reales(world!.plunder)} REALES`); break;
       case 'hit': buzz(18); break;
       default: break;
@@ -259,6 +264,8 @@ window.addEventListener('bf:prefs', () => {
 });
 
 addEventListener('resize', () => view.resize());
+// A finger on a screen that said it had none: put the stick and the thumb buttons up.
+window.addEventListener('bf:touch', () => { if (path() === '/play' || path() === '/') render(); });
 
 /* ---------------------------------------------------------------- clock -- */
 
@@ -278,6 +285,7 @@ function frame() {
 }
 
 function tick(dt: number) {
+  view.holdYaw = !paused && Input.steering();
 
   if (!paused && world && (world.phase === 'fight' || world.phase === 'clear')) {
     acc += dt;
