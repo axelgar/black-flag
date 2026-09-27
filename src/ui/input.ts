@@ -78,6 +78,11 @@ export function read(camYaw: number, first: boolean): Input {
 
 export function attachKeys(onPause: () => void, onAny: () => void) {
   addEventListener('keydown', (e) => {
+    // Typing a code or a captain's name is not sailing: S, W and Space belong to the text
+    // box. An iPhone's on-screen keyboard sends these keys too, so this is not just a
+    // desktop problem: KSTRL-7Q typed into the shipyard came out as KTRL-7Q.
+    const t = e.target as HTMLElement | null;
+    if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
     const k = e.key.toLowerCase();
     if (e.repeat) { keys.add(k); return; }
     if (k === 'escape') { e.preventDefault(); onPause(); return; }
