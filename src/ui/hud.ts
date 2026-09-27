@@ -100,7 +100,7 @@ function measure() {
   if (!hud) return;
   readInsets();
   keepOut.length = 0;
-  for (const sel of ['.hudtl', '.hudtr', '.guns']) {
+  for (const sel of ['.hudtl', '.hudtr', '.guns', '.sailgauge']) {
     const el = hud.root.querySelector(sel);
     if (el) keepOut.push(el.getBoundingClientRect());
   }

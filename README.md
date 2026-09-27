@@ -20,6 +20,7 @@ npm run dev          # http://localhost:5173
 npm test             # the self-check (vitest)
 npm run build        # typecheck + production bundle in dist/
 npm run qr           # print a QR code per unlockable ship into qr/
+npm run icons        # redraw the home-screen icons into public/
 ```
 
 Vite, TypeScript and Three.js. Everything is procedural: no models, textures or sound files.
@@ -28,11 +29,16 @@ Vite, TypeScript and Three.js. Everything is procedural: no models, textures or 
 
 | | Touch | Keyboard / mouse |
 |---|---|---|
-| Sail | floating stick, left half of the screen. Push the way you want to go (relative to the camera); how far you push sets the canvas. Let go and she holds course. | A/D or ←/→ helm · W/S or ↑/↓ set and take in sail |
-| Broadsides | PORT and STBD buttons (the ring is the reload) | Q / E, or left / right mouse button |
+| Sail | floating stick, left half of the screen. Push the way you want to go on the screen: the camera holds still while your thumb is down, and swings round behind her when you let go. How far you push sets the canvas; push hard for full sail. Let go and she holds her course, easing to half sail — which is also how you slow down to board. | A/D or ←/→ helm · W/S or ↑/↓ set and take in sail |
+| Broadsides | PORT and STBD buttons (the ring is the reload). Tap the other side while one is firing and it follows. | Q / E, or left / right mouse button |
 | Mortar | MORTAR button | Space |
-| Heave to | ❙❙ | Esc |
+| Heave to | ❙❙, or the system back gesture | Esc |
 | Camera | | mouse wheel: in to your ship, out to the horizon |
+
+On Android the game takes the whole screen and locks to landscape when you put to sea
+(switch it off in Articles); installed from the browser menu it opens that way. On an
+iPhone, Add to Home Screen does the same. A ship's unlock code can be typed in the
+shipyard as well as scanned.
 
 The fans painted on the water are each side's arc and range. They turn gold when a side
 is loaded and bears on something. The gold dashed ring ahead of the bow is where the
@@ -47,15 +53,17 @@ mortar will land. It locks onto the nearest ship forward.
 - **Broadsides.** Each side reloads on its own. Balls ripple bow to stern, carry your own
   way, and are stopped by rock. Some hulls add bow chasers that fire themselves.
 - **Surrender and boarding.** At a quarter hull she strikes. Come within about a hull's
-  length at under three-quarter speed and hold it for 0.8s to board: double plunder, a
-  hull repair, and your notoriety drops. Let her go and it rises. Sink her anyway and it
-  rises more.
+  length at under nine-tenths of your best speed and hold it for 0.8s to board: double
+  plunder, a hull repair, and your notoriety drops. Let her go and it rises, and she makes
+  sail and is gone into the haze in a few seconds. Sink her anyway and it rises more.
 - **Notoriety.** Five flags. At three, hunter frigates come in off the rim already
   looking for you. At five, a legendary comes out of schedule.
 - **Waves.** The v1 wave curve, turned into squadrons. The next one puts to sea on a timer,
   or sooner if the sea goes quiet. Every fifth wave is a legendary: El Impoluto, La Dama
   Negra, HMS Prince or La Fortuna. Each has glowing gun ports as weak points and three
   phases.
+- **The edge of the chart.** A band of streaked current, and sea mist beyond it. Sail into
+  it and the current swings her bow round and sends her back in.
 - **Home.** A clear sea lights a beacon over Nassau. Sail into the harbour mouth, or take
   the ⚓ shortcut. Careening refits hull and shells. Upgrades and the bribe are bought there
   and last for the run.
@@ -191,7 +199,8 @@ src/
   audio/       synthesised, stereo-placed cannons, sea and shanty
   state/       session (localStorage v2, migrates the v1 record book), run banking
 tests/         vitest + a headless bot captain
-scripts/qr.ts  QR printer
+scripts/       qr.ts (QR printer), icons.ts (the home-screen icons)
+public/        manifest.webmanifest and the icons it names
 ```
 
 ## The self-check
@@ -240,14 +249,38 @@ Bot, waves 1–10 with the upgrades a player would have by then — before → a
 damage taken per wave 30–103 → 19–94 for waves 1–9, and wave 10 went from **0/4 won, all
 three lives lost** to **4/4 won, half a life**.
 
+## Second review, phones first
+
+The whole game read through again with a phone in landscape as the main way it is played:
+three audits (simulation, phone UI and flow, renderer), each finding checked before it was
+fixed. The ones that mattered:
+
+| Found | Changed |
+|---|---|
+| "The direction is broken: she won't move, or goes diagonal" — the rim current was invisible and only shoved, so near the edge (where squadrons put to sea) she stopped dead or slid sideways | the current takes her head and swings her about, the sea shows it (streaked current, mist beyond), the minimap draws it, a toast names it |
+| on a phone, holding the stick to one side circled for ever: the stick is read against the screen, and the camera turned the screen | the camera holds its bearing while a thumb is on the stick |
+| "destroyed ships keep sailing": a prize whose window lapsed ran for the rim for up to 40s, burning, un-hittable, a red dot on the minimap | she makes sail and dissolves into the haze in 4s |
+| a thumb pushed hard could never board, and nothing on screen said how to slow down | letting go eases her to half sail, the sail gauge shows on phones, the label says **LET GO TO BOARD** |
+| a waterspout out-pulled the Jackdaw and the galleon and held them at its core until the run ended | its pull stays below the ship's own speed |
+| pausing (or locking the phone) in the second before the curtain undid a death | a wave's result is written the moment it happens |
+| the back gesture could reach the port shop mid-wave, where upgrades were free | routes a live wave may not be left for lead to the pause screen |
+| back buttons bounced between two screens for ever | they walk a trail back to where you came from |
+| the paint cap at 60fps skipped a frame every few on a 60Hz iPhone | frames count as due a little early and the remainder carries |
+| the sky's clouds were worked out for every pixel and then painted over by the sea | the sky is drawn last among the opaque, so the depth test discards it |
+| shaders compiled mid-fight (first alert, first ring, first shell) and every island was rebuilt twice a run | everything compiles at start-up; the chart is built once per run |
+| the key screens' one action fell below the fold on a short landscape phone | actions stay on screen, the middle scrolls |
+
 ## Not built, or not yet measured
 
 - **Balance needs a real player.** The numbers above are a bot that knows where every ship is and never dodges; treat them as relative, not absolute.
 - **Frame rate on a real phone is unmeasured.** Desktop Chrome with thirteen ships on
   screen at wave 14: about 80 draw calls, 275k triangles, and half a millisecond of CPU a
   frame for the view. Low tier, the default on touch devices:
-  - DPR 1.5, 3 swell waves, no shadows, no bloom;
-  - lighter hulls and 512px ship textures.
+  - DPR 1.5, 3 swell waves, no shadows, no bloom, a cheaper sea (one ripple layer, no
+    caustics);
+  - lighter hulls and 512px ship textures;
+  - and a resolution governor: a phone that cannot hold its frame rate drops toward DPR
+    0.75 rather than dropping frames, and climbs back after a run of good ones.
 
   Picture quality can be forced in Articles.
 - **No GLTF ships ship yet.** `ModelSpec` has the `gltf` variant and `ShipModel` is the
