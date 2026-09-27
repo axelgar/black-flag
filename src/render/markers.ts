@@ -28,7 +28,8 @@ varying vec2 vUv;
 void main() {
   vec2 c = vUv - 0.5;
   float r = length(c) * 2.0;
-  float a = atan(c.x, -c.y) / 6.28318 + 0.5;
+  // (atan of the exact centre is undefined, and a NaN here is a black square after bloom)
+  float a = dot(c, c) < 1e-10 ? 0.0 : atan(c.x, -c.y) / 6.28318 + 0.5;
   float ring = smoothstep(0.84, 0.88, r) * (1.0 - smoothstep(0.96, 1.0, r));
   float arc = step(a, uProg);
   float dash = uDash > 0.0 ? step(0.5, fract(a * uDash - uTime * 0.6)) : 1.0;

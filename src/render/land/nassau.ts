@@ -672,7 +672,9 @@ export function buildTown(sh: Shape, _harbour: Harbour, sites: Sites, N: Nursery
 void main() { vUv = uv; vec4 mv = modelViewMatrix * vec4(position, 1.0); vN = normalize(normalMatrix * normal); vV = normalize(-mv.xyz); gl_Position = projectionMatrix * mv; }`,
     fragmentShader: /* glsl */ `uniform float uOpacity; uniform vec3 uColor; varying vec2 vUv; varying vec3 vN; varying vec3 vV;
 void main() {
-  float a = uOpacity * pow(vUv.y, 2.2) * pow(abs(dot(vN, vV)), 1.4);
+  // clamped: with multisampling an edge pixel is shaded a hair outside the cone, where the
+  // coordinate dips below zero and pow() of it is NaN — which bloom spread into black squares
+  float a = uOpacity * pow(max(vUv.y, 0.0), 2.2) * pow(min(abs(dot(normalize(vN), normalize(vV))), 1.0), 1.4);
   gl_FragColor = vec4(uColor * a, a);
   #include <tonemapping_fragment>
   #include <colorspace_fragment>

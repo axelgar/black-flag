@@ -82,7 +82,7 @@ void main() {
   // streaks spiralling up the funnel, the whole of it turning
   vec2 p = vec2(vUv.x * 8.0 + vUv.y * 5.0 - uTime * 1.6, vUv.y * 3.0 - uTime * 0.9);
   float s = vn(p) * 0.6 + vn(p * 2.3 + 3.1) * 0.4;
-  float rim = pow(1.0 - abs(dot(vN, vV)), 1.4);
+  float rim = pow(max(1.0 - abs(dot(vN, vV)), 0.0), 1.4);
   float ends = smoothstep(0.0, 0.08, vUv.y) * (1.0 - smoothstep(0.7, 1.0, vUv.y));
   float a = (0.18 + rim * 0.62) * (0.45 + s * 0.8) * ends;
   vec3 col = mix(uColor * 0.62, uColor, s);

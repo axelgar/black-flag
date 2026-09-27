@@ -279,10 +279,10 @@ export function stock(lo: boolean): Nursery {
 
 /** Leaves: the foliage atlas, cut out; moved by the wind; lit through from behind. */
 export function floraMaterial(map: THREE.Texture, time: { value: number }, a2c: boolean): THREE.MeshStandardMaterial {
-  // With alpha-to-coverage the test sharpens the edge and discards what is empty, so a
-  // frond is still cut out where the target has no samples to cover (and on drivers that
-  // ignore coverage there); without it, it is the cut-out.
-  const m = new THREE.MeshStandardMaterial({ map, vertexColors: true, roughness: 0.8, metalness: 0, side: THREE.DoubleSide, alphaTest: 0.42 });
+  // Alpha-to-coverage on 'high' (its composer target is multisampled, so there are samples
+  // to cover) and a plain cut-out without it. Not both: three's combined path divides by
+  // the alpha's screen-space slope, which is zero wherever a frond's alpha is flat.
+  const m = new THREE.MeshStandardMaterial({ map, vertexColors: true, roughness: 0.8, metalness: 0, side: THREE.DoubleSide, alphaTest: a2c ? 0 : 0.42 });
   m.alphaToCoverage = a2c;
   m.onBeforeCompile = (sh) => {
     sh.uniforms.uTime = time;

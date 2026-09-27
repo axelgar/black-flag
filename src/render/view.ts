@@ -148,7 +148,14 @@ export class View {
       const rt = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 4 });
       this.composer = new EffectComposer(this.renderer, rt);
       this.composer.addPass(new RenderPass(this.scene, this.camera));
-      this.composer.addPass(new UnrealBloomPass(new THREE.Vector2(256, 256), 0.32, 0.5, 0.9));
+      const bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.32, 0.5, 0.9);
+      // A NaN anywhere in the picture is one bad pixel — until bloom blurs it down its mips
+      // into black squares the size of a town. The bright-pass drops them at the door.
+      const hp = bloom.materialHighPassFilter;
+      hp.fragmentShader = hp.fragmentShader.replace('gl_FragColor = mix( outputColor, texel, alpha );',
+        'gl_FragColor = mix( outputColor, texel, alpha );\n\t\t\tif ( any( isnan( gl_FragColor ) ) || any( isinf( gl_FragColor ) ) ) gl_FragColor = vec4( 0.0 );');
+      hp.needsUpdate = true;
+      this.composer.addPass(bloom);
       this.composer.addPass(new OutputPass());
     }
     this.flashEl = typeof document !== 'undefined' ? document.getElementById('flash') : null;

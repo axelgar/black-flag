@@ -129,7 +129,7 @@ void main() {
   vec3 R = reflect(-V, N);
   R.y = abs(R.y);
   vec3 sky = mix(uHorizon, uZenith, pow(R.y, 0.6));
-  float fres = 0.02 + 0.98 * pow(1.0 - max(dot(N, V), 0.0), 5.0);
+  float fres = 0.02 + 0.98 * pow(clamp(1.0 - dot(N, V), 0.0, 1.0), 5.0);
   vec3 col = mix(water, sky, fres * 0.85);
   // The glint uses the big waves only — with the ripples in, a high sun turns the whole
   // play area into a mirror and you cannot see a ship on it.
