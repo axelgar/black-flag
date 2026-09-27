@@ -4,6 +4,7 @@
 import { angleTo, clamp, wrap } from '../core/vec';
 import { rollDrop } from '../data/drops';
 import { HEAT_MAX, heatBoarded, heatSunk } from '../data/notoriety';
+import { PACE } from '../data/pace';
 import { lineOfSight } from './map';
 import { inHull } from './sailing';
 import { ev, type Foe, type Input, type Side, type Vessel, type World } from './types';
@@ -15,7 +16,8 @@ export const BOARD_SPEED = 0.9;   // faster than this fraction of her best and y
 export const ESCAPE_TIME = 4;     // seconds a prize that got away takes to make sail and vanish into the haze
 const VOLLEY_GAP = 0.055;         // a broadside ripples bow to stern, it does not clap
 const MORTAR_FUSE = 1.3;
-const FOE_SHOT = 88;
+const FOE_SHOT = 88 * PACE;
+const BOW_SHOT = 115 * PACE;      // the chasers' ball
 // Spanish gunnery is good, not perfect. Each volley is laid with an error, and each ball
 // scatters round it — measured over fifteen waves, 0.09 of scatter alone had them hitting
 // with 55–70% of everything they fired, against the player's 30%. These put a Spanish
@@ -66,12 +68,12 @@ export function playerGuns(w: World, dt: number, input: Input) {
       const g = gun ?? { reload: 1.1, dmg: 0.5 * (1 + (w.stats.dmg - 1)), range: 130 };
       const tgt = nearestAhead(w, s, g.range, 0.75);
       if (tgt) {
-        const [ax, ay] = lead(s.x, s.y, tgt, 115);
+        const [ax, ay] = lead(s.x, s.y, tgt, BOW_SHOT);
         const d = Math.hypot(ax - s.x, ay - s.y) || 1;
         const bx = s.x + Math.cos(s.h) * s.len * 0.5, by = s.y + Math.sin(s.h) * s.len * 0.5;
         w.shots.push({
-          x: bx, y: by, vx: ((ax - s.x) / d) * 115 + Math.cos(s.h) * s.v, vy: ((ay - s.y) / d) * 115 + Math.sin(s.h) * s.v,
-          r: 0.9, dmg: g.dmg, foe: false, kind: 'ball', pierce: 1, age: 0, life: g.range / 115, dead: false, from: s.id,
+          x: bx, y: by, vx: ((ax - s.x) / d) * BOW_SHOT + Math.cos(s.h) * s.v, vy: ((ay - s.y) / d) * BOW_SHOT + Math.sin(s.h) * s.v,
+          r: 0.9, dmg: g.dmg, foe: false, kind: 'ball', pierce: 1, age: 0, life: g.range / BOW_SHOT, dead: false, from: s.id,
         });
         ev(w, 'bow', { x: bx, y: by, h: s.h });
         s.bowCool = g.reload * (swivel ? 0.5 : 1);
@@ -163,7 +165,7 @@ export function mortarAim(w: World): { x: number; y: number; lock: number } | nu
 
 /* ------------------------------------------------------------ their guns -- */
 
-export { FOE_LAY, FOE_SCATTER };
+export { FOE_LAY, FOE_SCATTER, FOE_SHOT };
 
 export function foeShot(w: World, e: Foe, x: number, y: number, ang: number, dmg: number, range: number, speed = FOE_SHOT) {
   w.shots.push({

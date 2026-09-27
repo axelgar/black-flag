@@ -9,6 +9,7 @@
 import { rng } from '../core/rng';
 import { clamp, q6 } from '../core/vec';
 import { HEAT, HEAT_MAX } from '../data/notoriety';
+import { PACE } from '../data/pace';
 import { shipById } from '../data/ships';
 import { shipStats } from '../data/upgrades';
 import { wavePlan } from '../data/waves';
@@ -52,7 +53,9 @@ export function create(opts: { seed?: string; wave?: number; run?: RunSeed; redu
   const plan = wavePlan(wave, rng(`${seed}:plan:${wave}`));
   const st = map.start;
   const ship: Player = {
-    id: 0, x: st.x, y: st.y, h: st.h, v: stats.maxSpeed * 0.3, rot: 0, sail: 0.6,
+    // out of the harbour under all plain sail and already making way: a wave that opened
+    // with her crawling up to half speed was the slowest minute of every wave
+    id: 0, x: st.x, y: st.y, h: st.h, v: stats.maxSpeed * 0.75, rot: 0, sail: 1,
     len: stats.len, beam: stats.beam, maxSpeed: stats.maxSpeed, accel: stats.accel, turnRate: stats.turnRate,
     hull: stats.hullMax, hullMax: stats.hullMax, hit: 0, dead: false,
     cool: [0, 0], volley: null, bowCool: 0.5,
@@ -137,7 +140,8 @@ function sail(w: World, dt: number, input: Input) {
 
   s.groundT = Math.max(0, s.groundT - dt);
   const hit = ground(w.map, s);
-  if (hit > 3.5 && s.groundT <= 0) { wound(w, 2 + hit * 0.35, 'ground'); s.groundT = 1; ev(w, 'ground', { x: s.x, y: s.y }); }
+  // what hurts is how hard she hit for the pace she sails at, so a scrape is still a scrape
+  if (hit > 3.5 * PACE && s.groundT <= 0) { wound(w, 2 + (hit / PACE) * 0.35, 'ground'); s.groundT = 1; ev(w, 'ground', { x: s.x, y: s.y }); }
   for (const k of w.map.reefs) {
     const d = Math.hypot(k.x - s.x, k.y - s.y);
     if (d < k.r + s.beam * 0.5) {

@@ -12,6 +12,7 @@ import { DROPS, rollDrop } from '../src/data/drops';
 import { heatBoarded, heatEscaped, heatSunk } from '../src/data/notoriety';
 import { SHIPS, shipById } from '../src/data/ships';
 import { UPGRADES, bribeCost, shipStats } from '../src/data/upgrades';
+import { PACE } from '../src/data/pace';
 import { isBossWave, waveBudget, wavePlan, waveWeather } from '../src/data/waves';
 import { addFoe, crowd } from '../src/sim/spawn';
 import { EDGE, MAP_R, lineOfSight, openWater, islandSd } from '../src/sim/map';
@@ -107,7 +108,9 @@ describe('ships and upgrades', () => {
       const w = Wo.create({ seed: 'hulls', wave: 1, run: { ship: def.id } });
       expect(w.shipId).toBe(def.id);
       expect(w.ship.hullMax).toBe(shipStats(def).hullMax);
-      expect(w.ship.maxSpeed).toBe(def.base.maxSpeed);
+      // the tables are sailed at the sea's pace (data/pace.ts)
+      expect(w.ship.maxSpeed).toBe(shipStats(def).maxSpeed);
+      expect(w.ship.maxSpeed).toBeCloseTo(def.base.maxSpeed * PACE);
     }
   });
 });

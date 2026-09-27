@@ -31,11 +31,24 @@ interface Hud {
 
 let hud: Hud | null = null;
 
+/** A great gun on her truck carriage, side on, muzzle to the right. Each broadside button
+ *  turns its own to point the way that side will fire on screen (see aimGuns). */
+const CANNON = `<svg class="cannon" viewBox="0 0 48 30" aria-hidden="true">
+  <path d="M5 19.5h24l-2.2 5.3H7.2z" fill="currentColor" opacity=".72"/>
+  <circle cx="10" cy="25.2" r="3.9" fill="currentColor"/><circle cx="24" cy="25.2" r="3.9" fill="currentColor"/>
+  <circle cx="10" cy="25.2" r="1.3" fill="#0b1c23"/><circle cx="24" cy="25.2" r="1.3" fill="#0b1c23"/>
+  <path d="M11 8.4 40 10.9v6.2L11 19.6z" fill="currentColor"/>
+  <circle cx="11" cy="14" r="5.9" fill="currentColor"/>
+  <rect x="39" y="9.7" width="5.6" height="8.6" rx="1.6" fill="currentColor"/>
+  <circle cx="4.2" cy="14" r="2.2" fill="currentColor"/><rect x="4.6" y="13" width="3" height="2" fill="currentColor"/>
+  <path d="M20 9.3v9.4M30.6 10.1v7.8M38.6 10.4v7.2" stroke="#0b1c23" stroke-opacity=".55" stroke-width="1.1"/>
+</svg>`;
+
 export function hudHtml(touch: boolean) {
   return `
   <div class="hud" id="hud">
     <div class="pointers" id="h-ptrs"></div>
-    ${touch ? `<div class="joy${usedTouch() ? ' used' : ''}" id="h-joy"><div class="base"></div><div class="knob"></div><div class="hint">DRAG TO SAIL · PUSH HARD FOR FULL SAIL</div></div>` : ''}
+    ${touch ? `<div class="joy${usedTouch() ? ' used' : ''}" id="h-joy"><div class="base"></div><div class="knob"></div><div class="hint">DRAG TO STEER · HOW FAR SETS THE SAIL</div></div>` : ''}
     <div class="hudtl">
       <div class="hullbar" id="h-bar"><i style="width:100%"></i></div>
       <div class="hudline">
@@ -58,8 +71,8 @@ export function hudHtml(touch: boolean) {
     </div>
     <div class="guns">
       <button class="gun mortar" id="h-mortar" aria-label="Mortar"><div><b id="h-shells">3</b>MORTAR</div></button>
-      <button class="gun" id="h-gunL" aria-label="Fire to port"><div><b>◀</b>PORT</div></button>
-      <button class="gun" id="h-gunR" aria-label="Fire to starboard"><div><b>▶</b>STBD</div></button>
+      <button class="gun" id="h-gunL" aria-label="Fire to port">${CANNON}</button>
+      <button class="gun" id="h-gunR" aria-label="Fire to starboard">${CANNON}</button>
     </div>
     ${touch ? '' : '<div class="keys">W/S SAIL · A/D HELM · Q/E OR MOUSE BROADSIDES · SPACE MORTAR · ESC HEAVE TO</div>'}
   </div>`;
@@ -160,6 +173,7 @@ export function hudTick(w: World | null, view: View, dt: number) {
     const side = -Math.sin(s.h) * dx + Math.cos(s.h) * dy;       // + starboard
     if (Math.abs(side) / d > 0.93) bears[side > 0 ? 1 : 0] = true;
   }
+  aimGuns(s.h - view.yaw);
   [hud.gunL, hud.gunR].forEach((g, i) => {
     const load = 1 - s.cool[i] / (w.stats.reload || 1);
     g.style.setProperty('--load', load.toFixed(3));
@@ -179,6 +193,27 @@ export function hudTick(w: World | null, view: View, dt: number) {
   pointers(w, view);
   hud.mapT -= dt;
   if (hud.mapT <= 0) { hud.mapT = 0.1; minimap(w, view.yaw); }
+}
+
+/**
+ * Point each broadside button's gun the way that side fires, as the camera sees it. With
+ * the camera behind her that is simply port to the left and starboard to the right; while
+ * a thumb holds the camera still she can point anywhere on screen, and a gun drawn to the
+ * left would then lie. rel is her heading less the camera's. The gun is mirrored when it
+ * points into the left half, so it always stands on its wheels.
+ */
+function aimGuns(rel: number) {
+  const h = hud!;
+  [[h.gunL, rel + Math.PI], [h.gunR, rel]].forEach(([el, a]) => {
+    const b = el as HTMLElement;
+    let ang = Math.atan2(Math.sin(a as number), Math.cos(a as number));
+    const key = Math.round(ang * 40);
+    if (b.dataset.aim === String(key)) return;
+    b.dataset.aim = String(key);
+    const left = Math.abs(ang) > Math.PI / 2;
+    if (left) ang = ang > 0 ? ang - Math.PI : ang + Math.PI;
+    b.style.setProperty('--aim', `rotate(${ang.toFixed(3)}rad)${left ? ' scaleX(-1)' : ''}`);
+  });
 }
 
 /** The phone's notch and rounded corners, as the CSS has them. */

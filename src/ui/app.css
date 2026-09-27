@@ -229,6 +229,8 @@ body{font-family:'Instrument Sans',system-ui,sans-serif;color:var(--parch);-webk
   background:conic-gradient(var(--gold) calc(var(--load) * 360deg),rgba(242,231,206,.14) 0);
   -webkit-mask:radial-gradient(circle,transparent 62%,#000 63%);mask:radial-gradient(circle,transparent 62%,#000 63%)}
 .gun b{font:700 22px 'Cinzel',serif;display:block;line-height:1}
+.gun .cannon{width:48px;height:30px;display:block;transform:var(--aim,none);transition:color 150ms}
+.gun.bears .cannon{color:var(--gold)}
 .gun.ready{box-shadow:0 0 22px rgba(217,164,65,.35)}
 .gun.bears b{color:var(--gold)}
 .gun:active{transform:scale(.92)}
@@ -318,6 +320,7 @@ body{font-family:'Instrument Sans',system-ui,sans-serif;color:var(--parch);-webk
   .cta{padding:11px 16px}
   .cta b{font-size:15px}
   .gun{width:74px;height:74px}
+  .gun .cannon{width:42px;height:26px}
   .gun.mortar{width:54px;height:54px}
   .minimap{width:92px;height:92px}
   .toast b{font-size:26px}

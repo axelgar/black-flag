@@ -29,8 +29,8 @@ Vite, TypeScript and Three.js. Everything is procedural: no models, textures or 
 
 | | Touch | Keyboard / mouse |
 |---|---|---|
-| Sail | floating stick, left half of the screen. Push the way you want to go on the screen: the camera holds still while your thumb is down, and swings round behind her when you let go. How far you push sets the canvas; push hard for full sail. Let go and she holds her course, easing to half sail — which is also how you slow down to board. | A/D or ←/→ helm · W/S or ↑/↓ set and take in sail |
-| Broadsides | PORT and STBD buttons (the ring is the reload). Tap the other side while one is firing and it follows. | Q / E, or left / right mouse button |
+| Sail | floating stick, left half of the screen. Push the way you want to go on the screen: the camera holds still while your thumb is down, and swings round behind her when you let go. How far you push sets the canvas (three-quarters of the way out is all plain sail). Let go and she holds her course and her canvas; beside a prize, letting go eases her to half sail so a crew can go across. She puts to sea under all plain sail. | A/D or ←/→ helm · W/S or ↑/↓ set and take in sail |
+| Broadsides | the two cannon buttons, port on the left and starboard on the right. Each gun points the way its broadside will fire on screen; the ring is the reload. Tap the other side while one is firing and it follows. | Q / E, or left / right mouse button |
 | Mortar | MORTAR button | Space |
 | Heave to | ❙❙, or the system back gesture | Esc |
 | Camera | | mouse wheel: in to your ship, out to the horizon |
@@ -50,6 +50,9 @@ mortar will land. It locks onto the nearest ship forward.
   and fog), and only if no island is in the way. Once she sees you she calls her squadron.
   Unalerted squadrons sweep toward where you were last heard of. Lose them in fog or
   behind a headland and they go back to searching.
+- **Pace.** Every ship's speed and every ball in flight is its table number times `PACE`
+  (`src/data/pace.ts`, 1.25): one number sets how fast the game plays without changing who
+  out-sails whom or how far a ball leads its mark.
 - **Broadsides.** Each side reloads on its own. Balls ripple bow to stern, carry your own
   way, and are stopped by rock. Some hulls add bow chasers that fire themselves.
 - **Surrender and boarding.** At a quarter hull she strikes. Come within about a hull's

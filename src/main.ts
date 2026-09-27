@@ -189,6 +189,17 @@ function dock() {
   world.events.push({ k: 'dock' });
 }
 
+/** A prize near enough that letting go of the stick should bring her alongside. */
+function prizeClose(w: World) {
+  const s = w.ship;
+  for (const e of w.foes) {
+    if (!Wo.isPrize(e)) continue;
+    const reach = (e.len + s.len) * 0.5 * 0.85 + 12;
+    if (Math.hypot(e.x - s.x, e.y - s.y) < reach * 1.6) return true;
+  }
+  return false;
+}
+
 /** Every ship the guest actually laid eyes on goes in the log. `seen` is a host flag —
  *  the sim never reads it, and it stays out of the digest. */
 function logSightings(w: World) {
@@ -429,6 +440,7 @@ function tick(dt: number) {
       handle(evs);
     }
     logSightings(world);
+    Input.nearPrize(prizeClose(world));
   }
 
   if (!paused && world && (world.phase === 'lost' || world.phase === 'docked') && outcome === 0) {

@@ -9,14 +9,15 @@
 
 import { clamp, TAU, wrap } from '../core/vec';
 import { HEAT_MAX, heatEscaped } from '../data/notoriety';
+import { PACE } from '../data/pace';
 import { MAP_R, EDGE, lineOfSight, openWater, shoreDist } from './map';
-import { FOE_LAY, foeBroadside, foeShot, isPrize, lead, raise, sideVec } from './combat';
+import { FOE_LAY, FOE_SHOT, foeBroadside, foeShot, isPrize, lead, raise, sideVec } from './combat';
 import { ground, helm, rim } from './sailing';
 import { POINT_BLANK, SIGHT } from './weather';
 import { ev, type Foe, type Vessel, type World } from './types';
 import { addFoe } from './spawn';
 
-const SEARCH_SPEED = 12;      // a squadron's search sweeps toward where you were last heard of
+const SEARCH_SPEED = 12 * PACE;   // a squadron's search sweeps toward where you were last heard of
 
 export function stepFoe(w: World, e: Foe, dt: number) {
   e.hit = Math.max(0, e.hit - dt * 4);
@@ -181,7 +182,7 @@ function guns(w: World, e: Foe, dt: number, d: number) {
   if (!lineOfSight(w.map, e.x, e.y, s.x, s.y)) return;
 
   if (C.guns === 'aimed') {
-    const [tx, ty] = lead(e.x, e.y, s, 88, 0.9);
+    const [tx, ty] = lead(e.x, e.y, s, FOE_SHOT, 0.9);
     foeShot(w, e, e.x, e.y, Math.atan2(ty - e.y, tx - e.x) + (w.r() - 0.5) * FOE_LAY * 1.4, C.shotDmg, C.range);
     ev(w, 'foe-fire', { x: e.x, y: e.y, id: e.id, n: 1 });
     e.cool = C.reload * w.reloadMul;
@@ -258,7 +259,7 @@ function legend(w: World, e: Foe, dt: number): [number, number] {
     ev(w, 'mortar-in', { x: e.x, y: e.y, id: e.id });
   } else {
     const n = 8 + phase * 3;
-    for (let i = 0; i < n; i++) foeShot(w, e, e.x, e.y, w.t * 1.6 + (i / n) * TAU, 3, 200, 80);
+    for (let i = 0; i < n; i++) foeShot(w, e, e.x, e.y, w.t * 1.6 + (i / n) * TAU, 3, 200, 80 * PACE);
     ev(w, 'foe-fire', { x: e.x, y: e.y, id: e.id, n, big: true });
   }
   e.cool = reload;

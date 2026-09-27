@@ -2,6 +2,7 @@
 // carries comes out of. The port screen and the simulation both call shipStats(), so
 // they can never disagree about what a level actually bought.
 
+import { HELM, PACE } from './pace';
 import type { BowGun, ShipDef } from './types';
 
 export interface Upgrade { id: string; name: string; note: string; max: number; cost: (lvl: number) => number }
@@ -47,13 +48,14 @@ export function shipStats(def: ShipDef, up: Upgrades = {}): ShipStats {
   const rec = recipeOf(def);
   return {
     hullMax: Math.round(b.hull * (1 + p * 0.3)),
-    maxSpeed: b.maxSpeed,
-    accel: b.accel,
-    turnRate: b.turnRate,
+    maxSpeed: b.maxSpeed * PACE,
+    // and she gathers way a touch quicker still, so full sail feels like it
+    accel: b.accel * PACE * 1.2,
+    turnRate: b.turnRate * HELM,
     gunsPerSide: b.gunsPerSide,
     reload: b.broadsideReload * Math.pow(0.88, g),
     dmg: b.shotDmg * (1 + g * 0.4),
-    shotSpeed: b.shotSpeed,
+    shotSpeed: b.shotSpeed * PACE,
     range: b.shotRange,
     bowGun: b.bowGun ? { ...b.bowGun, dmg: b.bowGun.dmg * (1 + g * 0.4) } : null,
     shellsMax: b.shellsMax + r * 2,

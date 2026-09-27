@@ -2,8 +2,9 @@
 //
 //   touch     a floating stick on the left half of the screen — push the way you want
 //             to go, relative to the screen; how far you push is how much canvas she
-//             sets. Let go and she holds her course, easing to half sail if she was
-//             carrying more. Gun buttons on the right.
+//             sets. Let go and she holds her course and her canvas — except alongside a
+//             prize, where letting go eases her to half sail so a crew can go across.
+//             Gun buttons on the right.
 //   keyboard  A/D (or ←/→) put the helm over, W/S (or ↑/↓) set and take in sail a step
 //             at a time. Q/E fire port and starboard, Space the mortar.
 //   mouse     left button fires to port, right button to starboard.
@@ -14,8 +15,8 @@ const LEVELS = [0, 0.34, 0.67, 1];
 
 const keys = new Set<string>();
 const state = {
-  level: 2,
-  sail: LEVELS[2],
+  level: 3,
+  sail: LEVELS[3],
   stick: null as { dx: number; dy: number; m: number } | null,
   fireL: false, fireR: false, mortar: false,
   touched: false,
@@ -34,6 +35,13 @@ addEventListener('pointerdown', (e) => {
 }, { capture: true });
 
 export const sailLevel = () => state.sail;
+
+/** Is a prize close enough that letting go of the stick means "come alongside"? The host
+ *  says, every frame; the stick only reads it when the thumb lifts. */
+let alongside = false;
+export function nearPrize(on: boolean) { alongside = on; }
+/** A thumb that lets go beside a prize wants her alongside, not tearing past. */
+function ease() { if (alongside && state.level > 2) { state.level = 2; state.sail = LEVELS[2]; } }
 export const usedTouch = () => state.touched;
 /** Is a thumb on the stick? While it is, the chase camera holds its bearing: the stick is
  *  read against the screen, and a screen that turned under the thumb would have a stick
@@ -41,7 +49,7 @@ export const usedTouch = () => state.touched;
 export const steering = () => state.stick != null;
 
 export function resetHelm() {
-  state.level = 2; state.sail = LEVELS[2]; state.stick = null;
+  state.level = 3; state.sail = LEVELS[3]; state.stick = null;
   state.fireL = state.fireR = state.mortar = false;
   keys.clear();
 }
@@ -126,9 +134,10 @@ export function attachStick(zone: HTMLElement): () => void {
     knob.style.left = `${ox + dx}px`; knob.style.top = `${oy + dy}px`;
     const m = Math.min(1, d / R);
     state.stick = { dx, dy, m };
-    // How far you push is how much canvas she carries; a nudge still keeps her moving.
+    // How far you push is how much canvas she carries; a nudge still keeps her moving,
+    // and three-quarters of the way out is already all plain sail.
     if (m > 0.18) {
-      state.sail = Math.max(0.34, Math.min(1, (m - 0.18) / 0.72));
+      state.sail = Math.max(0.34, Math.min(1, (m - 0.18) / 0.57));
       state.level = state.sail > 0.84 ? 3 : state.sail > 0.5 ? 2 : 1;
     }
   };
@@ -136,9 +145,7 @@ export function attachStick(zone: HTMLElement): () => void {
     if (e.pointerId !== id) return;
     id = null;
     state.stick = null;
-    // A thumb that lets go near a prize wants her alongside, not tearing past; full sail
-    // is for a thumb that is pushing for it. There is no other way to shorten sail on glass.
-    if (state.level > 2) { state.level = 2; state.sail = LEVELS[2]; }
+    ease();
     zone.classList.remove('on');
   };
   zone.addEventListener('pointerdown', down);
@@ -146,5 +153,5 @@ export function attachStick(zone: HTMLElement): () => void {
   zone.addEventListener('pointerup', up);
   zone.addEventListener('pointercancel', up);
   // Torn down with a thumb still on it (paused, backgrounded): the same as letting go.
-  return () => { if (state.stick && state.level > 2) { state.level = 2; state.sail = LEVELS[2]; } state.stick = null; };
+  return () => { if (state.stick) ease(); state.stick = null; };
 }

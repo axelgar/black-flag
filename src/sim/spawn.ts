@@ -5,6 +5,7 @@ import { TAU } from '../core/vec';
 import { CLASSES, HUNTER_CLASS } from '../data/enemies';
 import { LEGENDS, legendById } from '../data/legends';
 import { EARLY_LEGEND_AT, HUNTER_AT } from '../data/notoriety';
+import { HELM, PACE } from '../data/pace';
 import type { Group } from '../data/waves';
 import type { LegendDef } from '../data/types';
 import { MAP_R, EDGE, openWater } from './map';
@@ -19,7 +20,7 @@ export function addFoe(w: World, cls: string, x: number, y: number, h: number, s
   const R = C.recipe;
   const e: Foe = {
     id: w.nextId++, cls, C, L: null, x, y, h, v: C.speed * 0.4, rot: 0, sail: 0.5,
-    len: R.length, beam: R.beam, maxSpeed: C.speed, accel: C.speed * 0.25, turnRate: C.turn,
+    len: R.length, beam: R.beam, maxSpeed: C.speed * PACE, accel: C.speed * PACE * 0.25, turnRate: C.turn * HELM,
     hull: C.hull, hullMax: C.hull, hit: 0, dead: false,
     reales: C.reales, ram: C.ram, strikes: C.strikes,
     state: 'patrol', alert: false, squad,
@@ -38,7 +39,7 @@ export function addLegend(w: World, L: LegendDef, x: number, y: number): Foe {
   const h = Math.atan2(w.ship.y - y, w.ship.x - x);
   const e: Foe = {
     id: w.nextId++, cls: 'legend', C: null, L, x, y, h, v: L.speed * 0.5, rot: 0, sail: 1,
-    len: R.length, beam: R.beam, maxSpeed: L.speed, accel: L.speed * 0.2, turnRate: L.turn,
+    len: R.length, beam: R.beam, maxSpeed: L.speed * PACE, accel: L.speed * PACE * 0.2, turnRate: L.turn * HELM,
     hull: L.hull, hullMax: L.hull, hit: 0, dead: false,
     reales: L.reales, ram: 22, strikes: false,
     state: 'engage', alert: true, squad: newSquad(w, x, y),
