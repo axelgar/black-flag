@@ -10,6 +10,11 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title>Black Flag</title>
+<!-- Installable: Android puts it on the home screen full screen and sideways; iOS takes
+     the icon for Add to Home Screen. Drawn by scripts/icons.ts. -->
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" type="image/png" href="/favicon.png">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <!-- Google Tag Manager. Loads GA4 (and anything else) from the container; src/analytics.ts
      pushes screen and run events onto dataLayer for it to pick up. -->
 <script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':

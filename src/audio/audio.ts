@@ -21,6 +21,14 @@ export function listen(x: number, y: number, yaw: number) { ear.x = x; ear.y = y
 
 const now = () => ac!.currentTime;
 const ready = () => !!ac && session.sound && ac.state === 'running';
+/** Is sound actually coming out? False until the first gesture has started it. */
+export const running = ready;
+/** Do something as soon as sound is coming out — after a resume that is still settling. */
+export function onceRunning(fn: () => void) {
+  if (ready()) { fn(); return; }
+  if (!ac || !session.sound) return;
+  ac.resume().then(() => { if (ready()) fn(); }).catch(() => {});
+}
 
 function brownNoise(seconds = 2) {
   const n = Math.floor(ac!.sampleRate * seconds);

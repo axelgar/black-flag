@@ -269,7 +269,14 @@ export function unlock(v: View, code: string): Screen {
       </div>
     </div>`,
     mount(root) {
-      if (news) { A.unlock(); A.fanfare(); v.whiteout(0.5, '#FFE7B0'); }
+      if (news) {
+        v.whiteout(0.5, '#FFE7B0');
+        // A QR code opens the page before anyone has touched it, and a browser will not
+        // play a note until they have: the fanfare waits for the first tap.
+        A.unlock();
+        if (A.running()) A.fanfare();
+        else addEventListener('pointerup', () => { A.unlock(); A.onceRunning(A.fanfare); }, { once: true });
+      }
       $('[data-take]', root)?.addEventListener('click', () => {
         session.ship = id; save(); buzz(14);
         track('ship_select', { ship: id });
