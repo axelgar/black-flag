@@ -21,9 +21,11 @@ npm test             # the self-check (vitest)
 npm run build        # typecheck + production bundle in dist/
 npm run qr           # print a QR code per unlockable ship into qr/
 npm run icons        # redraw the home-screen icons into public/
+npx supabase db push # apply supabase/migrations to the linked project
 ```
 
 Vite, TypeScript and Three.js. Everything is procedural: no models, textures or sound files.
+The server is Supabase (Postgres and sign-in); see **The server** below.
 
 ## Controls
 
@@ -98,13 +100,50 @@ the simulation and the renderer all read this one list.
 | Revenant | galleon | nine guns a side, slow | `RVNT-4K` |
 | Marée Noire | schooner | longest reach, hates contact | `MAREE-9X` |
 
-**Unlocking.** A QR code encodes `https://<site>/u/<CODE>`. `vercel.json` rewrites `/u/*`
-to the app, the app turns it into `#/unlock/<CODE>` and plays the reveal, and the ship is
-saved to this device. The codes are plain shared links, as decided: anyone with the link
-gets the ship. To make them one-time or tied to an account, move `shipForCode()` behind an
-API. The URL format can stay the same.
+**Unlocking.** Each ship has one NFC tag at the bar, and a QR code as a fallback. Both
+open `https://<site>/u/<CODE>`, and the tag's URL adds `?src=nfc`. `vercel.json` rewrites
+`/u/*` to the app, the app turns it into `#/unlock/<CODE>` and plays the reveal, and the ship
+is saved to this device straight away. The tap is also written to an outbox and sent to
+the server when there is a connection (see **The server**). The codes are plain shared
+links, as decided: anyone with the link gets the ship.
 
-`npm run qr -- https://your.site` writes a printable SVG and PNG per code.
+`npm run qr -- https://your.site` writes a printable SVG and PNG per code. Write the same
+URL, plus `?src=nfc`, to each ship's tag.
+
+## The server
+
+Supabase: Postgres, and sign-in for guests who never sign up. `src/net/cloud.ts` is the
+only file that talks to it, and the game never waits on it.
+
+- **Players.** On first open the game signs the guest in anonymously and the server makes
+  a player with a pirate name (`Salt Nell`). They can rename themselves in Articles.
+  Later they can link Google or another provider to the same account and keep everything.
+  The sign-in lives in localStorage under `blackflag.auth`. Burning the log clears it and
+  starts a new player. So does a player deleted on the server (old anonymous players get
+  cleared out): the device signs in again as someone new and sends its ships up as `sync`.
+- **What they own.** `inventory` holds namespaced items: `hull:kestrel` now, `part:…` for
+  the parts a ship will be dressed in. On connect, the device and the server swap what
+  the other is missing (`reconcile()` in `src/net/items.ts`). Ships unlocked before the
+  server existed are sent as their codes, marked `sync`.
+- **Taps.** Every tap, scan or typed code goes into `session.outbox` first and is sent to
+  `redeem()` when the server can be reached, with the time it happened. The server logs
+  each one in `taps` (`nfc`, `link`, `typed`, `sync`), including codes that unlock nothing.
+- **The register.** `unlock_codes` maps a code to an item, with the venue and cocktail it
+  belongs to. The game still resolves codes itself so a reveal works offline; a test
+  fails if the two registers disagree.
+- **Rules.** Phones read their own player and inventory, and nothing else. Every write
+  goes through a function (`me`, `redeem`, `rename_captain`). It's all in
+  `supabase/migrations/`, and `tests/db.test.ts` runs it in an in-process Postgres
+  (PGlite) as a signed-in guest and as nobody.
+
+Configure it with `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY`; the defaults
+in `src/net/cloud.ts` point at the live project. The publishable key is meant to be
+public. With no key, the game runs as it did before the server existed.
+
+In the Supabase dashboard (these mirror `supabase/config.toml`):
+- Authentication → Sign In / Providers: allow anonymous sign-ins, and allow manual linking.
+- Authentication → Rate Limits: raise anonymous sign-ins well above 30 an hour per IP. A
+  whole bar shares one wifi address.
 
 ### How a ship is drawn
 
@@ -201,7 +240,9 @@ src/
   ui/          screens, HUD (minimap, pointers, reload rings), input, silhouettes, css
   audio/       synthesised, stereo-placed cannons, sea and shanty
   state/       session (localStorage v2, migrates the v1 record book), run banking
-tests/         vitest + a headless bot captain
+  net/         cloud.ts (the one door to the server), items.ts (inventory ids, reconcile)
+supabase/      config.toml and migrations/: the server's tables, rules and functions
+tests/         vitest, a headless bot captain, and the server's rules in PGlite
 scripts/       qr.ts (QR printer), icons.ts (the home-screen icons)
 public/        manifest.webmanifest and the icons it names
 ```
@@ -219,6 +260,10 @@ public/        manifest.webmanifest and the icons it names
 - waves 1–20 each end, won or lost, never stalled (driven by a bot captain in `tests/bot.ts`)
 - every unlock code resolves to a ship, codes survive case and dash mangling, and a v1
   save migrates
+- the server's rules (`tests/db.test.ts`): a player is made on first ask; a tap unlocks
+  once and counts every time; unknown and switched-off codes unlock nothing; a phone
+  reads only its own rows and cannot write any table; the server's register matches the
+  game's; and this device and the server swap what each is missing
 
 ## Departures from v1, and why
 
@@ -288,5 +333,6 @@ fixed. The ones that mattered:
   Picture quality can be forced in Articles.
 - **No GLTF ships ship yet.** `ModelSpec` has the `gltf` variant and `ShipModel` is the
   seam. The loader is not written.
-- **Records are this device's.** localStorage only, like v1.
+- **Records are this device's.** Players, unlocks and taps are on the server; the record
+  book is still localStorage only.
 - **Fonts load from Google.**

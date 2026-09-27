@@ -16,6 +16,7 @@ import type { View } from '../render/view';
 import { mapFor } from '../sim/world';
 import * as A from '../audio/audio';
 import { track } from '../analytics';
+import { cloud, rename, tap } from '../net/cloud';
 import { buzz } from './haptics';
 import { hudHtml, mountHud } from './hud';
 import { touchUi } from './input';
@@ -206,7 +207,9 @@ export function shipyard(v: View): Screen {
       $<HTMLFormElement>('[data-code]', root)?.addEventListener('submit', (e) => {
         e.preventDefault();
         const code = ($<HTMLInputElement>('input', e.currentTarget as HTMLElement)?.value || '').trim();
-        if (code) location.hash = `#/unlock/${encodeURIComponent(code)}`;
+        if (!code) return;
+        tap(code, 'typed');
+        location.hash = `#/unlock/${encodeURIComponent(code)}`;
       });
       return spinner(root, v);
     },
@@ -510,6 +513,7 @@ export function menu(v: View): Screen {
       ${topbar('SHIP’S ARTICLES', backTo('#/'), false)}
       <div class="disp" style="font-size:32px;margin-bottom:14px">Articles</div>
       <div class="rowlist">
+        <button data-captain ${s.captain ? '' : 'disabled'}>Captain <span class="r ${s.captain ? 'gold' : ''}">${s.captain ? esc(s.captain) : cloud.status === 'offline' ? 'NOT ON THE ROLL · NO WIND' : 'NOT YET ON THE ROLL'}</span></button>
         ${toggles.map(([k, l]) => `<button data-t="${k}">${l} <span class="r ${s[k] ? 'gold' : ''}">${s[k] ? 'ON' : 'OFF'}</span></button>`).join('')}
         <button data-q>Picture <span class="r gold">${s.quality.toUpperCase()}${s.quality === 'auto' ? ` · ${v.tier.toUpperCase()}` : ''}</span></button>
         <button data-go="#/shipyard">Shipyard <span class="r">${s.unlocked.length} OF ${SHIPS.length}</span></button>
@@ -523,6 +527,27 @@ export function menu(v: View): Screen {
       </div>
     </div></div></div>`,
     mount(root) {
+      $('[data-captain]', root)?.addEventListener('click', (e) => {
+        buzz(6);
+        const row = e.currentTarget as HTMLElement;
+        row.outerHTML = `<form class="codeform name" data-rename>
+          <input name="captain" maxlength="24" value="${esc(s.captain)}" autocomplete="off" autocapitalize="words" spellcheck="false" aria-label="Captain's name">
+          <button class="chip gold" type="submit">Sign</button></form>`;
+        const form = $<HTMLFormElement>('[data-rename]', root)!;
+        const input = $<HTMLInputElement>('input', form)!;
+        input.focus(); input.select();
+        form.addEventListener('submit', (ev) => {
+          ev.preventDefault();
+          const want = input.value.trim();
+          if (!want || want === s.captain) { redraw(); return; }
+          const btn = $<HTMLButtonElement>('button', form)!;
+          btn.disabled = true; btn.textContent = '…';
+          rename(want).then(() => { buzz(10); redraw(); }, () => { btn.disabled = false; btn.textContent = 'No wind · again'; });
+        });
+      });
+      // The name arrives from the server a moment after the page does.
+      const onCloud = () => { if (!$('[data-rename]', root)) redraw(); };
+      addEventListener('bf:cloud', onCloud);
       $$('[data-t]', root).forEach((b) => b.addEventListener('click', () => {
         const k = b.dataset.t as 'sound' | 'haptics' | 'reduceMotion' | 'fullscreen';
         s[k] = !s[k];
@@ -542,6 +567,7 @@ export function menu(v: View): Screen {
         wipe();
         location.reload();
       });
+      return () => removeEventListener('bf:cloud', onCloud);
     },
   };
 }

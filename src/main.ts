@@ -21,6 +21,7 @@ import { hudTick, toast } from './ui/hud';
 import * as Input from './ui/input';
 import { buzz } from './ui/haptics';
 import { track, screen } from './analytics';
+import { connect, tap } from './net/cloud';
 
 const ui = document.getElementById('ui')!;
 const app = document.getElementById('app')!;
@@ -466,16 +467,22 @@ function tick(dt: number) {
 
 if (session.reduceMotion) document.documentElement.style.setProperty('--dur', '120ms');
 
-// A QR code opens /u/<CODE>. Vercel rewrites that to the app; here it becomes a hash
-// route, and the address bar is put back to the plain site so a reload does not
-// re-announce the ship.
+// A tag or a QR code opens /u/<CODE>. Vercel rewrites that to the app; here it becomes a
+// hash route, and the address bar is put back to the plain site so a reload does not
+// re-announce the ship. The tap is written down now, once per page it opens: the tag
+// at the bar carries ?src=nfc, so the server can tell a tap on it from a scan or a link.
 const qr = location.pathname.match(/^\/u\/([^/?#]+)/);
-if (qr) history.replaceState(null, '', `/#/unlock/${qr[1]}`);
+if (qr) {
+  tap(decodeURIComponent(qr[1]), new URLSearchParams(location.search).get('src') === 'nfc' ? 'nfc' : 'link');
+  history.replaceState(null, '', `/#/unlock/${qr[1]}`);
+}
 
 if (!location.hash) location.hash = '#/';
 render();
 requestAnimationFrame(frame);
 requestAnimationFrame(() => setTimeout(() => document.getElementById('boot')?.classList.add('gone'), 250));
+// The server comes after the sea: sign in, send any taps waiting, and learn the captain's name.
+setTimeout(() => { void connect(); }, 1200);
 
 // For poking at from the console, and for the browser checks.
 (window as unknown as { bf: unknown }).bf = {

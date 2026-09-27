@@ -27,6 +27,11 @@ export interface Run {
 
 export interface RunSummary { wave: number; time: number; plunder: number; boarded: number; sunk: number; ship: string }
 
+/** A tap on a tag, a scanned QR or a typed code, waiting to reach the server. `sync` is a
+ *  ship this device had before the server knew of it. */
+export type Via = 'nfc' | 'link' | 'typed' | 'sync';
+export interface Tap { code: string; via: Via; at: string }
+
 export interface Session {
   v: 2;
   sound: boolean; haptics: boolean; reduceMotion: boolean;
@@ -39,10 +44,14 @@ export interface Session {
   ship: string;                      // the one she sails in next
   run: Run | null;
   lastRun: RunSummary | null;
+  captain: string | null;            // the name the server knows this player by, once it does
+  outbox: Tap[];                     // taps not yet sent: bar wifi comes and goes
 }
 
 const KEY = 'blackflag.v2';
 const V1 = 'blackflag.log';
+/** Where the server sign-in keeps itself (src/net/cloud.ts), and anything it keys off it. */
+export const AUTH_KEY = 'blackflag.auth';
 
 const blank = (): Session => ({
   v: 2,
@@ -51,6 +60,7 @@ const blank = (): Session => ({
   seen: {}, beaten: {},
   unlocked: [STARTER], ship: STARTER,
   run: null, lastRun: null,
+  captain: null, outbox: [],
 });
 
 const store = (): Storage | null => {
@@ -83,6 +93,7 @@ function sanitise(s: Session): Session {
   s.unlocked = [...new Set([STARTER, ...(s.unlocked || []).filter((id) => known.has(id))])];
   if (!s.unlocked.includes(s.ship)) s.ship = STARTER;
   if (s.run && !known.has(s.run.ship)) s.run = null;
+  if (!Array.isArray(s.outbox)) s.outbox = [];
   return s;
 }
 
@@ -97,8 +108,8 @@ export const nav: { from: string | null; trail: string[] } = { from: null, trail
 export const sea = { next: 'nassau' };
 
 export function save() {
-  // A leaderboard needs a backend and an identity; until then the record book is honest
-  // about being this device's record book.
+  // The record book is still this device's own; what the player owns is kept on the server too
+  // (src/net/cloud.ts), and a leaderboard will read from there.
   try {
     const ls = store();
     if (!ls) return;
@@ -124,7 +135,14 @@ if (typeof addEventListener === 'function') {
 }
 
 export function wipe() {
-  try { store()?.removeItem(KEY); store()?.removeItem(V1); } catch { /* private mode */ }
+  try {
+    const ls = store();
+    if (!ls) return;
+    ls.removeItem(KEY); ls.removeItem(V1);
+    // and the sign-in with it: burning the log starts a new captain, not the same one
+    // with an empty hold
+    for (const k of Object.keys(ls)) if (k.startsWith(AUTH_KEY)) ls.removeItem(k);
+  } catch { /* private mode */ }
 }
 
 /** Returns true if this is news — the ship was not already hers. */

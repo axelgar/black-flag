@@ -13,9 +13,11 @@
     "icons": "tsx scripts/icons.ts"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.117.2",
     "three": "^0.186.1"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.8",
     "@types/node": "^26.6.2",
     "@types/qrcode": "^1.5.6",
     "@types/three": "^0.186.0",

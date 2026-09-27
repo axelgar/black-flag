@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { SHIPS, STARTER } from '../src/data/ships';
 import { CODES, normCode, shipForCode } from '../src/data/unlocks';
 import { clock, reales } from '../src/state/run';
+import { itemOf, reconcile } from '../src/net/items';
 
 describe('QR unlocks', () => {
   it('every ship that is not a starter has a code, and every code is a ship', () => {
@@ -61,5 +62,27 @@ describe('the small', () => {
     expect(clock(61)).toBe('1:01');
     expect(clock(-5)).toBe('0:00');
     expect(reales(1234)).toBe('1,234');
+  });
+});
+
+describe('this device and the server', () => {
+  const at = '2026-09-27T20:00:00.000Z';
+
+  it('ships the server knows of come aboard, and ships it does not go to it as their code', () => {
+    const { gain, send } = reconcile(['jackdaw', 'kestrel'], ['hull:revenant'], [], at);
+    expect(gain).toEqual(['revenant']);
+    expect(send).toEqual([{ code: normCode(CODES.find((c) => c.ship === 'kestrel')!.code), via: 'sync', at }]);
+  });
+
+  it('the starter is never sent, a code already waiting is not sent twice, and nothing unknown comes aboard', () => {
+    const kestrel = normCode(CODES.find((c) => c.ship === 'kestrel')!.code);
+    const { gain, send } = reconcile(['jackdaw', 'kestrel'], ['hull:ghost', 'part:sail-red'], [{ code: kestrel, via: 'nfc', at }], at);
+    expect(gain).toEqual([]);
+    expect(send).toEqual([]);
+  });
+
+  it('two lists that agree have nothing to say to each other', () => {
+    const all = SHIPS.map((s) => s.id);
+    expect(reconcile(all, all.filter((id) => id !== STARTER).map(itemOf), [], at)).toEqual({ gain: [], send: [] });
   });
 });
