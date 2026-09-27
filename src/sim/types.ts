@@ -41,6 +41,7 @@ export interface Player extends Vessel {
   board: { id: number; t: number } | null;
   aim: { x: number; y: number; lock: number } | null;   // where the mortar would land now
   rim: boolean;            // the rim current has her head, and the helm is not hers until she points back in
+  want: [boolean, boolean]; // a broadside called for while the other side's guns were still rippling
 }
 
 export type FoeState = 'patrol' | 'engage' | 'struck' | 'spent';
@@ -75,6 +76,7 @@ export interface Foe extends Vessel {
   ports: Port[] | null;        // a legendary's weak points
   phase: number;               // a legendary's phase, 0..2
   flash: number;               // gun flash, decays
+  detour: -1 | 0 | 1;          // which way she is working round the land in her way, 0 when clear
   seen: boolean;               // host flag: the captain's log has her. Never read by the sim.
 }
 

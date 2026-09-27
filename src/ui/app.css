@@ -57,6 +57,9 @@ body{font-family:'Instrument Sans',system-ui,sans-serif;color:var(--parch);-webk
 .mid{flex:1 1 auto;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:12px;padding-bottom:14px;
   -webkit-mask:linear-gradient(#000 calc(100% - 16px),transparent);mask:linear-gradient(#000 calc(100% - 16px),transparent)}
 .mid::-webkit-scrollbar{width:0}
+/* Lists scroll and nothing zooms: iOS ignores user-scalable=no, and a pinch that zoomed
+   a list left a play screen that cannot be pinched back out. */
+.mid,.paper,.center{touch-action:pan-y}
 .titlemark{font-size:clamp(44px,8vw,64px);line-height:.92;letter-spacing:.05em;text-shadow:0 6px 24px rgba(4,16,22,.75)}
 .tsub{max-width:330px}
 .yardname{font-size:28px;margin:6px 0 8px}
@@ -69,6 +72,10 @@ body{font-family:'Instrument Sans',system-ui,sans-serif;color:var(--parch);-webk
   backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)}
 .chip:hover{box-shadow:inset 0 0 0 1px rgba(242,231,206,.34)}
 .chip.icon{width:40px;height:40px;padding:0;font-size:15px}
+@media (pointer:coarse){
+  .chip{min-height:40px}
+  .chip.icon.pausebtn{width:46px;height:46px}
+}
 .chip.gold{color:var(--gold);box-shadow:inset 0 0 0 1px rgba(217,164,65,.5)}
 .chip[disabled]{opacity:.4}
 .chip.burger::before{content:'';width:16px;height:12px;border-radius:2px;
@@ -132,6 +139,13 @@ body{font-family:'Instrument Sans',system-ui,sans-serif;color:var(--parch);-webk
 .hullcard.locked svg{filter:brightness(0) opacity(.6)}
 
 .bars{display:grid;grid-template-columns:auto 1fr;gap:7px 12px;align-items:center;margin-top:4px}
+.codeform{display:flex;gap:8px;align-items:center}
+.codeform input{flex:1;min-width:0;height:44px;border-radius:var(--r-chip);border:0;padding:0 16px;
+  background:rgba(242,231,206,.08);box-shadow:inset 0 0 0 1px rgba(242,231,206,.22);color:var(--parch);
+  font:500 13px 'JetBrains Mono',monospace;letter-spacing:.08em;text-transform:uppercase;outline:none;user-select:text;-webkit-user-select:text}
+.codeform input::placeholder{color:rgba(242,231,206,.45);text-transform:none;letter-spacing:.02em;font-family:'Instrument Sans',sans-serif}
+.codeform input:focus{box-shadow:inset 0 0 0 1.5px var(--gold)}
+.codeform .chip{height:44px}
 .bars .k{font:500 9.5px 'JetBrains Mono',monospace;letter-spacing:.14em;text-transform:uppercase;color:rgba(242,231,206,.6)}
 .bars .b{height:6px;border-radius:4px;background:rgba(242,231,206,.1);overflow:hidden}
 .bars .b i{display:block;height:100%;background:var(--gold);border-radius:4px;transition:width .3s}
@@ -243,25 +257,28 @@ body{font-family:'Instrument Sans',system-ui,sans-serif;color:var(--parch);-webk
 
 /* off-screen pointers to what matters */
 .pointers{position:absolute;inset:0;pointer-events:none}
-.ptr{position:absolute;width:26px;height:26px;margin:-13px 0 0 -13px;display:grid;place-items:center}
+.ptr{position:absolute;left:0;top:0;width:26px;height:26px;margin:-13px 0 0 -13px;display:grid;place-items:center;will-change:transform}
 .ptr::before{content:'';width:0;height:0;border-left:8px solid transparent;border-right:8px solid transparent;
   border-bottom:14px solid currentColor;transform:rotate(var(--a));filter:drop-shadow(0 1px 3px rgba(0,0,0,.7))}
 .ptr.foe{color:#E0533F}.ptr.sail{color:rgba(242,231,206,.75)}.ptr.prize{color:#F6F1E1}.ptr.home{color:var(--gold)}.ptr.boss{color:#FF7A3C}
-.label{position:absolute;transform:translate(-50%,-100%);font:600 10.5px 'JetBrains Mono',monospace;letter-spacing:.14em;
+.label{position:absolute;left:0;top:0;font:600 10.5px 'JetBrains Mono',monospace;letter-spacing:.14em;will-change:transform;
   background:rgba(6,18,24,.62);padding:4px 9px;border-radius:99px;
   text-transform:uppercase;white-space:nowrap;color:var(--parch);text-shadow:0 1px 4px #000;pointer-events:none}
 .label.prize{color:#FFF6DE}
 
 .scrim{position:absolute;inset:0;background:rgba(4,14,20,.66);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px)}
-.center{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;
-  padding:calc(var(--st) + 20px) var(--gutr) calc(var(--sb) + 20px) var(--gut);text-align:center}
+.center{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;justify-content:safe center;gap:12px;
+  padding:calc(var(--st) + 20px) var(--gutr) calc(var(--sb) + 20px) var(--gut);text-align:center;overflow-y:auto}
+.center::-webkit-scrollbar{width:0}
 .center .stack{width:min(380px,90vw);display:flex;flex-direction:column;gap:10px}
 
 /* unlock reveal */
-.reveal{position:absolute;left:0;right:0;bottom:0;padding:24px var(--gutr) calc(var(--sb) + 22px) var(--gut);
-  background:linear-gradient(rgba(5,16,22,0),rgba(5,16,22,.9) 40%);display:flex;align-items:flex-end;justify-content:space-between;gap:24px;flex-wrap:wrap}
-.reveal .who{max-width:520px}
-.reveal .acts{display:flex;flex-direction:column;gap:10px;width:min(320px,100%)}
+.reveal{position:absolute;top:0;bottom:0;left:0;width:min(460px,56vw);overflow-y:auto;
+  padding:calc(var(--st) + 22px) 28px calc(var(--sb) + 22px) calc(var(--gut) + 10px);
+  background:linear-gradient(90deg,rgba(5,16,22,.88) 0%,rgba(5,16,22,.62) 70%,rgba(5,16,22,0) 100%);
+  display:flex;flex-direction:column;justify-content:flex-end;justify-content:safe flex-end;gap:18px}
+.reveal::-webkit-scrollbar{width:0}
+.reveal .acts{display:flex;flex-direction:column;gap:10px}
 .reveal .rays{animation:rise .9s ease-out both}
 @keyframes rise{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:none}}
 
@@ -274,8 +291,13 @@ body{font-family:'Instrument Sans',system-ui,sans-serif;color:var(--parch);-webk
 }
 @keyframes tilt{0%,60%,100%{transform:rotate(0)}30%{transform:rotate(84deg)}}
 
+@media (max-width:760px){
+  .bossbar{top:calc(var(--st) + 54px);width:min(300px,44vw)}
+}
+
 /* short landscape phones: tighten everything that stacks */
 @media (max-height:430px){
+  .toast{top:30%}
   .side{gap:9px;padding-top:calc(var(--st) + 14px);padding-bottom:calc(var(--sb) + 14px)}
   .mid{gap:9px}
   .titlemark{font-size:clamp(34px,11vh,46px)}
@@ -305,7 +327,9 @@ body{font-family:'Instrument Sans',system-ui,sans-serif;color:var(--parch);-webk
   .tsub{display:none}
 }
 
+@keyframes calm{0%{opacity:0}8%{opacity:1}80%{opacity:1}100%{opacity:0}}
 @media (prefers-reduced-motion:reduce){
   *,*::before,*::after{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:120ms!important}
-  .toast.go{animation:fade 200ms ease-out forwards}
+  /* no movement, but a toast still has to go away again */
+  .toast.go{animation-name:calm!important;animation-duration:2.2s!important;animation-timing-function:linear!important}
 }

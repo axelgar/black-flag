@@ -27,7 +27,7 @@ import { Ocean } from './ocean';
 import { Sky } from './sky';
 import { Wakes } from './wakes';
 import { heightAt, ride } from './waves';
-import { ProceduralShip, prewarmShips, setShipLights, setShipTime, setShipView, shipQuality } from './ships/procedural';
+import { ProceduralShip, fadeWarmers, prewarmShips, setShipLights, setShipTime, setShipView, shipQuality } from './ships/procedural';
 import type { ShipModel } from './ships/ShipModel';
 import { STRIKE_WINDOW, BOARD_TIME, ESCAPE_TIME } from '../sim/combat';
 
@@ -49,6 +49,7 @@ function modelFor(R: HullRecipe, weak?: { fwd: number; side: -1 | 1 }[]): ShipMo
 interface Hulk { m: ShipModel; t: number; x: number; z: number; h: number; boarded: boolean }
 
 const WHITE = new THREE.Color(1, 1, 1);
+const ORIGIN = new THREE.Vector3();
 
 export class View {
   renderer: THREE.WebGLRenderer;
@@ -99,7 +100,13 @@ export class View {
   constructor(canvas: HTMLCanvasElement, tier: Tier) {
     this.tier = tier;
     const high = tier === 'high';
-    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: high, powerPreference: 'high-performance', stencil: false });
+    // No multisampling on the canvas itself: on 'high' everything is drawn into the
+    // composer's own multisampled target (below) and the canvas only takes the finished
+    // picture, and on 'low' it is fill rate a phone does not have.
+    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance', stencil: false });
+    // Checking every shader's log as it links makes each compile block until it is done.
+    this.renderer.debug.checkShaderErrors = import.meta.env.DEV;
+    canvas.addEventListener('webglcontextrestored', () => { this.envLook = null; });
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.shadowMap.enabled = high;
@@ -135,21 +142,52 @@ export class View {
     this.scene.add(this.balls, this.shells);
 
     if (high) {
-      this.composer = new EffectComposer(this.renderer);
+      // Its own target, multisampled: the composer's default has none, which left 'high'
+      // with no antialiasing at all and alpha-to-coverage (the palm fronds, the sails'
+      // ragged edges) with nothing to cover.
+      const rt = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 4 });
+      this.composer = new EffectComposer(this.renderer, rt);
       this.composer.addPass(new RenderPass(this.scene, this.camera));
       this.composer.addPass(new UnrealBloomPass(new THREE.Vector2(256, 256), 0.32, 0.5, 0.9));
       this.composer.addPass(new OutputPass());
     }
     this.flashEl = typeof document !== 'undefined' ? document.getElementById('flash') : null;
     this.resize();
+    this.refreshEnv(0);
+    this.prewarm();
   }
+
+  /**
+   * Compile every program the sea will need before it is needed. Rings, the reticle, the
+   * cargo, the spouts, the shells and the rest are only put on screen when something
+   * happens, and a shader compiled on the frame a squadron first sees you is a hitch at
+   * the worst possible moment on a phone. Everything is shown for the one call that
+   * gathers the programs — they compile off the main thread where the browser can — and
+   * hidden again straight after.
+   */
+  private prewarm() {
+    const M = this.marks, shown: THREE.Object3D[] = [];
+    for (const pool of [M.foeRings, M.ownRings, M.prizeRings]) { pool.begin(); pool.get(); }
+    M.warm();
+    this.warmers ??= fadeWarmers();
+    this.scene.add(this.warmers);
+    this.scene.traverse((o) => { if (!o.visible) { o.visible = true; shown.push(o); } });
+    this.renderer.compileAsync(this.scene, this.camera).catch(() => {});
+    for (const o of shown) o.visible = false;
+    this.scene.remove(this.warmers!);
+    for (const pool of [M.foeRings, M.ownRings, M.prizeRings]) { pool.begin(); pool.end(); }
+  }
+  /** Things that exist only to have their programs compiled early, and are never drawn. */
+  private warmers: THREE.Object3D | null = null;
 
   /* ------------------------------------------------------------ plumbing -- */
 
   resize() {
     const c = this.renderer.domElement;
     const w = c.clientWidth || window.innerWidth, h = c.clientHeight || window.innerHeight;
-    const dpr = Math.min(window.devicePixelRatio || 1, this.tier === 'high' ? 2 : 1.5);
+    this.cssW = w; this.cssH = h;
+    this.dprCap = Math.min(window.devicePixelRatio || 1, this.tier === 'high' ? 2 : 1.5);
+    const dpr = this.dprCap * this.dprScale;
     this.renderer.setPixelRatio(dpr);
     this.renderer.setSize(w, h, false);
     this.composer?.setPixelRatio(dpr);
@@ -159,6 +197,46 @@ export class View {
     this.fx.setViewport(h * dpr, this.camera.fov);
     setShipView(this.camera.fov, h * dpr);
   }
+
+  /* --------------------------------------------------------- resolution -- */
+
+  // A phone that cannot hold its frame rate gets fewer pixels rather than fewer frames:
+  // nearly all the cost here is per pixel (the sea above all), and 1.5 → 1.1 halves it.
+  // Measured only while a fight is being sailed — behind the menus it idles at 30 on
+  // purpose — stepped down quickly, and back up only after a long run of good frames.
+  private cssW = 1; private cssH = 1;
+  private dprCap = 1;
+  private dprScale = 1;
+  private govLog: number[] = [];
+  private govT = -3;
+  private govGood = 0;
+  private govern(dt: number) {
+    this.govLog.push(dt);
+    this.govT += dt;
+    if (this.govT < 1.5) { if (this.govT < 0) this.govLog.length = 0; return; }
+    const log = this.govLog.sort((a, b) => a - b);
+    const med = log[log.length >> 1];
+    this.govLog.length = 0;
+    this.govT = 0;
+    const floor = (this.tier === 'high' ? 1 : 0.75) / this.dprCap;
+    if (med > 1 / 50 && this.dprScale > floor + 0.01) {
+      this.dprScale = Math.max(floor, this.dprScale * 0.85);
+      this.govGood = 0;
+      this.resize();
+    } else if (med < 1 / 57) {
+      this.govGood += 1.5;
+      if (this.govGood >= 8 && this.dprScale < 1) {
+        this.dprScale = Math.min(1, this.dprScale * 1.12);
+        this.govGood = 0;
+        this.govT = -2;               // let it settle before judging the new size
+        this.resize();
+      }
+    } else {
+      this.govGood = 0;
+    }
+  }
+  /** How many pixels the sea is drawn with, per CSS pixel. For the console. */
+  get pixelRatio() { return this.renderer.getPixelRatio(); }
 
   setReduced(on: boolean) {
     this.reduced = on;
@@ -170,11 +248,14 @@ export class View {
     this.fx.rain.on = look === 'storm' && !this.reduced;
   }
 
+  /** The seed of the chart the islands are built from, if any yet. */
+  get chart(): string | null { return this.map?.seed ?? null; }
+
   /** The chart the islands and shallows are built from. */
   setMap(m: GameMap) {
     if (this.map === m) return;
     this.map = m;
-    this.islands.build(m, this.tier === 'high', Math.min(8, this.renderer.capabilities.getMaxAnisotropy()));
+    this.islands.build(m, this.tier === 'high', Math.min(this.tier === 'high' ? 8 : 2, this.renderer.capabilities.getMaxAnisotropy()));
     this.ocean.bakeShore(m);
     const h = m.harbour;
     this.marks.beacon.position.set(h.x, 0.3, h.y);
@@ -201,6 +282,8 @@ export class View {
     this.wakes.clear();
     this.marks.clear();
     this.flotsam.clear();
+    this.becalm();
+    this.govT = -3;
     if (w) {
       this.setMap(w.map);
       this.setLook(w.weather, true);
@@ -350,7 +433,8 @@ export class View {
 
   /* -------------------------------------------------------------- frame --- */
 
-  frame(dt: number) {
+  frame(dt: number, live = false) {
+    if (live && this.mode === 'play') this.govern(dt);
     this.seaT += dt;
     const t = this.seaT;
     this.air.blend(1 - Math.exp(-dt * 0.8));
@@ -364,7 +448,7 @@ export class View {
     this.wakes.begin();
     this.ocean.beginHulls();
     if (this.mode === 'play' && w) this.syncWorld(w, dt, t);
-    else { if (this.player) this.player.root.visible = false; this.flotsam.clear(); }
+    else { if (this.player) this.player.root.visible = false; this.flotsam.clear(); this.becalm(); }
     this.syncShowcase(dt, t);
     this.hulksStep(dt, t);
     this.wakes.end(t, this.air.foam);
@@ -402,23 +486,37 @@ export class View {
     else this.renderer.render(this.scene, this.camera);
   }
 
-  /** Image-based light from the current sky, re-baked once the weather has settled. */
+  /** Image-based light from the current sky, re-baked once the weather has settled. The
+   *  sky it is baked from is kept, so its program is compiled once and not once a bake,
+   *  and each bake's render target is freed when the next replaces it. */
   private envWait = 0;
+  private envSky: Sky | null = null;
+  private envScene = new THREE.Scene();
+  private envRT: THREE.WebGLRenderTarget | null = null;
   private refreshEnv(dt: number) {
     if (this.envLook === this.air.look) return;
     this.envWait += dt;
     if (this.envLook !== null && this.envWait < 4) return;
     this.envWait = 0;
     this.envLook = this.air.look;
-    const s = new THREE.Scene();
-    const sky = new Sky();
-    sky.update(0, this.air, new THREE.Vector3());
-    s.add(sky.mesh);
-    const rt = this.pmrem.fromScene(s, 0.04);
-    this.scene.environment?.dispose();
+    if (!this.envSky) { this.envSky = new Sky(this.tier === 'high'); this.envScene.add(this.envSky.mesh); }
+    this.envSky.update(0, this.air, ORIGIN);
+    const rt = this.pmrem.fromScene(this.envScene, 0.04);
+    this.envRT?.dispose();
+    this.envRT = rt;
     this.scene.environment = rt.texture;
     this.scene.environmentIntensity = 0.55;
-    sky.mat.dispose(); sky.mesh.geometry.dispose();
+  }
+
+  /** Nothing of a fight left on the water: no shot hanging in the air, no rings, no fans. */
+  private becalm() {
+    this.balls.count = 0;
+    this.shells.count = 0;
+    const M = this.marks;
+    for (const pool of [M.foeRings, M.ownRings, M.prizeRings]) { pool.begin(); pool.end(); }
+    for (const f of M.fans) f.visible = false;
+    M.reticle.visible = false;
+    M.beacon.visible = false;
   }
 
   private syncWorld(w: World, dt: number, t: number) {
@@ -707,12 +805,15 @@ export class View {
 
   /** Stage coordinates, in CSS pixels, of a point in the world; null when behind the camera. */
   project(x: number, y: number, z: number): { x: number; y: number; on: boolean } | null {
-    const v = new THREE.Vector3(x, y, z).project(this.camera);
+    const v = this.projV.set(x, y, z).project(this.camera);
     if (v.z > 1) return null;
-    const c = this.renderer.domElement;
-    const W = c.clientWidth, H = c.clientHeight;
+    // the canvas's size as of the last resize: reading it here, between the HUD's writes,
+    // forced a layout per pointer per frame
+    const W = this.cssW, H = this.cssH;
     return { x: (v.x * 0.5 + 0.5) * W, y: (-v.y * 0.5 + 0.5) * H, on: Math.abs(v.x) <= 1 && Math.abs(v.y) <= 1 };
   }
+
+  private projV = new THREE.Vector3();
 
   /** Where the camera is looking from, as a heading — the joystick is relative to it. */
   get yaw() { return this.camYaw; }

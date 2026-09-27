@@ -26,7 +26,7 @@ const pfrag = /* glsl */ `
 varying vec4 vColor;
 varying vec2 vLife;
 uniform float uLumpy;
-float h21(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
+float h21(vec2 p) { p = fract(mod(p, 289.0) * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
 float vn(vec2 p) {
   vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
   return mix(mix(h21(i), h21(i + vec2(1.0, 0.0)), f.x), mix(h21(i + vec2(0.0, 1.0)), h21(i + vec2(1.0, 1.0)), f.x), f.y);
@@ -138,10 +138,13 @@ class Pool {
     this.n = n;
     const g = this.points.geometry;
     g.setDrawRange(0, n);
-    (g.attributes.position as THREE.BufferAttribute).needsUpdate = true;
-    (g.attributes.aColor as THREE.BufferAttribute).needsUpdate = true;
-    (g.attributes.aSize as THREE.BufferAttribute).needsUpdate = true;
-    (g.attributes.aLife as THREE.BufferAttribute).needsUpdate = true;
+    this.points.visible = n > 0;
+    // only the live particles go to the GPU, not the whole pool, every frame
+    for (const [name, size] of [['position', 3], ['aColor', 4], ['aSize', 1], ['aLife', 2]] as const) {
+      const a = g.attributes[name] as THREE.BufferAttribute;
+      a.clearUpdateRanges();
+      if (n) { a.addUpdateRange(0, n * size); a.needsUpdate = true; }
+    }
   }
 
   private move(from: number, to: number) {
@@ -155,7 +158,7 @@ class Pool {
     this.seed[to] = this.seed[from];
   }
 
-  clear() { this.n = 0; this.points.geometry.setDrawRange(0, 0); }
+  clear() { this.n = 0; this.points.geometry.setDrawRange(0, 0); this.points.visible = false; }
 }
 
 /* ----------------------------------------------------------------- wood -- */
@@ -202,9 +205,14 @@ class Debris {
       this.mesh.setMatrixAt(i, this.m);
     });
     this.mesh.count = this.items.length;
-    this.mesh.instanceMatrix.needsUpdate = true;
+    this.mesh.visible = this.items.length > 0;
+    if (this.items.length) {
+      this.mesh.instanceMatrix.clearUpdateRanges();
+      this.mesh.instanceMatrix.addUpdateRange(0, this.items.length * 16);
+      this.mesh.instanceMatrix.needsUpdate = true;
+    }
   }
-  clear() { this.items = []; this.mesh.count = 0; }
+  clear() { this.items = []; this.mesh.count = 0; this.mesh.visible = false; }
 }
 
 /* ----------------------------------------------------------------- rain -- */

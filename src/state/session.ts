@@ -30,6 +30,7 @@ export interface RunSummary { wave: number; time: number; plunder: number; board
 export interface Session {
   v: 2;
   sound: boolean; haptics: boolean; reduceMotion: boolean;
+  fullscreen: boolean;               // on a phone that allows it, the sea takes the whole screen
   quality: Quality;
   records: Records;
   seen: Record<string, number>;      // class or legend id → times met
@@ -45,7 +46,7 @@ const V1 = 'blackflag.log';
 
 const blank = (): Session => ({
   v: 2,
-  sound: true, haptics: true, reduceMotion: false, quality: 'auto',
+  sound: true, haptics: true, reduceMotion: false, fullscreen: true, quality: 'auto',
   records: { bestWave: 0, bestPlunder: 0, bestTime: 0, runs: 0, boarded: 0, sunk: 0, legends: 0 },
   seen: {}, beaten: {},
   unlocked: [STARTER], ship: STARTER,
@@ -87,14 +88,39 @@ function sanitise(s: Session): Session {
 
 export const session: Session = load();
 
-// The path the router last left. Screens reachable from more than one place read it so
-// their ✕ goes back where the guest came from. Deliberately not persisted.
-export const nav: { from: string | null } = { from: null };
+// The path the router last left, and the trail of screens back to the last root one.
+// Screens reachable from more than one place read it so their ✕ goes back where the
+// guest came from. Deliberately not persisted.
+export const nav: { from: string | null; trail: string[] } = { from: null, trail: [] };
+
+// The seed of the next run's chart, rolled by the host ahead of time. Not persisted.
+export const sea = { next: 'nassau' };
 
 export function save() {
   // A leaderboard needs a backend and an identity; until then the record book is honest
   // about being this device's record book.
-  try { store()?.setItem(KEY, JSON.stringify(session)); } catch { /* private mode */ }
+  try {
+    const ls = store();
+    if (!ls) return;
+    // A QR code opens a second tab, which unlocks her there and saves. This tab's session
+    // was loaded before that, and saving it whole would put the ship back off the register.
+    mergeUnlocked(ls.getItem(KEY));
+    ls.setItem(KEY, JSON.stringify(session));
+  } catch { /* private mode */ }
+}
+
+/** Ships unlocked in another tab are ours too. */
+function mergeUnlocked(raw: string | null) {
+  if (!raw) return;
+  try {
+    const theirs = (JSON.parse(raw) as Partial<Session>).unlocked;
+    if (!Array.isArray(theirs)) return;
+    const known = new Set(SHIPS.map((x) => x.id));
+    for (const id of theirs) if (known.has(id) && !session.unlocked.includes(id)) session.unlocked.push(id);
+  } catch { /* a corrupt save has nothing to add */ }
+}
+if (typeof addEventListener === 'function') {
+  addEventListener('storage', (e) => { if (e.key === KEY) mergeUnlocked(e.newValue); });
 }
 
 export function wipe() {

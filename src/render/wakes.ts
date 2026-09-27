@@ -3,7 +3,7 @@
 // for every ship on the water.
 
 import * as THREE from 'three';
-import { heightAt } from './waves';
+import { heightAt, swell } from './waves';
 
 const N = 28;              // points of history per ship
 const EVERY = 0.12;        // seconds between samples
@@ -27,7 +27,7 @@ uniform float uTime;
 varying vec2 vUv;
 varying float vAlpha;
 varying vec3 vWorld;
-float hash(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
+float hash(vec2 p) { p = fract(mod(p, 289.0) * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
 float noise(vec2 p) {
   vec2 i = floor(p), f = fract(p);
   vec2 u = f * f * (3.0 - 2.0 * f);
@@ -92,10 +92,13 @@ export class Wakes {
     const w = beam * 0.5 * Math.min(1, speed / 6);
     if (tr.clock >= EVERY || !tr.pts.length) {
       tr.clock = 0;
-      tr.pts.unshift({ x, z, w, t });
-      if (tr.pts.length > N) tr.pts.length = N;
+      // the oldest point is recycled as the newest: no garbage for every ship, every sample
+      const p = tr.pts.length >= N ? tr.pts.pop()! : { x: 0, z: 0, w: 0, t: 0 };
+      p.x = x; p.z = z; p.w = w; p.t = t;
+      tr.pts.unshift(p);
     } else {
-      tr.pts[0] = { x, z, w, t: tr.pts[0].t };
+      const p = tr.pts[0];
+      p.x = x; p.z = z; p.w = w;
     }
   }
 
@@ -103,6 +106,8 @@ export class Wakes {
     this.mat.uniforms.uTime.value = t;
     this.mat.uniforms.uFoam.value.copy(foam);
     let s = 0;
+    // riding a little higher in a big sea: the sea's mesh is coarser than the swell's sums
+    const lift = 0.08 + 0.12 * swell.amp;
     for (const [id, tr] of this.trails) {
       // A ship that has gone keeps her wake until it has faded.
       if (!tr.seen) {
@@ -120,11 +125,13 @@ export class Wakes {
         dx /= d; dz /= d;
         const age = t - p.t;
         const spread = p.w * (0.6 + age * 1.1) + age * 0.9;
-        const y = heightAt(p.x, p.z, t) + 0.12;
+        const y = heightAt(p.x, p.z, t) + lift;
         const o = (s * N + i) * 2;
-        this.pos.set([p.x - dz * spread, y, p.z + dx * spread, p.x + dz * spread, y, p.z - dx * spread], o * 3);
+        const B = this.pos, U = this.uv, k = o * 3, j = o * 2;
+        B[k] = p.x - dz * spread; B[k + 1] = y; B[k + 2] = p.z + dx * spread;
+        B[k + 3] = p.x + dz * spread; B[k + 4] = y; B[k + 5] = p.z - dx * spread;
         const u = i / (N - 1);
-        this.uv.set([u, 0, u, 1], o * 2);
+        U[j] = u; U[j + 1] = 0; U[j + 2] = u; U[j + 3] = 1;
         const a = i >= P.length - 1 ? 0 : Math.max(0, 1 - age / (N * EVERY)) * Math.min(1, p.w / 1.2);
         this.al[o] = a; this.al[o + 1] = a;
       }
@@ -132,9 +139,14 @@ export class Wakes {
     }
     const g = this.mesh.geometry;
     g.setDrawRange(0, s * (N - 1) * 6);
-    (g.attributes.position as THREE.BufferAttribute).needsUpdate = true;
-    (g.attributes.aUv as THREE.BufferAttribute).needsUpdate = true;
-    (g.attributes.aAlpha as THREE.BufferAttribute).needsUpdate = true;
+    this.mesh.visible = s > 0;
+    // send the GPU the ships that have wakes, not the whole buffer
+    const verts = s * N * 2;
+    for (const [name, size] of [['position', 3], ['aUv', 2], ['aAlpha', 1]] as const) {
+      const a = g.attributes[name] as THREE.BufferAttribute;
+      a.clearUpdateRanges();
+      if (verts) { a.addUpdateRange(0, verts * size); a.needsUpdate = true; }
+    }
   }
 
   clear() { this.trails.clear(); }

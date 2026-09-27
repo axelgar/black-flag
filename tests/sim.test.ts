@@ -457,3 +457,62 @@ describe('play-test fixes', () => {
     expect(launched).toBeLessThanOrEqual(10 + 2);
   });
 });
+
+describe('review fixes', () => {
+  it('a waterspout can always be sailed out of, even by the slowest hull', () => {
+    for (const ship of ['jackdaw', 'revenant']) {
+      const w = lab('spout', 12, { ship });
+      const s = w.ship;
+      // right beside the core, pointing straight out, all plain sail
+      w.spouts.push({ id: 99, x: s.x + 3, y: s.y, r: 16, vx: 0, vy: 0, age: 0, life: 999 });
+      s.h = Math.PI; s.v = 0;
+      let t = 0;
+      while (t < 30 && Math.hypot(s.x - w.spouts[0].x, s.y - w.spouts[0].y) < w.spouts[0].r * 4) {
+        Wo.step(w, DT, { ...idle, heading: Math.PI, sail: 1 });
+        t += DT;
+      }
+      expect(t).toBeLessThan(30);
+      expect(w.lives).toBeGreaterThan(0);
+    }
+  });
+
+  it('once the fleet is off the water, five flags bring no legendary', () => {
+    const w = lab('late', 7);
+    // the fleet is gone; one hunter is still out there keeping the wave open
+    const s = w.ship;
+    const h = addFoe(w, 'frigate', s.x + 600, s.y, 0, 0);
+    w.squads.push({ x: h.x, y: h.y });
+    h.hunter = true; h.maxSpeed = 0; h.v = 0;
+    w.heat = 4.99;
+    for (let i = 0; i < 120 * 20; i++) Wo.step(w, DT, idle);
+    expect(w.heat).toBeGreaterThanOrEqual(5);
+    expect(w.boss).toBeNull();
+    expect(w.foes.filter((e) => e.hunter).length).toBe(1);
+  });
+
+  it('a second broadside called while the first is rippling fires after it', () => {
+    const w = lab('both');
+    let fired = 0;
+    Wo.step(w, DT, { ...idle, fireR: true });
+    for (let i = 0; i < 10; i++) Wo.step(w, DT, idle);
+    Wo.step(w, DT, { ...idle, fireL: true });                 // mid-volley
+    for (let i = 0; i < 120; i++) { Wo.step(w, DT, idle); }
+    for (const e of w.events) if (e.k === 'broadside') fired++;
+    expect(fired).toBe(2);
+    expect(w.ship.cool[0]).toBeGreaterThan(0);
+    expect(w.ship.cool[1]).toBeGreaterThan(0);
+  });
+
+  it('the mortar does not lock on to a prize', () => {
+    const w = lab('mortar');
+    const s = w.ship;
+    const ahead = (d: number) => [s.x + Math.cos(s.h) * d, s.y + Math.sin(s.h) * d] as const;
+    const [px, py] = ahead(80), [hx, hy] = ahead(160);
+    const prize = addFoe(w, 'brig', px, py, s.h, 0);
+    prize.state = 'struck'; prize.strikeT = 99; prize.struckOnce = true;
+    const foe = addFoe(w, 'brig', hx, hy, s.h, 0);
+    w.squads.push({ x: hx, y: hy });
+    Wo.step(w, DT, idle);
+    expect(s.aim?.lock).toBe(foe.id);
+  });
+});

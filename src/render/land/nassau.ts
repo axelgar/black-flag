@@ -603,6 +603,8 @@ export interface Town {
   dispose(): void;
 }
 
+let masonry: THREE.Texture | null = null;
+
 export function buildTown(sh: Shape, _harbour: Harbour, sites: Sites, N: Nursery, lo: boolean, aniso: number): Town {
   const m = new Mesh();
   const r = rng(`nassau:town:${sh.is.seed}`);
@@ -642,7 +644,10 @@ export function buildTown(sh: Shape, _harbour: Harbour, sites: Sites, N: Nursery
   }
 
   const tex = textures();
-  const mat = timberMaterial(tex.timber, !lo, masonryTexture(lo ? 512 : 1024, aniso));
+  // The masonry is the same for every Nassau, so it is painted once and kept: painting it
+  // per chart cost a few hundred milliseconds a run and leaked the last one's texture.
+  masonry ??= masonryTexture(lo ? 512 : 1024, aniso);
+  const mat = timberMaterial(tex.timber, !lo, masonry);
   const solid = new THREE.Mesh(m.geometry(), mat);
   solid.castShadow = solid.receiveShadow = !lo;
   const group = new THREE.Group();
@@ -666,7 +671,12 @@ export function buildTown(sh: Shape, _harbour: Harbour, sites: Sites, N: Nursery
     vertexShader: /* glsl */ `varying vec2 vUv; varying vec3 vN; varying vec3 vV;
 void main() { vUv = uv; vec4 mv = modelViewMatrix * vec4(position, 1.0); vN = normalize(normalMatrix * normal); vV = normalize(-mv.xyz); gl_Position = projectionMatrix * mv; }`,
     fragmentShader: /* glsl */ `uniform float uOpacity; uniform vec3 uColor; varying vec2 vUv; varying vec3 vN; varying vec3 vV;
-void main() { float a = uOpacity * pow(vUv.y, 2.2) * pow(abs(dot(vN, vV)), 1.4); gl_FragColor = vec4(uColor * a, a); }`,
+void main() {
+  float a = uOpacity * pow(vUv.y, 2.2) * pow(abs(dot(vN, vV)), 1.4);
+  gl_FragColor = vec4(uColor * a, a);
+  #include <tonemapping_fragment>
+  #include <colorspace_fragment>
+}`,
   });
   const cone = new THREE.ConeGeometry(6, 70, 20, 1, true);
   cone.translate(0, -35, 0);

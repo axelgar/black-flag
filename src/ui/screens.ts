@@ -11,7 +11,7 @@ import { shipForCode } from '../data/unlocks';
 import { UPGRADES, bribeCost, recipeOf, shipStats } from '../data/upgrades';
 import { HEAT } from '../data/notoriety';
 import { clock, reales } from '../state/run';
-import { nav, save, session, unlockShip, wipe, type Quality } from '../state/session';
+import { nav, save, sea, session, unlockShip, wipe, type Quality } from '../state/session';
 import type { View } from '../render/view';
 import { mapFor } from '../sim/world';
 import * as A from '../audio/audio';
@@ -27,19 +27,54 @@ const $ = <T extends HTMLElement = HTMLElement>(s: string, r: ParentNode = docum
 const $$ = <T extends HTMLElement = HTMLElement>(s: string, r: ParentNode = document) => [...r.querySelectorAll<T>(s)];
 const esc = (s: unknown) => String(s ?? '').replace(/[<>&"]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' }[c]!));
 const emit = (name: string, detail?: unknown) => window.dispatchEvent(new CustomEvent(name, { detail }));
-const backTo = (fallback: string) => (nav.from && !nav.from.startsWith('/unlock') ? `#${nav.from}` : fallback);
+/** Where a screen's back button goes: one step back along the trail the router keeps, and
+ *  never back into an unlock reveal. */
+const backTo = (fallback: string) => {
+  const t = nav.trail, prev = t.length >= 2 ? t[t.length - 2] : null;
+  return prev && !prev.startsWith('/unlock') ? `#${prev}` : fallback;
+};
+
+/** Draw this screen again after a change, keeping where the list was scrolled to and
+ *  without the fade a screen arrives with: a purchase is not a new screen, and a list that
+ *  jumped back to the top under the thumb had the next tap buy the wrong thing. */
+function redraw() {
+  const keep = document.querySelector<HTMLElement>('#ui .mid')?.scrollTop ?? 0;
+  window.dispatchEvent(new Event('hashchange'));
+  const fresh = document.querySelector<HTMLElement>('#ui .screen');
+  if (fresh) fresh.style.animation = 'none';
+  const mid = document.querySelector<HTMLElement>('#ui .mid');
+  if (mid) mid.scrollTop = keep;
+}
+
+/** A button that does something that cannot be undone asks twice — and the second tap
+ *  only counts once the question has been on screen long enough to be read, so a double
+ *  tap is not an answer. Returns true when the second, deliberate tap comes. */
+function sure(b: HTMLElement, ask: string): boolean {
+  const armed = Number(b.dataset.armed || 0);
+  if (armed && performance.now() - armed > 600) return true;
+  if (!armed) {
+    b.dataset.armed = String(performance.now());
+    b.dataset.was = b.innerHTML;
+    b.innerHTML = ask;
+    setTimeout(() => { if (b.isConnected && b.dataset.armed) { b.innerHTML = b.dataset.was!; delete b.dataset.armed; } }, 4000);
+  }
+  return false;
+}
 const isTouch = touchUi;
 
-const topbar = (label: string, back: string) => `
+const topbar = (label: string, back: string, menu = true) => `
   <div class="top">
     <button class="chip icon" data-go="${back}" aria-label="Back">${back === '#/' ? '✕' : '←'}</button>
     <span class="mono" style="font-size:11px;letter-spacing:.22em;opacity:.8">${label}</span>
-    <button class="chip icon burger" data-go="#/menu" aria-label="Articles"></button>
+    ${menu ? '<button class="chip icon burger" data-go="#/menu" aria-label="Articles"></button>' : '<span style="width:40px"></span>'}
   </div>`;
 
-/** The scenery behind the shell: the run's own chart if there is one, Nassau's otherwise. */
+/** The scenery behind the shell: the run's own chart if there is one; with none, the
+ *  chart already on screen (raising an archipelago is not free on a phone, and a summary
+ *  screen should not stop to do it); and at a cold start, the chart the next run will
+ *  sail, so weighing anchor finds it already built. */
 function harbourScene(v: View, look: 'dusk' | 'clear' = 'dusk') {
-  v.setMap(mapFor(session.run?.seed ?? 'nassau'));
+  v.setMap(mapFor(session.run?.seed ?? v.chart ?? sea.next));
   v.setLook(look);
 }
 
@@ -80,7 +115,12 @@ export function title(v: View): Screen {
       </div>
     </div>`,
     mount(root) {
-      $('[data-new]', root)?.addEventListener('click', () => { buzz(10); emit('bf:new-run'); });
+      $('[data-new]', root)?.addEventListener('click', (e) => {
+        const b = e.currentTarget as HTMLElement;
+        // Scuttling a run in progress is a second tap; starting the first one is not.
+        if (run && !sure(b, '<div><b>Tap again to scuttle</b><span>WAVE ' + run.wave + ' · ' + reales(run.plunder) + ' REALES GO DOWN WITH HER</span></div><i>⚓</i>')) return;
+        buzz(10); emit('bf:new-run');
+      });
     },
   };
 }
@@ -144,19 +184,29 @@ export function shipyard(v: View): Screen {
           <button class="cta ${chosen ? 'ghost' : 'gold'}" data-choose ${chosen ? 'disabled' : ''}>
             <div><b>${chosen ? 'Your ship' : 'Sail her'}</b><span>${chosen ? 'SHE IS WHAT YOU PUT TO SEA IN' : session.run ? 'FROM YOUR NEXT RUN' : 'SHE IS WHAT YOU PUT TO SEA IN'}</span></div><i>${chosen ? '✓' : '→'}</i></button>
         ` : `
-          <div class="cta ghost" style="cursor:default"><div><b>Locked</b><span>SCAN HER QR CODE TO UNLOCK</span></div><i>⌗</i></div>
+          <form class="codeform" data-code>
+            <input name="code" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="16" placeholder="Scan her QR code, or type it" aria-label="Unlock code">
+            <button class="chip gold" type="submit">Unlock</button>
+          </form>
         `}
       </div>
     </div>`,
     mount(root) {
       $$('[data-pick]', root).forEach((el) => el.addEventListener('click', () => {
         buzz(6); yardPick = el.dataset.pick!; A.click();
-        window.dispatchEvent(new Event('hashchange'));
+        redraw();
       }));
       $('[data-choose]', root)?.addEventListener('click', () => {
         session.ship = pick; save(); buzz(14); A.pickup();
         track('ship_select', { ship: pick });
-        window.dispatchEvent(new Event('hashchange'));
+        redraw();
+      });
+      // A code typed in, for whoever cannot scan: a phone playing from its home screen
+      // keeps its own storage, apart from the browser the camera opens a QR code in.
+      $<HTMLFormElement>('[data-code]', root)?.addEventListener('submit', (e) => {
+        e.preventDefault();
+        const code = ($<HTMLInputElement>('input', e.currentTarget as HTMLElement)?.value || '').trim();
+        if (code) location.hash = `#/unlock/${encodeURIComponent(code)}`;
       });
       return spinner(root, v);
     },
@@ -189,7 +239,7 @@ export function unlock(v: View, code: string): Screen {
         <div class="center">
           <div class="eyebrow" style="color:#E0533F">NO SUCH SHIP ON THE REGISTER</div>
           <div class="disp" style="font-size:30px">That code sails nothing</div>
-          <div class="sub" style="max-width:420px">Check the code, or scan it again. They look like <span class="mono" style="font-size:12px">KSTRL-7Q</span>.</div>
+          <div class="sub" style="max-width:420px">Check the code, or scan it again. They look like <span class="mono" style="font-size:12px">ABCDE-1F</span>.</div>
           <div class="stack" style="margin-top:10px">
             <button class="cta gold" data-go="#/shipyard"><div><b>To the shipyard</b><span>SEE WHAT IS YOURS</span></div><i>→</i></button>
             <button class="cta ghost" data-go="#/"><div><b>Title</b><span>BACK TO NASSAU</span></div><i>⚓</i></button>
@@ -242,6 +292,8 @@ export function play(v: View, onDock: () => void): Screen {
 }
 
 /* ================================================================= port == */
+
+let lastBuy = 0;
 
 export function port(v: View): Screen {
   const run = session.run;
@@ -304,6 +356,8 @@ export function port(v: View): Screen {
     </div>`,
     mount(root) {
       $$('[data-buy]', root).forEach((b) => b.addEventListener('click', () => {
+        if (performance.now() - lastBuy < 400) return;
+        lastBuy = performance.now();
         const u = UPGRADES.find((x) => x.id === b.dataset.buy)!;
         const lvl = up[u.id] ?? 0;
         if (lvl >= u.max || run.plunder < u.cost(lvl)) return;
@@ -311,7 +365,7 @@ export function port(v: View): Screen {
         up[u.id] = lvl + 1;
         if (u.id === 'life') run.lives = (run.lives < 0 ? shipStats(def).lives : run.lives) + 1;
         save(); buzz(14); A.pickup();
-        window.dispatchEvent(new Event('hashchange'));
+        redraw();
       }));
       $('[data-bribe]', root)?.addEventListener('click', () => {
         const c = bribeCost(run.bribes || 0);
@@ -320,7 +374,7 @@ export function port(v: View): Screen {
         run.heat = Math.max(0, run.heat + HEAT.bribe);
         run.bribes = (run.bribes || 0) + 1;
         save(); buzz(14); A.pickup();
-        window.dispatchEvent(new Event('hashchange'));
+        redraw();
       });
     },
   };
@@ -440,11 +494,13 @@ const QUALITY: Quality[] = ['auto', 'low', 'high'];
 export function menu(v: View): Screen {
   const s = session;
   const toggles: [keyof typeof s, string][] = [['sound', 'Sound'], ['haptics', 'Haptics'], ['reduceMotion', 'Reduce motion']];
+  // Only where a page can have the whole screen: Android and tablets, not iPhones.
+  if (document.fullscreenEnabled && isTouch()) toggles.push(['fullscreen', 'Full screen']);
   return {
     covered: true,
     html: `
     <div class="screen"><div class="paper"><div class="col">
-      ${topbar('SHIP’S ARTICLES', backTo('#/'))}
+      ${topbar('SHIP’S ARTICLES', backTo('#/'), false)}
       <div class="disp" style="font-size:32px;margin-bottom:14px">Articles</div>
       <div class="rowlist">
         ${toggles.map(([k, l]) => `<button data-t="${k}">${l} <span class="r ${s[k] ? 'gold' : ''}">${s[k] ? 'ON' : 'OFF'}</span></button>`).join('')}
@@ -461,11 +517,11 @@ export function menu(v: View): Screen {
     </div></div></div>`,
     mount(root) {
       $$('[data-t]', root).forEach((b) => b.addEventListener('click', () => {
-        const k = b.dataset.t as 'sound' | 'haptics' | 'reduceMotion';
+        const k = b.dataset.t as 'sound' | 'haptics' | 'reduceMotion' | 'fullscreen';
         s[k] = !s[k];
         save(); buzz(6);
-        emit('bf:prefs');
-        window.dispatchEvent(new Event('hashchange'));
+        emit(k === 'fullscreen' ? 'bf:fullscreen' : 'bf:prefs');
+        redraw();
       }));
       $('[data-q]', root)?.addEventListener('click', () => {
         s.quality = QUALITY[(QUALITY.indexOf(s.quality) + 1) % QUALITY.length];
@@ -474,13 +530,8 @@ export function menu(v: View): Screen {
         location.reload();
       });
       $('[data-wipe]', root)?.addEventListener('click', (e) => {
-        const b = e.currentTarget as HTMLElement;
         // Two taps, not a confirm() — a modal dialog blocks the frame loop.
-        if (b.dataset.armed !== '1') {
-          b.dataset.armed = '1';
-          b.innerHTML = 'Burn the log <span class="r" style="color:#E0533F">TAP AGAIN</span>';
-          return;
-        }
+        if (!sure(e.currentTarget as HTMLElement, 'Burn the log <span class="r" style="color:#E0533F">TAP AGAIN · EVERYTHING GOES</span>')) return;
         wipe();
         location.reload();
       });
@@ -491,7 +542,8 @@ export function menu(v: View): Screen {
 /* ================================================================ pause == */
 
 export function pause(v: View, live: boolean): Screen {
-  if (!v.world) v.setMode('title');
+  // Over the paused sea if there is one — even after a visit to the Articles or the yard.
+  v.setMode(v.world ? 'play' : 'title');
   const wave = session.run?.wave;
   return {
     html: `
@@ -517,8 +569,7 @@ export function pause(v: View, live: boolean): Screen {
       $('[data-again]', root)?.addEventListener('click', () => { buzz(12); emit('bf:restart-wave'); });
       $('[data-retreat]', root)?.addEventListener('click', () => { buzz(12); emit('bf:retreat'); });
       $('[data-abandon]', root)?.addEventListener('click', (e) => {
-        const b = e.currentTarget as HTMLElement;
-        if (b.dataset.armed !== '1') { b.dataset.armed = '1'; b.textContent = 'Certain?'; return; }
+        if (!sure(e.currentTarget as HTMLElement, 'Certain? Tap again')) return;
         buzz(20);
         emit('bf:abandon');
       });

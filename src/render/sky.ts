@@ -20,7 +20,7 @@ const frag = /* glsl */ `
 uniform vec3 uZenith, uHorizon, uGround, uSunDir, uSunColor;
 uniform float uTime, uCloud;
 varying vec3 vDir;
-float hash(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
+float hash(vec2 p) { p = fract(mod(p, 289.0) * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
 float noise(vec2 p) {
   vec2 i = floor(p), f = fract(p);
   vec2 u = f * f * (3.0 - 2.0 * f);
@@ -88,7 +88,10 @@ export class Sky {
     });
     this.mesh = new THREE.Mesh(new THREE.SphereGeometry(4000, 32, 16), this.mat);
     this.mesh.frustumCulled = false;
-    this.mesh.renderOrder = -2;
+    // Drawn after everything opaque, at the far plane, so the depth test throws away every
+    // sky pixel the sea and the land already cover before its clouds are worked out —
+    // from a chase camera looking down at the water, that is nearly all of them.
+    this.mesh.renderOrder = 50;
   }
   update(t: number, air: Air, cam: THREE.Vector3) {
     const u = this.mat.uniforms;

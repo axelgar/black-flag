@@ -178,6 +178,16 @@ function kit(R: HullRecipe): Kit {
   return k;
 }
 
+/** A hull material already in her going-away variant, never drawn: the view compiles its
+ *  program at start-up, so the first prize to escape does not stall a frame to build it. */
+export function fadeWarmers(): THREE.Object3D {
+  const m = timberMaterial(textures().timber, quality.high);
+  m.defines = { ...m.defines, BF_FADE: '' };
+  const mesh = new THREE.Mesh(new THREE.BufferGeometry(), m);
+  mesh.frustumCulled = false;
+  return mesh;
+}
+
 /** Triangles and vertices a recipe costs, for the console. */
 export function kitStats(R: HullRecipe) {
   const k = kit(R);
@@ -307,10 +317,13 @@ export class ProceduralShip implements ShipModel {
   detail(distance: number) { this.ropes.visible = distance < 520 && this.faded > 0.55; }
 
   /** Going, 1..0: she dissolves into the haze. Her lines and colours go first — they are
-   *  too fine to dither — and a ship that is half there casts no shadow. */
+   *  too fine to dither — and a ship that is half there casts no shadow. The hull only
+   *  takes the dissolving variant of its shader once she starts to go: a discard in every
+   *  hull's shader would cost every ship afloat the GPU's early depth rejection. */
   private faded = 1;
   fade(k: number) {
     if (k === this.faded) return;
+    if (k < 1 && this.faded >= 1) { this.timber.defines = { ...this.timber.defines, BF_FADE: '' }; this.timber.needsUpdate = true; }
     this.faded = k;
     this.timber.userData.u.uFade.value = k;
     if (this.canvas) this.canvas.u.uFade.value = k;
@@ -338,5 +351,6 @@ export class ProceduralShip implements ShipModel {
     this.canvas?.mat.dispose();
     this.canvas?.depth.dispose();
     for (const m of this.weak) m.geometry.dispose();
+    if (this.weak.length) (this.weak[0].material as THREE.Material).dispose();
   }
 }

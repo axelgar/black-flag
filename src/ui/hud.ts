@@ -35,6 +35,7 @@ export function hudHtml(touch: boolean) {
   return `
   <div class="hud" id="hud">
     <div class="pointers" id="h-ptrs"></div>
+    ${touch ? `<div class="joy${usedTouch() ? ' used' : ''}" id="h-joy"><div class="base"></div><div class="knob"></div><div class="hint">DRAG TO SAIL · PUSH HARD FOR FULL SAIL</div></div>` : ''}
     <div class="hudtl">
       <div class="hullbar" id="h-bar"><i style="width:100%"></i></div>
       <div class="hudline">
@@ -49,10 +50,9 @@ export function hudHtml(touch: boolean) {
     <button class="chip gold dock-cta" id="h-dock">⚓ Make for Nassau</button>
     <div class="hudtr">
       <canvas class="minimap" id="h-map" width="224" height="224"></canvas>
-      <button class="chip icon" data-go="#/pause" aria-label="Heave to">❙❙</button>
+      <button class="chip icon pausebtn" id="h-pause" data-go="#/pause" aria-label="Heave to">❙❙</button>
     </div>
     <div class="toast" id="h-toast"></div>
-    ${touch ? `<div class="joy${usedTouch() ? ' used' : ''}" id="h-joy"><div class="base"></div><div class="knob"></div><div class="hint">DRAG TO SAIL · PUSH HARD FOR FULL SAIL</div></div>` : ''}
     <div class="sailgauge" id="h-sail">
       <i style="height:8px"></i><i style="height:13px"></i><i style="height:18px"></i><span id="h-sailtxt">HALF SAIL</span>
     </div>
@@ -82,10 +82,28 @@ export function mountHud(root: HTMLElement, onDock: () => void): () => void {
     e.preventDefault(); e.stopPropagation(); A.unlock(); buzz(side === 'M' ? 14 : 10); fire(side);
   });
   press(hud.gunL, 'L'); press(hud.gunR, 'R'); press(hud.mortar, 'M');
-  hud.dock.addEventListener('click', () => { buzz(10); onDock(); });
+  // On pointerdown, like the guns: a browser makes no click of a tap while another finger
+  // is down, and the other finger is on the stick.
+  hud.dock.addEventListener('pointerdown', (e) => { e.preventDefault(); buzz(10); onDock(); });
+  $('#h-pause', root).addEventListener('pointerdown', (e) => { e.preventDefault(); buzz(6); window.dispatchEvent(new Event('bf:pause')); });
+  readInsets();
+  measure();
+  addEventListener('resize', measure);
   const joy = root.querySelector<HTMLElement>('#h-joy');
   const off = joy ? attachStick(joy) : () => {};
-  return () => { off(); hud = null; };
+  return () => { off(); removeEventListener('resize', measure); hud = null; };
+}
+
+/** Where the HUD's own furniture is, so an off-screen arrow is never drawn under it. */
+const keepOut: DOMRect[] = [];
+function measure() {
+  if (!hud) return;
+  readInsets();
+  keepOut.length = 0;
+  for (const sel of ['.hudtl', '.hudtr', '.guns']) {
+    const el = hud.root.querySelector(sel);
+    if (el) keepOut.push(el.getBoundingClientRect());
+  }
 }
 
 const HEARTS = (n: number, of: number) => '♥'.repeat(Math.max(0, n)) + '<span style="opacity:.25">♡</span>'.repeat(Math.max(0, of - n));
@@ -163,6 +181,14 @@ export function hudTick(w: World | null, view: View, dt: number) {
   if (hud.mapT <= 0) { hud.mapT = 0.1; minimap(w, view.yaw); }
 }
 
+/** The phone's notch and rounded corners, as the CSS has them. */
+const inset = { l: 0, r: 0 };
+function readInsets() {
+  const cs = getComputedStyle(document.documentElement);
+  inset.l = parseFloat(cs.getPropertyValue('--sl')) || 0;
+  inset.r = parseFloat(cs.getPropertyValue('--sr')) || 0;
+}
+
 /** Arrows round the edge for what matters and is off screen; labels over prizes. */
 function pointers(w: World, view: View) {
   const h = hud!;
@@ -175,16 +201,23 @@ function pointers(w: World, view: View) {
     // Off screen: point along the bearing, as the camera sees it — forward is up.
     const rel = Math.atan2(y - w.ship.y, x - w.ship.x) - view.yaw;
     const a = Math.atan2(-Math.cos(rel), Math.sin(rel));
-    // Clear of the key hints and gun buttons at the bottom, the HUD at the top.
-    const m = 34, mv = Math.sin(a) > 0 ? 64 : 46;
+    // On a ring round the edge, inside the notch, and then out from under whatever of the
+    // HUD it landed on: along the edge it is on, to the near side of the obstacle.
+    const m = 30 + Math.max(inset.l, inset.r), mv = 30;
     const k = Math.min((W / 2 - m) / Math.abs(Math.cos(a) || 1e-3), (H / 2 - mv) / Math.abs(Math.sin(a) || 1e-3));
+    let px = cx + Math.cos(a) * k, py = cy + Math.sin(a) * k;
+    for (const r of keepOut) {
+      if (px < r.left - 16 || px > r.right + 16 || py < r.top - 16 || py > r.bottom + 16) continue;
+      const side = Math.abs(px - cx) / (W / 2 - m) > Math.abs(py - cy) / (H / 2 - mv);
+      if (side) py = py < cy ? r.bottom + 18 : r.top - 18;
+      else px = px < cx ? r.right + 18 : r.left - 18;
+    }
     let el = h.ptrPool[n];
     if (!el) { el = document.createElement('div'); h.ptrs.appendChild(el); h.ptrPool.push(el); }
-    el.className = `ptr ${kind}`;
+    if (el.className !== `ptr ${kind}`) el.className = `ptr ${kind}`;
     el.style.display = '';
-    el.style.left = `${cx + Math.cos(a) * k}px`;
-    el.style.top = `${cy + Math.sin(a) * k}px`;
-    el.style.setProperty('--a', `${a + Math.PI / 2}rad`);
+    el.style.transform = `translate3d(${px.toFixed(1)}px,${py.toFixed(1)}px,0)`;
+    el.style.setProperty('--a', `${(a + Math.PI / 2).toFixed(3)}rad`);
     n++;
     return null;
   };
@@ -193,10 +226,10 @@ function pointers(w: World, view: View) {
     if (!p || !p.on) return;
     let el = h.labels[nl];
     if (!el) { el = document.createElement('div'); h.ptrs.appendChild(el); h.labels.push(el); }
-    el.className = `label ${cls}`;
+    if (el.className !== `label ${cls}`) el.className = `label ${cls}`;
     el.style.display = '';
-    el.style.left = `${p.x}px`; el.style.top = `${p.y}px`;
-    el.innerHTML = esc(text);
+    el.style.transform = `translate3d(${p.x.toFixed(1)}px,${p.y.toFixed(1)}px,0) translate(-50%,-100%)`;
+    if (el.dataset.t !== text) { el.textContent = text; el.dataset.t = text; }
     nl++;
   };
 

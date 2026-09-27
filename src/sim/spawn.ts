@@ -1,7 +1,7 @@
 // Putting ships on the water. A wave plan's groups become squadrons that put to sea from
 // the rim or from behind an island, well away from you, and start their search.
 
-import { TAU, clamp } from '../core/vec';
+import { TAU } from '../core/vec';
 import { CLASSES, HUNTER_CLASS } from '../data/enemies';
 import { LEGENDS, legendById } from '../data/legends';
 import { EARLY_LEGEND_AT, HUNTER_AT } from '../data/notoriety';
@@ -26,7 +26,7 @@ export function addFoe(w: World, cls: string, x: number, y: number, h: number, s
     wp: { x, y }, wpT: 0, seeT: w.r() * 0.3, orbit: w.r() < 0.5 ? 1 : -1,
     cool: 1 + w.r() * 1.5, coolAlt: 2 + w.r() * 2, broad: 0, broadSide: 1,
     strikeT: 0, struckOnce: false, spentT: 0, hunter: false, chase: 0, slow: 0,
-    ph: w.r() * TAU, ports: null, phase: 0, flash: 0, seen: false,
+    ph: w.r() * TAU, ports: null, phase: 0, flash: 0, detour: 0, seen: false,
   };
   if (cls === 'brulote') { e.state = 'engage'; e.alert = true; }
   w.foes.push(e);
@@ -51,7 +51,7 @@ export function addLegend(w: World, L: LegendDef, x: number, y: number): Foe {
       const k = Math.floor(i / 2) / Math.max(1, per - 1) - 0.5;
       return { fwd: k * R.length * 0.55, side: (i % 2 ? 1 : -1) as -1 | 1, hull: 8, dead: false };
     }),
-    phase: 0, flash: 0, seen: false,
+    phase: 0, flash: 0, detour: 0, seen: false,
   };
   w.foes.push(e);
   w.boss = e;
@@ -102,8 +102,16 @@ function place(w: World, x: number, y: number, pad: number): { x: number; y: num
 export function spawnGroup(w: World, g: Group) {
   const s = w.ship;
   if (g.cls === 'spout') {
-    const a = w.r() * TAU, d = 160 + w.r() * 120;
-    const p = place(w, clamp(s.x + Math.cos(a) * d, -600, 600), clamp(s.y + Math.sin(a) * d, -600, 600), 30);
+    // 160–280m off, inside the open chart. Clamping a point to the middle of the chart
+    // instead could drop one on top of a ship sailing near its edge.
+    const inner = MAP_R - EDGE - 60;
+    let at = { x: s.x * (1 - 200 / Math.max(200, Math.hypot(s.x, s.y))), y: s.y * (1 - 200 / Math.max(200, Math.hypot(s.x, s.y))) };
+    for (let i = 0; i < 12; i++) {
+      const a = w.r() * TAU, d = 160 + w.r() * 120;
+      const x = s.x + Math.cos(a) * d, y = s.y + Math.sin(a) * d;
+      if (Math.hypot(x, y) < inner) { at = { x, y }; break; }
+    }
+    const p = place(w, at.x, at.y, 30);
     const b = w.r() * TAU;
     w.spouts.push({ id: w.nextId++, x: p.x, y: p.y, r: 16, vx: Math.cos(b) * 3, vy: Math.sin(b) * 3, age: 0, life: 45 });
     ev(w, 'spout', { x: p.x, y: p.y });
@@ -183,7 +191,9 @@ export function hunt(w: World, dt: number) {
       ev(w, 'hunter', { id: e.id });
     }
   }
-  if (w.heat >= EARLY_LEGEND_AT && !w.earlyLegend && !w.plan.boss && !w.boss) {
+  // The same rule as the hunters: once the fleet is off the water nobody new comes, or a
+  // wave already won could be opened again by a legendary nobody asked for.
+  if (fleet && w.heat >= EARLY_LEGEND_AT && !w.earlyLegend && !w.plan.boss && !w.boss) {
     w.earlyLegend = true;
     const far = w.map.spawns.reduce((a, b) =>
       Math.hypot(b.x - s.x, b.y - s.y) > Math.hypot(a.x - s.x, a.y - s.y) ? b : a);

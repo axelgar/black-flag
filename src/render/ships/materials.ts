@@ -42,6 +42,10 @@ uniform float uFade;
 float bfBayer2(vec2 a) { a = floor(a); return fract(dot(a, vec2(0.5, a.y * 0.75))); }
 float bfBayer(vec2 a) { return bfBayer2(0.5 * a) * 0.25 + bfBayer2(a); }`;
 const FADE_CUT = /* glsl */ `if (uFade < 0.999 && bfBayer(gl_FragCoord.xy) >= uFade) discard;`;
+const HULL_FADE_CUT = /* glsl */ `
+#ifdef BF_FADE
+${FADE_CUT}
+#endif`;
 
 /** Fog, scaled per material: the player's own ship keeps her colours in a fog bank. */
 const FOG = /* glsl */ `
@@ -136,7 +140,7 @@ vec3 bfBump(vec3 surf_pos, vec3 surf_norm, vec2 dHdxy, float faceDirection) {
   return normalize(abs(fDet) * surf_norm - vGrad);
 }`)
       .replace('#include <color_fragment>', /* glsl */ `#include <color_fragment>
-${FADE_CUT}
+${HULL_FADE_CUT}
 vec4 bfTex = texture2D(uTimber, vTuv);
 #ifdef BF_MASONRY
 vec4 bfTex2 = texture2D(uMasonry, vTuv);

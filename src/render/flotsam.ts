@@ -75,7 +75,7 @@ const spoutFrag = /* glsl */ `
 uniform float uTime, uFogNear, uFogFar;
 uniform vec3 uColor, uFogColor;
 varying vec2 vUv; varying vec3 vN; varying vec3 vV; varying float vFog;
-float h21(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
+float h21(vec2 p) { p = fract(mod(p, 289.0) * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
 float vn(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
   return mix(mix(h21(i), h21(i + vec2(1.0, 0.0)), f.x), mix(h21(i + vec2(0.0, 1.0)), h21(i + vec2(1.0, 1.0)), f.x), f.y); }
 void main() {
@@ -118,6 +118,9 @@ export class Flotsam {
   private e = new THREE.Euler();
   private v = new THREE.Vector3();
   private s = new THREE.Vector3(1, 1, 1);
+  private flat = new THREE.Quaternion();
+  private ringS = new THREE.Vector3();
+  private counts = new Map<DropId, number>();
 
   constructor(high: boolean) {
     const tex = textures();
@@ -139,7 +142,7 @@ varying vec2 vUv;
 void main() {
   vUv = uv;
   vec4 wp = modelMatrix * instanceMatrix * vec4(position, 1.0);
-  wp.y = seaHeight(wp.xz) + 0.25;
+  wp.y = seaHeight(wp.xz) + 0.15 + 0.3 * uAmp;
   gl_Position = projectionMatrix * viewMatrix * wp;
 }`,
       fragmentShader: /* glsl */ `uniform float uPulse; varying vec2 vUv;
@@ -149,6 +152,8 @@ void main() {
   float ring = smoothstep(0.62, 0.8, r) * (1.0 - smoothstep(0.8, 1.0, r));
   float a = ring * (0.35 + 0.35 * pulse) + (1.0 - smoothstep(0.0, 0.8, r)) * 0.08;
   gl_FragColor = vec4(vec3(1.0, 0.78, 0.35) * a, a);
+  #include <tonemapping_fragment>
+  #include <colorspace_fragment>
 }`,
     });
     const plane = new THREE.PlaneGeometry(1, 1, 6, 6);
@@ -166,11 +171,24 @@ void main() {
         uFogColor: { value: new THREE.Color() }, uFogNear: { value: 300 }, uFogFar: { value: 1500 },
       },
     });
+    // one funnel from the start, hidden, so its program is compiled with everything else
+    // and not on the frame the first waterspout rises
+    this.spout();
+  }
+
+  private spout(): THREE.Mesh {
+    const sm = new THREE.Mesh(this.spoutGeo, this.spoutMat);
+    sm.renderOrder = 2;
+    sm.visible = false;
+    this.spouts.push(sm);
+    this.group.add(sm);
+    return sm;
   }
 
   sync(w: World, t: number, fx: Fx, fog: THREE.Fog) {
     this.ringMat.uniforms.uPulse.value = t;
-    const counts = new Map<DropId, number>();
+    const counts = this.counts;
+    counts.clear();
     let rings = 0;
     for (const d of w.drops) {
       if (d.dead) continue;
@@ -188,27 +206,24 @@ void main() {
       im.setMatrixAt(n, this.m.compose(this.v, this.q, this.s));
       const size = 7 + Math.sin(t * 3 + d.id) * 0.4;
       this.v.set(d.x, y + 0.08, d.y);
-      this.rings.setMatrixAt(rings++, this.m.compose(this.v, new THREE.Quaternion(), new THREE.Vector3(size, 1, size)));
+      this.rings.setMatrixAt(rings++, this.m.compose(this.v, this.flat, this.ringS.set(size, 1, size)));
       // it fades out of sight in the last seconds before it sinks
       if (d.age > 36 && Math.floor(t * 8) % 2) im.setMatrixAt(n, this.m.makeScale(0, 0, 0));
     }
     for (const [k, im] of this.kinds) {
       im.count = counts.get(k) ?? 0;
-      im.instanceMatrix.needsUpdate = true;
+      im.visible = im.count > 0;
+      if (im.count) im.instanceMatrix.needsUpdate = true;
     }
     this.rings.count = rings;
-    this.rings.instanceMatrix.needsUpdate = true;
+    this.rings.visible = rings > 0;
+    if (rings) this.rings.instanceMatrix.needsUpdate = true;
 
     // spouts
     const u = this.spoutMat.uniforms;
     u.uTime.value = t;
     u.uFogColor.value.copy(fog.color); u.uFogNear.value = fog.near; u.uFogFar.value = fog.far;
-    while (this.spouts.length < w.spouts.length) {
-      const sm = new THREE.Mesh(this.spoutGeo, this.spoutMat);
-      sm.renderOrder = 2;
-      this.spouts.push(sm);
-      this.group.add(sm);
-    }
+    while (this.spouts.length < w.spouts.length) this.spout();
     this.spouts.forEach((sm, i) => {
       const p = w.spouts[i];
       sm.visible = !!p;
@@ -224,8 +239,9 @@ void main() {
   }
 
   clear() {
-    for (const im of this.kinds.values()) im.count = 0;
+    for (const im of this.kinds.values()) { im.count = 0; im.visible = false; }
     this.rings.count = 0;
+    this.rings.visible = false;
     for (const sm of this.spouts) sm.visible = false;
   }
 }

@@ -59,7 +59,7 @@ export function create(opts: { seed?: string; wave?: number; run?: RunSeed; redu
     shells: stats.shellsMax, shellsMax: stats.shellsMax,
     invuln: 1.5, ramT: 0, groundT: 0,
     buffs: { powder: 0, heavy: 0, chain: 0, swivel: 0 },
-    board: null, aim: null, rim: false,
+    board: null, aim: null, rim: false, want: [false, false],
   };
   return {
     seed, wave, shipId: def.id, map, plan, stats, reduce,
@@ -123,10 +123,13 @@ function sail(w: World, dt: number, input: Input) {
   s.y += w.drift.y * dt;
 
   // A waterspout pulls rather than pushes — you can sail out, it just costs you the turn.
+  // Never harder than most of her own best speed: at 16m/s it out-pulled the Jackdaw and
+  // the galleon, and a ship caught near the core stayed there until the spout died.
+  const pull = Math.min(16, s.maxSpeed * 0.6) * (w.reduce ? 0.5 : 1);
   for (const p of w.spouts) {
     const dx = p.x - s.x, dy = p.y - s.y, d = Math.hypot(dx, dy), reach = p.r * 4;
     if (d < reach && d > 1) {
-      const k = (1 - d / reach) * 16 * dt * (w.reduce ? 0.5 : 1);
+      const k = (1 - d / reach) * pull * dt;
       s.x += (dx / d) * k; s.y += (dy / d) * k;
       if (d < p.r && s.groundT <= 0) { wound(w, 3, 'spout', s.x, s.y); s.groundT = 0.6; }
     }

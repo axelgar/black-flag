@@ -41,9 +41,15 @@ export function playerGuns(w: World, dt: number, input: Input) {
   s.cool[1] = Math.max(0, s.cool[1] - dt);
 
   const reload = st.reload * (s.buffs.powder > 0 ? 0.6 : 1);
+  // A tap on a loaded side is held until the other side's guns have finished rippling,
+  // rather than dropped: both broadsides is two taps a heartbeat apart, and the second
+  // one used to vanish while its button still said it was ready.
+  if (input.fireL && s.cool[0] <= 0) s.want[0] = true;
+  if (input.fireR && s.cool[1] <= 0) s.want[1] = true;
   if (!s.volley) {
-    const side: Side | null = input.fireL && s.cool[0] <= 0 ? 0 : input.fireR && s.cool[1] <= 0 ? 1 : null;
+    const side: Side | null = s.want[0] ? 0 : s.want[1] ? 1 : null;
     if (side != null) {
+      s.want[side] = false;
       s.volley = { side, next: 0, fired: 0, t: 0 };
       s.cool[side] = reload;
       ev(w, 'broadside', { side, n: st.gunsPerSide });
@@ -139,7 +145,9 @@ export function mortarAim(w: World): { x: number; y: number; lock: number } | nu
   const s = w.ship;
   let best: Foe | null = null, bd = 240;
   for (const e of w.foes) {
-    if (e.dead || e.state === 'spent') continue;
+    // not a prize: the chasers leave them be, and so does the mortar — a shell that sinks
+    // the ship you were coming alongside is not what the reticle was asked for
+    if (e.dead || e.state === 'spent' || isPrize(e)) continue;
     const dx = e.x - s.x, dy = e.y - s.y, d = Math.hypot(dx, dy);
     if (d < 45 || d > bd) continue;
     if (Math.abs(wrap(Math.atan2(dy, dx) - s.h)) > 0.9) continue;

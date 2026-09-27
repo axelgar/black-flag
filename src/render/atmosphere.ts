@@ -50,6 +50,21 @@ export const LOOKS: Record<Look, Atmos> = {
 export const sunDir = (a: Atmos) =>
   new THREE.Vector3(Math.cos(a.sunAz) * Math.cos(a.sunElev), Math.sin(a.sunElev), Math.sin(a.sunAz) * Math.cos(a.sunElev)).normalize();
 
+/** A preset's colours, parsed once rather than every frame. */
+interface Parsed { zenith: THREE.Color; horizon: THREE.Color; ground: THREE.Color; sunColor: THREE.Color; hemiSky: THREE.Color;
+  hemiGround: THREE.Color; deep: THREE.Color; shallow: THREE.Color; foam: THREE.Color; sun: THREE.Vector3 }
+const parsed = new Map<Look, Parsed>();
+function parse(look: Look): Parsed {
+  let p = parsed.get(look);
+  if (!p) {
+    const a = LOOKS[look], c = (h: string) => new THREE.Color(h);
+    p = { zenith: c(a.zenith), horizon: c(a.horizon), ground: c(a.ground), sunColor: c(a.sunColor), hemiSky: c(a.hemiSky),
+      hemiGround: c(a.hemiGround), deep: c(a.deep), shallow: c(a.shallow), foam: c(a.foam), sun: sunDir(a) };
+    parsed.set(look, p);
+  }
+  return p;
+}
+
 /** The live, blended atmosphere the shaders read. Weather changes ease into each other. */
 export class Air {
   zenith = new THREE.Color(); horizon = new THREE.Color(); ground = new THREE.Color();
@@ -69,22 +84,20 @@ export class Air {
     this.blend(1);
   }
 
-  /** Ease toward the target. k is the fraction of the way to go this frame. */
+  /** Ease toward the target. k is the fraction of the way to go this frame. Called every
+   *  frame, so it makes no garbage: the preset's colours are parsed once. */
   blend(k: number) {
-    const t = this.target;
-    const c = new THREE.Color();
-    const mix = (dst: THREE.Color, hex: string) => dst.lerp(c.set(hex), k);
-    mix(this.zenith, t.zenith); mix(this.horizon, t.horizon); mix(this.ground, t.ground);
-    mix(this.sunColor, t.sunColor); mix(this.hemiSky, t.hemiSky); mix(this.hemiGround, t.hemiGround);
-    mix(this.deep, t.deep); mix(this.shallow, t.shallow); mix(this.foam, t.foam);
-    this.sun.lerp(sunDir(t), k).normalize();
-    const n = (a: number, b: number) => a + (b - a) * k;
-    this.sunIntensity = n(this.sunIntensity, t.sunIntensity);
-    this.hemi = n(this.hemi, t.hemi);
-    this.fogNear = n(this.fogNear, t.fogNear);
-    this.fogFar = n(this.fogFar, t.fogFar);
-    this.swell = n(this.swell, t.swell);
-    this.exposure = n(this.exposure, t.exposure);
-    this.cloud = n(this.cloud, t.cloud);
+    const t = this.target, p = parse(this.look);
+    this.zenith.lerp(p.zenith, k); this.horizon.lerp(p.horizon, k); this.ground.lerp(p.ground, k);
+    this.sunColor.lerp(p.sunColor, k); this.hemiSky.lerp(p.hemiSky, k); this.hemiGround.lerp(p.hemiGround, k);
+    this.deep.lerp(p.deep, k); this.shallow.lerp(p.shallow, k); this.foam.lerp(p.foam, k);
+    this.sun.lerp(p.sun, k).normalize();
+    this.sunIntensity += (t.sunIntensity - this.sunIntensity) * k;
+    this.hemi += (t.hemi - this.hemi) * k;
+    this.fogNear += (t.fogNear - this.fogNear) * k;
+    this.fogFar += (t.fogFar - this.fogFar) * k;
+    this.swell += (t.swell - this.swell) * k;
+    this.exposure += (t.exposure - this.exposure) * k;
+    this.cloud += (t.cloud - this.cloud) * k;
   }
 }

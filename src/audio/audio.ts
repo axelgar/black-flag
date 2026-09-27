@@ -67,6 +67,14 @@ export function prefs() {
   if (session.sound) ac.resume().catch(() => {});
 }
 
+/** The screen went off or the page to the background: the sea goes quiet with it, rather
+ *  than roaring on in a pocket. It comes back with the page (or the next tap, on iOS). */
+export function hush(on: boolean) {
+  if (!ac) return;
+  if (on) ac.suspend().catch(() => {});
+  else if (session.sound) ac.resume().catch(() => {});
+}
+
 /** Storm weather thickens the sea bed; port quietens it. */
 export function setSea(kind: string) {
   if (!ac) return;

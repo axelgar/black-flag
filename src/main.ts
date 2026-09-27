@@ -10,7 +10,7 @@ import { CLASSES } from './data/enemies';
 import { recipeOf } from './data/upgrades';
 import { sailCount } from './data/waves';
 import { shipById } from './data/ships';
-import { session, save, meet, beat, nav } from './state/session';
+import { session, save, meet, beat, nav, sea } from './state/session';
 import { bankWave, endRun as foldRun, newRun, reales, runSeed } from './state/run';
 import * as Wo from './sim/world';
 import type { World } from './sim/types';
@@ -27,7 +27,17 @@ const app = document.getElementById('app')!;
 const canvas = document.getElementById('gl') as HTMLCanvasElement;
 
 const tier = session.quality === 'auto' ? detectTier() : session.quality;
-const view = new View(canvas, tier);
+let view: View;
+try {
+  view = new View(canvas, tier);
+} catch (err) {
+  // No WebGL 2 (an old or blocklisted GPU, iOS Lockdown Mode): say so, rather than leave
+  // the boot card up for ever.
+  const boot = document.getElementById('boot');
+  if (boot) boot.innerHTML = `<div style="max-width:420px;padding:0 28px;text-align:center"><div class="mark">BLACK FLAG</div>
+    <p class="sub" style="margin-top:18px">This browser cannot draw the sea: it needs WebGL 2, which is switched off or not supported here. Try another browser, or turn off Lockdown Mode.</p></div>`;
+  throw err;
+}
 const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches || session.reduceMotion;
 view.setReduced(reduced());
 
@@ -39,6 +49,7 @@ let outcome = 0;                 // seconds left on the little pause after a wav
 let pendingToast: [string, string] | null = null;
 let covered = false;
 let rimSaid = -1e9;             // when the rim current was last announced, so it is not nagged
+const upright = matchMedia('(orientation: portrait) and (pointer: coarse)');   // the turn-me card is up
 
 /* ---------------------------------------------------------------- input -- */
 
@@ -62,6 +73,9 @@ function seed() {
   // simulation so a run can always be replayed by handing its seed back.
   return Math.random().toString(36).slice(2, 10);
 }
+// The next run's chart is rolled ahead of time, so the harbour behind the title is the
+// one she will sail from and weighing anchor does not stop to raise a new archipelago.
+sea.next = seed();
 
 function startWave() {
   const run = session.run!;
@@ -81,11 +95,36 @@ function startWave() {
   ];
 }
 
+/**
+ * On a phone that allows it, the sea takes the whole screen — no address bar, no tab
+ * strip — and stays sideways. Asked from the tap that puts her to sea, because a browser
+ * only says yes to a tap. iPhones allow no such thing for a page; Add to Home Screen is
+ * theirs. Leaving full screen is the phone's own back gesture, and the Articles can
+ * switch it off.
+ */
+function takeScreen() {
+  if (!session.fullscreen || !Input.touchUi() || !document.fullscreenEnabled || document.fullscreenElement) return;
+  document.documentElement.requestFullscreen({ navigationUI: 'hide' })
+    .then(() => (window.screen.orientation as ScreenOrientation & { lock?: (o: string) => Promise<void> }).lock?.('landscape'))
+    .catch(() => { /* refused, or no lock on this browser: the page still plays */ });
+}
+window.addEventListener('bf:fullscreen', () => {
+  if (session.fullscreen) takeScreen();
+  else if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+});
+
 window.addEventListener('bf:new-run', () => {
-  newRun(seed(), session.ship);
+  takeScreen();
+  // A run given up for a new one still goes in the book.
+  if (session.run) {
+    session.lastRun = foldRun(session.run, midWave() ? world : null);
+    track('run_end', { reason: 'scuttled', ...session.lastRun });
+  }
+  newRun(sea.next, session.ship);
+  sea.next = seed();
   track('run_start', { ship: session.ship });
   world = null;
-  if (path() === '/play') render(); else location.hash = '#/play';
+  if (path() === '/play') render(); else go('/play');
 });
 
 window.addEventListener('bf:abandon', () => {
@@ -95,7 +134,7 @@ window.addEventListener('bf:abandon', () => {
     save();
   }
   world = null; view.setWorld(null);
-  location.hash = '#/dead';
+  go('/dead', true);
 });
 
 /**
@@ -114,20 +153,29 @@ const midWave = () => !!session.run && !!world && world.phase === 'fight';
 window.addEventListener('bf:restart-wave', () => {
   if (!midWave()) return;
   unsailWave();
-  if (path() === '/play') render(); else location.hash = '#/play';
+  if (path() === '/play') render(); else go('/play', true);
 });
 
 window.addEventListener('bf:retreat', () => {
   if (!midWave()) return;
   unsailWave();
   save();          // the hulls met were genuinely met
-  location.hash = '#/port';
+  go('/port', true);
 });
 
 function enterPlay(): S.Screen {
-  if (!session.run) newRun(seed(), session.ship);
-  const run = session.run!;
-  if (!world || world.wave !== run.wave || world.phase === 'lost' || world.phase === 'docked') startWave();
+  // Only the buttons that say so start a run; #/play reached any other way (the system
+  // back gesture from the summary, a stale bookmark) goes to the title instead.
+  if (!session.run) { history.replaceState(null, '', at('/')); here = '/'; nav.trail = ['/']; return S.title(view); }
+  const run = session.run;
+  if (world && (world.phase === 'lost' || world.phase === 'docked')) {
+    // Its result is already written; only the curtain was still to come.
+    const to = world.phase === 'docked' ? '/port' : '/dead';
+    world = null; view.setWorld(null); outcome = 0;
+    history.replaceState(null, '', at(to)); here = to; nav.trail = [to];
+    return to === '/port' ? S.port(view) : S.dead(view);
+  }
+  if (!world || world.wave !== run.wave) startWave();
   else view.setWorld(world);
   A.setSea(world!.weather);
   A.startShanty();
@@ -170,27 +218,57 @@ function handle(events: World['events']) {
   }
 }
 
-function endWave() {
+/**
+ * A wave is won or lost the moment it happens, and written down then — not when the
+ * curtain falls on it a second or two later. Pausing, backgrounding the phone or turning
+ * it upright in that moment used to leave the result unwritten, and "Make sail" rebuilt
+ * the wave from the run: a death undone, or a won wave's plunder thrown away.
+ */
+function settle() {
   const run = session.run!;
-  bankWave(run, world!);
-  save();
-  track('wave_end', { wave: world!.wave, plunder: world!.plunder, ship: run.ship });
-  world = null; view.setWorld(null);
-  location.hash = '#/port';
+  if (world!.phase === 'docked') {
+    bankWave(run, world!);
+    save();
+    track('wave_end', { wave: world!.wave, plunder: world!.plunder, ship: run.ship });
+  } else {
+    session.lastRun = foldRun(run, world);
+    track('run_end', { reason: 'sunk', ...session.lastRun });
+    save();
+  }
 }
 
-function endRun() {
-  session.lastRun = foldRun(session.run!, world);
-  track('run_end', { reason: 'sunk', ...session.lastRun });
-  save();
+/** The curtain: off the water and on to Nassau or the summary. */
+function curtain() {
+  const to = world!.phase === 'docked' ? '/port' : '/dead';
   world = null; view.setWorld(null);
-  location.hash = '#/dead';
+  go(to, true);
 }
+
+/** In the second or two between a wave's end and its curtain nothing may pause it. */
+const ending = () => outcome > 0 && !!world && (world.phase === 'lost' || world.phase === 'docked');
 
 function togglePause() {
+  if (ending()) return;
   const at = path();
-  if (at === '/play') location.hash = '#/pause';
-  else if (at === '/pause') location.hash = '#/play';
+  if (at === '/play') go('/pause');
+  else if (at === '/pause') go('/play');
+}
+
+/** Hove to, if she is at sea and the wave is still being fought. */
+function heaveTo() {
+  if (path() === '/play' && !ending()) go('/pause');
+}
+
+/** Move between screens: replace for moves the back gesture should not walk back through. */
+function go(to: string, replace = false) {
+  if (replace) location.replace(at(to)); else location.hash = `#${to}`;
+}
+/** This page's own address with another route on it — a bare '#/x' handed to
+ *  location.replace is read against whichever page's script made the call. */
+function at(to: string) {
+  const u = new URL(location.href);
+  u.hash = to;
+  return u.href;
 }
 
 /* --------------------------------------------------------------- routes -- */
@@ -213,14 +291,33 @@ const path = () => (location.hash.replace(/^#/, '') || '/').replace(/\/+$/, '') 
 let teardown: (() => void) | null = null;
 let here: string | null = null;
 
+/** Where a wave being fought may not be left for: the back gesture walks the hash
+ *  history, and reaching the shop with the wave still live made its upgrades free. */
+const NOT_MID_WAVE = new Set(['/port', '/dead']);
+/** Screens that are somewhere in themselves; the rest are opened from one of these, and
+ *  their back button walks the trail back to it. */
+const ROOTS = /^\/($|play$|pause$|port$|dead$|unlock\/)/;
+
 function render() {
-  const p = path();
-  if (p !== here) { nav.from = here; here = p; screen(p); }
+  let p = path();
+  if (midWave() && NOT_MID_WAVE.has(p)) { location.replace(at('/pause')); return; }
+  if (p === '/play' && upright.matches) { location.replace(at('/pause')); return; }
+  if (p !== here) {
+    nav.from = here; here = p; screen(p);
+    // The trail: a root starts it again; a screen already on it is gone back to; anything
+    // else is a step further. Back buttons read it, so two screens that link to each
+    // other can no longer send the guest between them for ever.
+    const i = nav.trail.lastIndexOf(p);
+    if (ROOTS.test(p)) nav.trail = [p];
+    else if (i >= 0) nav.trail.length = i + 1;
+    else nav.trail.push(p);
+  }
   if (teardown) { try { teardown(); } catch { /* noop */ } teardown = null; }
 
   let out: S.Screen | null = null;
   for (const [re, fn] of ROUTES) { const m = p.match(re); if (m) { out = fn(m); break; } }
   if (!out) out = S.title(view);
+  p = path();                     // a route may have sent the guest somewhere else
 
   ui.innerHTML = out.html;
   covered = !!out.covered;
@@ -244,18 +341,23 @@ document.addEventListener('click', (e) => {
   e.preventDefault();
   buzz(6);
   A.click();
+  if (t.dataset.go === '#/play') takeScreen();
   location.hash = t.dataset.go;
 });
 
-// Backgrounded mid-wave, she should be hove to when you come back, not sunk.
+// Backgrounded mid-wave, she should be hove to when you come back, not sunk — and the
+// sound goes quiet with the screen.
 document.addEventListener('visibilitychange', () => {
-  if (document.hidden && path() === '/play') location.hash = '#/pause';
+  A.hush(document.hidden);
+  if (document.hidden) heaveTo();
 });
+// A notification shade or control centre pulled down over the game leaves the page
+// "visible", but nobody is sailing her.
+addEventListener('blur', () => heaveTo());
 
 // Same rule for turning the phone upright: a card covers the sea, and taking fire behind
 // it you cannot see is the same unfairness as taking it in a backgrounded tab.
-const upright = matchMedia('(orientation: portrait) and (pointer: coarse)');
-upright.addEventListener('change', () => { if (upright.matches && path() === '/play') location.hash = '#/pause'; });
+upright.addEventListener('change', () => { if (upright.matches) heaveTo(); });
 
 window.addEventListener('bf:prefs', () => {
   view.setReduced(reduced());
@@ -264,24 +366,49 @@ window.addEventListener('bf:prefs', () => {
 });
 
 addEventListener('resize', () => view.resize());
+window.addEventListener('bf:pause', () => togglePause());
 // A finger on a screen that said it had none: put the stick and the thumb buttons up.
 window.addEventListener('bf:touch', () => { if (path() === '/play' || path() === '/') render(); });
 
 /* ---------------------------------------------------------------- clock -- */
 
 // Paint at most 60fps, and at most 30 on a screen that is only idling behind UI. A paper
-// screen that covers the sea entirely paints nothing at all.
-const PAINT_MIN = 1 / 61;
-const IDLE_MIN = 1 / 31;
-let paintAcc = 0;
-let last = performance.now() / 1000;
+// screen that covers the sea entirely, or a phone held upright behind its turn-me card,
+// paints nothing at all.
+//
+// A frame counts as due a little early and the remainder carries: frame intervals jitter
+// and Safari's clock only reads whole milliseconds, so a cap set exactly at 60 was
+// skipping every few frames on a 60Hz iPhone — and a 90Hz screen still averages 60.
+const PAINT_HZ = 60;
+const IDLE_HZ = 30;
+let sincePaint = 0;               // real time since the last paint: what the picture animates by
+let pace = 0;                     // the pacing budget
+let last = -1;
 
-function frame() {
+function frame(ms: number) {
   requestAnimationFrame(frame);
-  const now = performance.now() / 1000;
-  const dt = Math.min(0.05, now - last);
+  const now = ms / 1000;
+  const dt = last < 0 ? 1 / 60 : Math.min(0.05, Math.max(0, now - last));
   last = now;
   tick(dt);
+}
+
+/** Is a painted frame due? Spends the pacing budget if so. */
+function due(dt: number, hz: number): boolean {
+  sincePaint += dt;
+  pace += dt;
+  const step = 1 / hz;
+  if (pace < step * 0.75) return false;
+  pace = Math.min(Math.max(0, pace - step), step * 0.5);
+  return true;
+}
+
+function paint() {
+  // after a spell behind a card or in the background, the picture resumes, it does not jump
+  const dt = Math.min(sincePaint, 0.1);
+  view.frame(dt, !paused);
+  hudTick(world, view, dt);
+  sincePaint = 0;
 }
 
 function tick(dt: number) {
@@ -308,23 +435,19 @@ function tick(dt: number) {
     outcome = world.phase === 'docked' ? 0.9 : 2.4;
     if (world.phase === 'lost') toast(`THE ${shipById(world.shipId).name.toUpperCase()} IS LOST`, 'ALL HANDS');
     else view.whiteout(0.25, '#FFE7B0');
+    settle();
   }
 
   // The wave does not cut on the frame it ends — the last explosion gets to finish.
   if (outcome > 0 && world) {
     outcome -= dt;
-    paintAcc += dt;
-    if (paintAcc >= PAINT_MIN) { view.frame(paintAcc); hudTick(world, view, paintAcc); paintAcc = 0; }
-    if (outcome <= 0) { outcome = 0; if (world.phase === 'docked') endWave(); else endRun(); }
+    if (due(dt, PAINT_HZ)) paint();
+    if (outcome <= 0) { outcome = 0; curtain(); }
     return;
   }
 
-  paintAcc += dt;
-  if (covered) return;
-  if (paintAcc < (paused ? IDLE_MIN : PAINT_MIN)) return;
-  view.frame(paintAcc);
-  hudTick(world, view, paintAcc);
-  paintAcc = 0;
+  if (covered || upright.matches) { sincePaint += dt; return; }
+  if (due(dt, paused ? IDLE_HZ : PAINT_HZ)) paint();
 }
 
 /* ----------------------------------------------------------------- boot -- */

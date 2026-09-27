@@ -221,7 +221,10 @@ function legend(w: World, e: Foe, dt: number): [number, number] {
   // Aimed fans and point-blank rings are the two patterns that punish a captain who has
   // not yet found the ports; they come round a little slower than a broadside does.
   const slow = L.pattern === 'shroud' ? 1.4 : L.pattern === 'spiral' ? 1.3 : 1;
-  const reload = (2.8 - phase * 0.5) * (0.55 + power * 0.6) * w.reloadMul * slow;
+  // Every gun port shot out slows her down. (It used to be the other way about: a
+  // legendary with her ports shot away fired twice as often as a whole one, which made
+  // doing the one thing the fight asks of you the worst thing you could do.)
+  const reload = (2.8 - phase * 0.5) * (1.15 + (1 - power) * 0.8) * w.reloadMul * slow;
 
   if (L.pattern === 'sweep') {
     const { side } = beamTo(e, s.x, s.y);
@@ -264,24 +267,34 @@ function legend(w: World, e: Foe, dt: number): [number, number] {
 
 /* ----------------------------------------------------------- seamanship -- */
 
-const TRY = [0, 0.45, -0.45, 0.9, -0.9, 1.4, -1.4, 2, -2, 2.7, -2.7];
+const TURNS = [0.45, 0.9, 1.4, 2, 2.7];
 
-/** Look ahead along the heading she wants; if there is land there, find the nearest
- *  heading that has none. A ship that cannot see the coast in front of her is a wreck. */
-export function avoid(w: World, e: Vessel, want: number): number {
+/**
+ * Look ahead along the heading she wants; if there is land there, find the nearest
+ * heading that has none. A ship that cannot see the coast in front of her is a wreck.
+ * Once she has picked a side to go round, she keeps to it until the way ahead is clear:
+ * the nearest clear heading flips from one side to the other as she slows, and a ship
+ * that took each in turn ground against the rocks for minutes at a time.
+ */
+export function avoid(w: World, e: Vessel & { detour?: -1 | 0 | 1 }, want: number): number {
   const look = e.len * 0.6 + e.v * 3.5 + 12;
   const pad = e.beam * 0.6 + 6;
-  for (const off of TRY) {
-    const a = want + off;
+  const clear = (a: number) => {
     const c = Math.cos(a), s = Math.sin(a);
-    let ok = true;
     for (const k of [0.5, 1]) {
       const x = e.x + c * look * k, y = e.y + s * look * k;
-      if (shoreDist(w.map, x, y) < pad || Math.hypot(x, y) > MAP_R - EDGE * 0.5) { ok = false; break; }
+      if (shoreDist(w.map, x, y) < pad || Math.hypot(x, y) > MAP_R - EDGE * 0.5) return false;
     }
-    if (ok) return a;
+    return true;
+  };
+  if (clear(want)) { e.detour = 0; return want; }
+  const sides: (-1 | 1)[] = e.detour ? [e.detour, e.detour === 1 ? -1 : 1] : [1, -1];
+  if (e.detour) {
+    for (const sg of sides) for (const off of TURNS) if (clear(want + off * sg)) { e.detour = sg; return want + off * sg; }
+  } else {
+    for (const off of TURNS) for (const sg of sides) if (clear(want + off * sg)) { e.detour = sg; return want + off * sg; }
   }
-  return want + Math.PI * 0.5;
+  return want + Math.PI * 0.5 * (e.detour || 1);
 }
 
 export { isPrize, raise };

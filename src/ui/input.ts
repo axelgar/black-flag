@@ -145,5 +145,6 @@ export function attachStick(zone: HTMLElement): () => void {
   zone.addEventListener('pointermove', move);
   zone.addEventListener('pointerup', up);
   zone.addEventListener('pointercancel', up);
-  return () => { state.stick = null; };
+  // Torn down with a thumb still on it (paused, backgrounded): the same as letting go.
+  return () => { if (state.stick && state.level > 2) { state.level = 2; state.sail = LEVELS[2]; } state.stick = null; };
 }

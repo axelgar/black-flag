@@ -6,14 +6,16 @@ import * as THREE from 'three';
 import { SEA_HEIGHT, seaUniforms } from './waves';
 
 // Marks lie on the water whatever the swell is doing: each vertex is set on the sea's own
-// surface, so a ring does not vanish into the face of a storm wave.
+// surface, so a ring does not vanish into the face of a storm wave. A little higher the
+// bigger the swell — the sea's mesh is coarser than the swell's arithmetic, and in a storm
+// the difference cut the rings that matter most.
 const ringVert = /* glsl */ `
 ${SEA_HEIGHT}
 varying vec2 vUv;
 void main() {
   vUv = uv;
   vec4 wp = modelMatrix * vec4(position, 1.0);
-  wp.y = seaHeight(wp.xz) + 0.4;
+  wp.y = seaHeight(wp.xz) + 0.25 + 0.35 * uAmp;
   gl_Position = projectionMatrix * viewMatrix * wp;
 }`;
 
@@ -34,6 +36,7 @@ void main() {
   float alpha = (ring * mix(0.25, 1.0, arc) * dash + fill) * uAlpha;
   if (alpha < 0.01) discard;
   gl_FragColor = vec4(uColor, alpha);
+  #include <tonemapping_fragment>
   #include <colorspace_fragment>
 }`;
 
@@ -50,6 +53,7 @@ void main() {
   float alpha = body * edge * uAlpha * mix(0.25, 1.0, load);
   if (alpha < 0.01) discard;
   gl_FragColor = vec4(uColor, alpha);
+  #include <tonemapping_fragment>
   #include <colorspace_fragment>
 }`;
 
@@ -113,6 +117,9 @@ export class Markers {
   beacon: THREE.Group;
   private alerts: { s: THREE.Sprite; t: number; id: number }[] = [];
   private alertTex: THREE.Texture | null = null;
+  // Spent alert sprites wait here rather than being disposed: disposing the last one
+  // freed the program, and the next squadron to see you compiled it again mid-fight.
+  private spare: THREE.Sprite[] = [];
 
   constructor() {
     this.foeRings = new RingPool(this.group, '#FF5A3C');
@@ -152,6 +159,15 @@ export class Markers {
 
   alert(id: number, x: number, y: number, z: number) {
     if (typeof document === 'undefined') return;
+    const s = this.sprite();
+    s.position.set(x, y, z);
+    s.visible = true;
+    this.alerts.push({ s, t: 1.6, id });
+  }
+
+  private sprite(): THREE.Sprite {
+    const old = this.spare.pop();
+    if (old) return old;
     if (!this.alertTex) {
       const cv = document.createElement('canvas');
       cv.width = cv.height = 64;
@@ -164,10 +180,16 @@ export class Markers {
     }
     const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.alertTex, depthTest: false, transparent: true }));
     s.scale.setScalar(7);
-    s.position.set(x, y, z);
     s.renderOrder = 10;
+    s.visible = false;
     this.group.add(s);
-    this.alerts.push({ s, t: 1.6, id });
+    return s;
+  }
+
+  /** One of everything that is otherwise only made when it is first needed, hidden, so
+   *  the view can compile its programs up front. */
+  warm() {
+    if (typeof document !== 'undefined' && !this.spare.length && !this.alerts.length) this.spare.push(this.sprite());
   }
 
   /** Sprites follow their ships while they last. */
@@ -179,14 +201,14 @@ export class Markers {
       a.s.position.y += dt * 2;
       (a.s.material as THREE.SpriteMaterial).opacity = Math.min(1, a.t * 2);
       if (a.t > 0) return true;
-      this.group.remove(a.s);
-      a.s.material.dispose();
+      a.s.visible = false;
+      this.spare.push(a.s);
       return false;
     });
   }
 
   clear() {
-    for (const a of this.alerts) { this.group.remove(a.s); a.s.material.dispose(); }
+    for (const a of this.alerts) { a.s.visible = false; this.spare.push(a.s); }
     this.alerts = [];
   }
 }

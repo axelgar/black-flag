@@ -119,6 +119,7 @@ export class Islands {
   private groundMat: THREE.MeshStandardMaterial | null = null;
   private floraMat: THREE.MeshStandardMaterial | null = null;
   private towns: Town[] = [];
+  private nursery: ReturnType<typeof stock> | null = null;
 
   build(m: GameMap, high: boolean, aniso = 4) {
     if (this.key === m.seed) return;
@@ -127,7 +128,8 @@ export class Islands {
     const lo = !high;
     this.groundMat ??= groundMaterial(groundTexture(high ? 1024 : 512, aniso));
     this.floraMat ??= floraMaterial(foliageTexture(high ? 1024 : 512, aniso), shipTime, high);
-    const N = stock(lo);
+    // The nursery (every palm, crown, tree and rock shape) is the same for every chart.
+    const N = (this.nursery ??= stock(lo));
 
     for (const is of m.islands) {
       const sites = is.kind === 'nassau' ? nassauSites(is, m.harbour) : null;

@@ -64,7 +64,10 @@ varying vec3 vWorld;
 varying vec3 vN;
 varying float vCrest;
 
-float hash(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
+// The lattice is wrapped before it is hashed: a sea whose clock has run for an hour puts
+// lattice coordinates in the hundreds of thousands, where a float has too few bits left
+// for the hash and the foam goes blocky.
+float hash(vec2 p) { p = fract(mod(p, 289.0) * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
 float noise(vec2 p) {
   vec2 i = floor(p), f = fract(p);
   vec2 u = f * f * (3.0 - 2.0 * f);
@@ -74,11 +77,16 @@ float noise(vec2 p) {
 // the big waves' clean highlights into the sparkle a real sea has.
 vec2 ripples(vec2 p, float t) {
   vec2 a = p * 0.45 + vec2(t * 0.35, t * 0.21);
-  vec2 b = p * 1.1 + vec2(-t * 0.27, t * 0.4);
   float e = 0.25;
+#ifdef BF_LOW
+  // one layer on a phone: the sea is most of the screen and every noise here is per pixel
+  float n0 = noise(a), nx = noise(a + vec2(e, 0.0)), nz = noise(a + vec2(0.0, e));
+#else
+  vec2 b = p * 1.1 + vec2(-t * 0.27, t * 0.4);
   float n0 = noise(a) + 0.5 * noise(b);
   float nx = noise(a + vec2(e, 0.0)) + 0.5 * noise(b + vec2(e * 2.4, 0.0));
   float nz = noise(a + vec2(0.0, e)) + 0.5 * noise(b + vec2(0.0, e * 2.4));
+#endif
   return vec2(n0 - nx, n0 - nz) * 1.6;
 }
 
@@ -105,11 +113,13 @@ void main() {
   // Light on a sandy bottom: in the shallows the sea is paler, and caustics play over it.
   float shoal = 1.0 - smoothstep(0.2, 0.34, sd);
   water = mix(water, uShallow * vec3(1.18, 1.12, 0.92), shoal * 0.5);
+#ifndef BF_LOW
   vec2 cp = vWorld.xz * 0.32;
   float c1 = noise(cp + vec2(uTime * 0.31, uTime * 0.17));
   float c2 = noise(cp * 1.37 + vec2(-uTime * 0.23, uTime * 0.29) + 7.3);
   float caus = pow(max(0.0, 1.0 - abs(c1 - c2) * 3.2), 5.0);
   water += uShallow * caus * 0.45 * (1.0 - depth) * uDetail;
+#endif
   // Light through the crest of a wave, green in the shallows and teal in the deep.
   float sss = clamp(vCrest * 0.7 + 0.25, 0.0, 1.0);
   water += uShallow * sss * 0.22 * (1.0 - depth * 0.4);
@@ -134,7 +144,11 @@ void main() {
   // Surf: a lacy swash line where the sea runs up the sand, and waves breaking as they
   // come in over the shelf — each a bright front with foam trailing behind it, broken into
   // lengths, never a ring.
+#ifdef BF_LOW
+  float lace = smoothstep(0.3, 0.75, n * 0.45 + n2 * 0.65);
+#else
   float lace = smoothstep(0.3, 0.75, noise(vWorld.xz * 0.9 + uTime * 0.4) * 0.6 + n2 * 0.5);
+#endif
   float swash = (1.0 - smoothstep(0.2, 0.232 + n * 0.02 + sin(uTime * 1.1 + n * 6.0) * 0.006, sd)) * (0.55 + 0.45 * lace);
   float ph = fract(sd * 7.5 + uTime * 0.22 + n * 0.35);
   float breaker = smoothstep(0.0, 0.04, ph) * (1.0 - smoothstep(0.04, 0.42, ph));
@@ -158,7 +172,11 @@ void main() {
     lee = max(lee, 1.0 - smoothstep(0.9, 2.1, e));
   }
   col *= 1.0 - lee * 0.22;
+#ifdef BF_LOW
+  float froth = smoothstep(0.35, 0.8, n2 * 0.75 + n * 0.5);
+#else
   float froth = smoothstep(0.35, 0.8, n2 * 0.75 + noise(vWorld.xz * 1.7 + uTime * 0.6) * 0.5);
+#endif
   float foam = clamp(max(max(crestFoam * 0.4, surf) * (0.75 + n2 * 0.35), collar * froth * 1.3), 0.0, 1.0);
   // The edge of the chart: a current racing round the world, darker and streaked white,
   // so a captain sees it coming instead of finding it by feel. Two angles, each seamed on
@@ -231,6 +249,7 @@ export class Ocean {
     seaUniforms.uWB.value.forEach((v, i) => v.set(b[i * 2], b[i * 2 + 1]));
     this.mat = new THREE.ShaderMaterial({
       vertexShader: vert, fragmentShader: frag,
+      defines: high ? {} : { BF_LOW: '' },
       uniforms: {
         ...seaUniforms, uCenter: { value: new THREE.Vector2() },
         uDeep: { value: new THREE.Color() }, uShallow: { value: new THREE.Color() }, uFoam: { value: new THREE.Color() },
