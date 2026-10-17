@@ -9,7 +9,7 @@ import { legendById, legendFor } from './data/legends';
 import { CLASSES } from './data/enemies';
 import { recipeOf } from './data/upgrades';
 import { sailCount } from './data/waves';
-import { shipById } from './data/ships';
+import { SHIPS, shipById } from './data/ships';
 import { session, save, meet, beat, nav, sea } from './state/session';
 import { bankWave, endRun as foldRun, newRun, reales, runSeed } from './state/run';
 import * as Wo from './sim/world';
@@ -21,7 +21,9 @@ import { hudTick, toast } from './ui/hud';
 import * as Input from './ui/input';
 import { buzz } from './ui/haptics';
 import { track, screen } from './analytics';
-import { connect, tap } from './net/cloud';
+import { connect, credentials, tap } from './net/cloud';
+import { Link, type Berth } from './net/link';
+import { RESPAWN } from './net/sea';
 
 const ui = document.getElementById('ui')!;
 const app = document.getElementById('app')!;
@@ -50,15 +52,21 @@ let outcome = 0;                 // seconds left on the little pause after a wav
 let pendingToast: [string, string] | null = null;
 let covered = false;
 let rimSaid = -1e9;             // when the rim current was last announced, so it is not nagged
+/** The line to a shared sea, while one is on screen. Its mirror is the world then. */
+let link: Link | null = null;
+let seaLook = '';                // the shared sea's weather as last drawn: a new wave may change it
+let seaSaid = 0;                 // when the sea's overlays were last brought up to date
+/** At sea: sailing a run of your own, or aboard a shared sea. */
+const atSea = () => path() === '/play' || path() === '/aboard';
 const upright = matchMedia('(orientation: portrait) and (pointer: coarse)');   // the turn-me card is up
 
 /* ---------------------------------------------------------------- input -- */
 
 Input.attachKeys(() => togglePause(), () => A.unlock());
-Input.attachMouse(app, () => path() === '/play');
+Input.attachMouse(app, atSea);
 // The wheel brings the chase camera in to look at your ship, or out to look for theirs.
 app.addEventListener('wheel', (e) => {
-  if (path() !== '/play') return;
+  if (!atSea()) return;
   e.preventDefault();
   view.chaseZoom = Math.min(1.35, Math.max(0.45, view.chaseZoom * Math.exp(e.deltaY * 0.0012)));
 }, { passive: false });
@@ -183,6 +191,66 @@ function enterPlay(): S.Screen {
   return S.play(view, dock);
 }
 
+/* ----------------------------------------------------------- shared sea -- */
+
+// A shared sea runs on a server (server/, src/net/sea.ts). This device only sends its
+// helm and draws the mirror the line keeps; nothing in a run of your own is touched.
+window.addEventListener('bf:sea', (e) => {
+  const berth = (e as CustomEvent<Berth>).detail;
+  ashore();
+  takeScreen();
+  link = new Link(berth, credentials(), session.ship, () => S.seaTick(link));
+  track('sea_join', { kind: berth.kind, mode: berth.kind === 'open' ? berth.mode : undefined, ship: session.ship });
+  go('/aboard');
+});
+
+window.addEventListener('bf:ashore', () => { ashore(); go('/', true); });
+
+/** Leave the shared sea on screen, if there is one. */
+function ashore() {
+  if (!link) return;
+  link.close();
+  link = null;
+  world = null; view.setWorld(null);
+  seaLook = '';
+  A.stopShanty();
+}
+
+function enterAboard(): S.Screen {
+  if (!link) { history.replaceState(null, '', at('/sea')); here = '/sea'; nav.trail = ['/sea']; return S.seaMenu(view); }
+  A.startShanty();
+  const out = S.aboard(view);
+  requestAnimationFrame(() => S.seaTick(link));
+  return out;
+}
+
+/** What only a shared sea says: who went down and who sent them, who came aboard, the
+ *  next wave. The rest is handle()'s, as it is on your own. */
+function handleSea(events: World['events']) {
+  const w = world!, me = you(w).id, L = link!;
+  for (const e of events) {
+    switch (e.k) {
+      case 'toll': {
+        const n = reales(e.reales as number), by = e.by as number | undefined;
+        if (e.p === me) toast(by != null ? `SUNK BY ${L.captain(by).toUpperCase()}` : 'SHE GOES DOWN', `−${n} REALES · AFLOAT AGAIN IN ${RESPAWN}S`);
+        else if (by === me) toast(`${L.captain(e.p as number).toUpperCase()} GOES DOWN`, `+${n} REALES`);
+        if (e.p === me) buzz(60);
+        break;
+      }
+      case 'refloat': if (e.p === me) toast('AFLOAT AGAIN', 'OUT OF THE HARBOUR MOUTH'); break;
+      case 'joined': if (e.p !== me) toast(`${L.captain(e.p as number)} comes aboard`, 'ANOTHER SAIL ON THE SEA'); break;
+      case 'wave': {
+        const p = w.plan;
+        toast(p.boss ? legendFor(w.wave).name : `Wave ${w.wave}`, p.boss ? 'SHE DOES NOT STRIKE HER COLOURS'
+          : p.weather === 'storm' ? 'STORM · THE SWELL WILL SET YOU DOWN' : p.weather === 'fog' ? 'FOG · THEY WILL BE CLOSE BEFORE YOU SEE THEM'
+          : `${sailCount(p)} SAIL ABROAD`);
+        break;
+      }
+      default: break;
+    }
+  }
+}
+
 /** Wave won and the sea is clear: sail in, or take the short way home from the HUD. */
 function dock() {
   if (!world || world.phase !== 'clear') return;
@@ -226,7 +294,7 @@ function handle(events: World['events']) {
       case 'legend-down': beat(e.id as string); toast(e.name as string, 'STRUCK FROM THE LIST'); break;
       case 'lost-prize': toast('SHE GOT AWAY', 'AND SHE WILL TALK'); break;
       case 'rim': if (world!.t - rimSaid > 12) { rimSaid = world!.t; toast('THE EDGE OF THE CHART', 'THE CURRENT TURNS YOU BACK'); } break;
-      case 'won': toast('THE SEA IS CLEAR', `MAKE FOR NASSAU · ${reales(you(world!).plunder)} REALES`); break;
+      case 'won': toast('THE SEA IS CLEAR', world!.shared ? 'THE NEXT WAVE IS PUTTING TO SEA' : `MAKE FOR NASSAU · ${reales(you(world!).plunder)} REALES`); break;
       case 'hit': buzz(18); break;
       default: break;
     }
@@ -265,13 +333,13 @@ const ending = () => outcome > 0 && !!world && (world.phase === 'lost' || world.
 function togglePause() {
   if (ending()) return;
   const at = path();
-  if (at === '/play') go('/pause');
-  else if (at === '/pause') go('/play');
+  if (at === '/play' || at === '/aboard') go('/pause');
+  else if (at === '/pause') go(link ? '/aboard' : '/play');
 }
 
 /** Hove to, if she is at sea and the wave is still being fought. */
 function heaveTo() {
-  if (path() === '/play' && !ending()) go('/pause');
+  if (atSea() && !ending()) go('/pause');
 }
 
 /** Move between screens: replace for moves the back gesture should not walk back through. */
@@ -296,7 +364,9 @@ const ROUTES: [RegExp, (m: RegExpMatchArray) => S.Screen][] = [
   [/^\/records$/, () => S.records()],
   [/^\/log$/, () => S.log()],
   [/^\/menu$/, () => S.menu(view)],
-  [/^\/pause$/, () => S.pause(view, midWave())],
+  [/^\/pause$/, () => S.pause(view, midWave(), !!link)],
+  [/^\/sea$/, () => S.seaMenu(view)],
+  [/^\/aboard$/, () => enterAboard()],
   [/^\/shipyard$/, () => S.shipyard(view)],
   [/^\/unlock\/(.+)$/, (m) => S.unlock(view, m[1])],
 ];
@@ -311,12 +381,14 @@ let here: string | null = null;
 const NOT_MID_WAVE = new Set(['/port', '/dead']);
 /** Screens that are somewhere in themselves; the rest are opened from one of these, and
  *  their back button walks the trail back to it. */
-const ROOTS = /^\/($|play$|pause$|port$|dead$|unlock\/)/;
+const ROOTS = /^\/($|play$|pause$|port$|dead$|aboard$|unlock\/)/;
 
 function render() {
   let p = path();
   if (midWave() && NOT_MID_WAVE.has(p)) { location.replace(at('/pause')); return; }
-  if (p === '/play' && upright.matches) { location.replace(at('/pause')); return; }
+  if ((p === '/play' || p === '/aboard') && upright.matches) { location.replace(at('/pause')); return; }
+  // anywhere but the shared sea, its pause and the Articles is ashore
+  if (link && p !== '/aboard' && p !== '/pause' && p !== '/menu') ashore();
   if (p !== here) {
     nav.from = here; here = p; screen(p);
     // The trail: a root starts it again; a screen already on it is gone back to; anything
@@ -340,10 +412,11 @@ function render() {
   if (out.mount) teardown = out.mount(root) || null;
 
   if (pendingToast && p === '/play') { toast(...pendingToast); pendingToast = null; }
+  if (p === '/aboard') S.seaTick(link);
 
   // Everything except #/play is a pause. #/pause is a scrim over a live sea, so the
   // world stays mounted under it and keeps being painted; it just stops being stepped.
-  paused = p !== '/play';
+  paused = p !== '/play' && p !== '/aboard';
   if (paused) A.stopShanty();
   if (p !== '/play' && p !== '/pause' && world && world.phase !== 'fight' && world.phase !== 'clear') { world = null; view.setWorld(null); }
 }
@@ -383,7 +456,7 @@ window.addEventListener('bf:prefs', () => {
 addEventListener('resize', () => view.resize());
 window.addEventListener('bf:pause', () => togglePause());
 // A finger on a screen that said it had none: put the stick and the thumb buttons up.
-window.addEventListener('bf:touch', () => { if (path() === '/play' || path() === '/') render(); });
+window.addEventListener('bf:touch', () => { if (atSea() || path() === '/') render(); });
 
 /* ---------------------------------------------------------------- clock -- */
 
@@ -428,6 +501,7 @@ function paint() {
 
 function tick(dt: number) {
   view.holdYaw = !paused && Input.steering();
+  if (link) { tickSea(dt); return; }
 
   if (!paused && world && (world.phase === 'fight' || world.phase === 'clear')) {
     acc += dt;
@@ -472,6 +546,33 @@ function tick(dt: number) {
   if (due(dt, paused ? IDLE_HZ : PAINT_HZ)) paint();
 }
 
+/** A frame of a shared sea: slide the mirror, send the helm, and play what happened. */
+function tickSea(dt: number) {
+  const L = link!, now = performance.now() / 1000;
+  L.frame(now);
+  const w = L.mirror.world;
+  if (w !== world) { world = w; view.setWorld(world); seaLook = world?.weather ?? ''; if (world) A.setSea(world.weather); }
+  if (world) {
+    if (world.weather !== seaLook) { seaLook = world.weather; view.setLook(world.weather); A.setSea(world.weather); }
+    if (!paused && !you(world).out) L.helm(Input.read(view.yaw, true), now);
+    else L.hold(Input.sailLevel(), now);
+    if (world.events.length) {
+      const evs = world.events.slice();
+      world.events.length = 0;
+      view.consume(evs, world);
+      A.listen(you(world).x, you(world).y, view.yaw);
+      A.consume(evs, (e) => theirs(world!, e));
+      handleSea(evs);
+      handle(evs);
+    }
+    logSightings(world);
+    Input.nearPrize(prizeClose(world));
+  }
+  if (now - seaSaid > 0.25 && path() === '/aboard') { seaSaid = now; S.seaTick(L); }
+  if (covered || upright.matches) { sincePaint += dt; return; }
+  if (due(dt, paused ? IDLE_HZ : PAINT_HZ)) paint();
+}
+
 /* ----------------------------------------------------------------- boot -- */
 
 if (session.reduceMotion) document.documentElement.style.setProperty('--dur', '120ms');
@@ -496,15 +597,20 @@ setTimeout(() => { void connect(); }, 1200);
 // For poking at from the console, and for the browser checks.
 (window as unknown as { bf: unknown }).bf = {
   view, session, get world() { return world; },
+  /** The line to the shared sea on screen, if there is one. */
+  get link() { return link; },
   /** Drive the clock by hand — for a background tab, where requestAnimationFrame sleeps. */
   pump(seconds: number, fps = 60) { for (let t = 0; t < seconds; t += 1 / fps) tick(1 / fps); document.getElementById('boot')?.classList.add('gone'); },
-  /** A shared sea before there is a server: this wave again from the top, with another
-   *  captain's ship abreast of yours. She holds her course; the sim, the view, the HUD
-   *  and the minimap treat her as they will a real one. `crew('kestrel')`. */
-  crew(ship = 'kestrel', pvp = false) {
+  /** A shared sea before there is a server: this wave again from the top, with other
+   *  captains' ships in line with yours. They heave to; the sim, the view, the HUD and the
+   *  minimap treat them as they will real ones. `crew('kestrel')`, or a full sea's start
+   *  to see what a phone makes of it: `crew('mix', false, 29)`. */
+  crew(ship = 'kestrel', pvp = false, n = 1) {
     const run = session.run;
     if (!run) return 'no run at sea';
-    world = Wo.create({ seed: run.seed, wave: run.wave, players: [runSeed(run), { ship }], pvp, reduce: reduced() });
+    const ships = ship === 'mix' ? SHIPS.map((s) => s.id) : [ship];
+    const others = Array.from({ length: n }, (_, i) => ({ ship: ships[i % ships.length] }));
+    world = Wo.create({ seed: run.seed, wave: run.wave, players: [runSeed(run), ...others], pvp, reduce: reduced() });
     view.setWorld(world);
     acc = 0; outcome = 0;
     return world.players.map((p) => `${p.id}: ${p.shipId}`);

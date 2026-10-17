@@ -238,7 +238,7 @@ export function hurt(w: World, e: Foe, dmg: number, x: number, y: number, by: Pl
     e.state = 'struck';
     e.strikeT = STRIKE_WINDOW;
     e.hull = e.hullMax * STRIKE_AT;
-    ev(w, 'strike', { id: e.id, x: e.x, y: e.y });
+    ev(w, 'strike', { id: e.id, x: e.x, y: e.y, p: by.id });
     return;
   }
   if (e.hull <= 0) { e.hull = 0; sink(w, e, false, by); }
@@ -323,7 +323,7 @@ export function wound(w: World, s: Player, dmg: number, src: Harm, x = s.x, y = 
     // rest sail on without her until there is nobody left.
     s.out = true;
     ev(w, 'dead', { p: s.id, by: by?.id });
-    if (!afloat(w).length) w.phase = 'lost';
+    if (!afloat(w).length && !w.shared) w.phase = 'lost';
     return;
   }
   // Refit: full hull, grace, and the water round you cleared of everything already in

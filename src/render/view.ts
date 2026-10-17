@@ -81,8 +81,9 @@ export class View {
   private player: ShipModel | null = null;
   private playerShip = '';
   private foes = new Map<number, ShipModel>();
-  /** Every other captain's ship on a shared sea, by her id. */
+  /** Every other captain's ship on a shared sea, by her id, and which ship each was built as. */
   private crew = new Map<number, ShipModel>();
+  private crewShip = new Map<number, string>();
   private hulks: Hulk[] = [];
   private showcase: ShipModel | null = null;
   private showcaseId = '';
@@ -287,6 +288,7 @@ export class View {
     this.foes.clear();
     for (const m of this.crew.values()) this.drop(m);
     this.crew.clear();
+    this.crewShip.clear();
     for (const h of this.hulks) this.drop(h.m);
     this.hulks = [];
     this.fx.clear();
@@ -486,7 +488,7 @@ export class View {
     const focus = this.camLook;
     this.sun.position.copy(focus).addScaledVector(a.sun, 300);
     this.sun.target.position.copy(focus);
-    this.ocean.endHulls();
+    this.ocean.endHulls(this.camera.position.x, this.camera.position.z);
     this.ocean.update(t, a, this.camera.position.x, this.camera.position.z);
     this.sky.update(t, a, this.camera.position);
     this.fx.update(dt, t, this.camLook);
@@ -554,15 +556,20 @@ export class View {
     const dmg = 1 - s.hull / s.hullMax;
     if (dmg > 0.35) this.fx.burn(s.x, r.heave + 3, s.y, dmg, dt);
 
-    // the other captains
+    // the other captains. A seat whose captain has gone ashore is open water (it was drawn
+    // as a wreck burning where she was last seen), and a seat taken again may be taken in
+    // another ship.
     for (const o of w.players) {
       if (o === s) continue;
       let m = this.crew.get(o.id);
+      if (m && (o.left || this.crewShip.get(o.id) !== o.shipId)) { this.drop(m); this.crew.delete(o.id); m = undefined; }
+      if (o.left) continue;
       if (!m) {
         m = modelFor(recipeOf(shipById(o.shipId)));
         m.setShadows(this.tier === 'high');
         this.scene.add(m.root);
         this.crew.set(o.id, m);
+        this.crewShip.set(o.id, o.shipId);
       }
       this.poseCaptain(o, m, dt, t);
     }
@@ -724,7 +731,7 @@ export class View {
       u.uTime.value = t; u.uAlpha.value = aim.lock ? 0.9 : 0.4;
     }
 
-    M.beacon.visible = w.phase === 'clear';
+    M.beacon.visible = w.phase === 'clear' && !w.shared;
     if (M.beacon.visible) {
       const ring = M.beacon.getObjectByName('ring') as THREE.Mesh;
       (ring.material as THREE.ShaderMaterial).uniforms.uTime.value = t;

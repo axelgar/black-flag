@@ -2,6 +2,9 @@
 // ships are yours, and the run in progress. localStorage, one key.
 
 import { STARTER, SHIPS } from '../data/ships';
+import type { Tap } from '../net/items';
+
+export type { Tap, Via } from '../net/items';
 
 export type Quality = 'auto' | 'low' | 'high';
 
@@ -27,10 +30,6 @@ export interface Run {
 
 export interface RunSummary { wave: number; time: number; plunder: number; boarded: number; sunk: number; ship: string }
 
-/** A tap on a tag, a scanned QR or a typed code, waiting to reach the server. `sync` is a
- *  ship this device had before the server knew of it. */
-export type Via = 'nfc' | 'link' | 'typed' | 'sync';
-export interface Tap { code: string; via: Via; at: string }
 
 export interface Session {
   v: 2;

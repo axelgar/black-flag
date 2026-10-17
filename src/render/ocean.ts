@@ -272,17 +272,31 @@ export class Ocean {
   /** The hulls afloat this frame: where each is, which way she heads, how long and broad
    *  she is at the waterline, and how much way she has on, 0..1. */
   private hullN = 0;
+  private hulls: { x: number; z: number; h: number; hl: number; hb: number; way: number; reach: number; d: number }[] = [];
+  private order: Ocean['hulls'] = [];
   beginHulls() { this.hullN = 0; }
   hull(x: number, z: number, h: number, len: number, beam: number, way: number) {
-    if (this.hullN >= MAX_HULLS) return;
-    const u = this.mat.uniforms;
-    const hl = len * 0.47, hb = beam * 0.5;
-    const reach = hl * 1.8 + 4;
-    u.uHulls.value[this.hullN].set(x, z, h, hl);
-    u.uHullB.value[this.hullN].set(hb, 0, Math.min(1, Math.max(0, way)), reach * reach);
+    const r = this.hulls[this.hullN] ??= { x: 0, z: 0, h: 0, hl: 0, hb: 0, way: 0, reach: 0, d: 0 };
+    r.x = x; r.z = z; r.h = h; r.hl = len * 0.47; r.hb = beam * 0.5;
+    r.way = Math.min(1, Math.max(0, way)); r.reach = r.hl * 1.8 + 4;
     this.hullN++;
   }
-  endHulls() { this.mat.uniforms.uHullN.value = this.hullN; }
+  /** The sea has room for MAX_HULLS collars a frame. A shared sea can put twice that many
+   *  hulls on the water, so they go to the ones nearest the eye (ex, ez), not the first
+   *  reported: those were always the captains', and the Spanish went without. */
+  endHulls(ex: number, ez: number) {
+    const u = this.mat.uniforms, o = this.order;
+    o.length = 0;
+    for (let i = 0; i < this.hullN; i++) { const r = this.hulls[i]; r.d = (r.x - ex) ** 2 + (r.z - ez) ** 2; o.push(r); }
+    if (o.length > MAX_HULLS) o.sort((a, b) => a.d - b.d);
+    const n = Math.min(MAX_HULLS, o.length);
+    for (let i = 0; i < n; i++) {
+      const r = o[i];
+      u.uHulls.value[i].set(r.x, r.z, r.h, r.hl);
+      u.uHullB.value[i].set(r.hb, 0, r.way, r.reach * r.reach);
+    }
+    u.uHullN.value = n;
+  }
 
   /** Bake distance-to-shore for a chart. Once per run; a few tens of milliseconds. */
   bakeShore(m: GameMap) {

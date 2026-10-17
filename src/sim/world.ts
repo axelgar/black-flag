@@ -61,18 +61,21 @@ export const NO_INPUT: Input = { heading: null, rudder: 0, sail: 0, fireL: false
 
 export function create(opts: {
   seed?: string; wave?: number; run?: RunSeed; players?: Seat[]; pvp?: boolean; reduce?: boolean;
+  /** A shared sea (see World.shared), with room for this many captains. */
+  shared?: number;
 } = {}): World {
   const { seed = 'jackdaw', wave = 1, run = {}, reduce = false, pvp = false } = opts;
   const seats: Seat[] = opts.players?.length ? opts.players : [run];
   const map = mapFor(seed);
   const plan = wavePlan(wave, rng(`${seed}:plan:${wave}`));
   const players = seats.map((s, i) => launch(map, s, i, pvp));
+  const cap = Math.max(players.length, opts.shared ?? 0);
   return {
-    seed, wave, map, plan, reduce, pvp,
+    seed, wave, map, plan, reduce, pvp, shared: !!opts.shared, cap,
     r: rng(`${seed}:sim:${wave}`),
     weather: plan.weather,
-    // captains are 0..n-1, and every Spaniard, drop and spout is numbered after them
-    t: 0, gi: 0, quiet: 0, nextId: players.length,
+    // captains are 0..cap-1, and every Spaniard, drop and spout is numbered after them
+    t: 0, t0: 0, gi: 0, quiet: 0, nextId: cap,
     phase: 'fight',
     // Escalation is gentle and in two places only: they sail faster and reload faster.
     speedMul: 1 + (wave - 1) * 0.012,
@@ -85,7 +88,9 @@ export function create(opts: {
   };
 }
 
-function launch(map: GameMap, seat: Seat, i: number, pvp: boolean): Player {
+/** A captain's ship as she puts to sea: seat `i`, from her berth. The wire builds its
+ *  copies of other captains' ships with this too. */
+export function launch(map: GameMap, seat: Seat, i: number, pvp: boolean): Player {
   const def = shipById(seat.ship);
   const stats = shipStats(def, seat.upgrades || {});
   const at = berth(map, i, stats.beam);
@@ -97,7 +102,7 @@ function launch(map: GameMap, seat: Seat, i: number, pvp: boolean): Player {
     lives: seat.lives ?? stats.lives,
     boarded: seat.boarded ?? 0,
     sunk: seat.sunk ?? 0,
-    out: false,
+    out: false, left: false,
     // out of the harbour under all plain sail and already making way: a wave that opened
     // with her crawling up to half speed was the slowest minute of every wave
     x: at.x, y: at.y, h: at.h, v: stats.maxSpeed * 0.75, rot: 0, sail: 1,
@@ -111,19 +116,24 @@ function launch(map: GameMap, seat: Seat, i: number, pvp: boolean): Player {
   };
 }
 
-/** Where the i-th captain puts to sea: the first out of the harbour mouth, the rest line
- *  abreast of her, alternately to starboard and port, dropping astern round any land. */
+/** Where the i-th captain puts to sea: the first out of the harbour mouth, the next eight
+ *  line abreast of her, alternately to starboard and port. A crowded sea forms more lines
+ *  of nine, each sixty metres further out to sea than the last (a galleon is forty-six
+ *  long), rather than one line reaching halfway across the chart. Each drops astern round
+ *  any land. */
 function berth(map: GameMap, i: number, beam: number): { x: number; y: number; h: number } {
   const st = map.start;
   if (i === 0) return st;
-  const side = i % 2 ? 1 : -1, rank = Math.ceil(i / 2);
+  const line = Math.floor(i / 9), j = i % 9;
+  const side = j % 2 ? 1 : -1, rank = Math.ceil(j / 2);
   const px = -Math.sin(st.h) * side, py = Math.cos(st.h) * side;
   const fx = Math.cos(st.h), fy = Math.sin(st.h);
+  const ox = st.x + fx * line * 60, oy = st.y + fy * line * 60;
   for (let back = 0; back < 8; back++) {
-    const x = st.x + px * rank * 45 - fx * back * 30, y = st.y + py * rank * 45 - fy * back * 30;
+    const x = ox + px * rank * 45 - fx * back * 30, y = oy + py * rank * 45 - fy * back * 30;
     if (openWater(map, x, y, beam + 8)) return { x, y, h: st.h };
   }
-  return { x: st.x - fx * rank * 40, y: st.y - fy * rank * 40, h: st.h };
+  return { x: ox - fx * rank * 40, y: oy - fy * rank * 40, h: st.h };
 }
 
 /**
@@ -312,10 +322,58 @@ function finish(w: World) {
     w.phase = 'clear';
     ev(w, 'won', { wave: w.wave });
   }
-  if (w.phase === 'clear') {
+  if (w.phase === 'clear' && !w.shared) {
     // home when every captain still afloat is in
     if (afloat(w).every((p) => atNassau(w, p))) { w.phase = 'docked'; ev(w, 'dock', {}); }
   }
+}
+
+/* ---------------------------------------------------------- a shared sea -- */
+
+/** A shared sea does not go home between waves: the next puts to sea on the same chart,
+ *  with every captain where they are and the clock still running. */
+export function nextWave(w: World) {
+  w.wave++;
+  w.plan = wavePlan(w.wave, rng(`${w.seed}:plan:${w.wave}`));
+  w.weather = w.plan.weather;
+  w.t0 = w.t; w.gi = 0; w.quiet = 0;
+  w.phase = 'fight';
+  w.speedMul = 1 + (w.wave - 1) * 0.012;
+  w.reloadMul = Math.pow(0.975, w.wave - 1);
+  w.hunterT = 10; w.earlyLegend = false;
+  ev(w, 'wave', { wave: w.wave });
+}
+
+/** A captain comes aboard a sea already sailing: into a seat someone left, or a new one.
+ *  She puts to sea from the harbour mouth with a little grace. Null when the sea is full. */
+export function join(w: World, seat: Seat): Player | null {
+  let i = w.players.findIndex((p) => p.left);
+  if (i < 0) { i = w.players.length; if (i >= w.cap) return null; }
+  const p = launch(w.map, seat, i, w.pvp);
+  p.invuln = 3;
+  w.players[i] = p;
+  ev(w, 'joined', { p: i });
+  return p;
+}
+
+/** Her captain has gone ashore. The ship leaves the sea, and the seat is free. */
+export function leave(w: World, id: number) {
+  const p = w.players[id];
+  if (!p || p.left) return;
+  p.out = true; p.left = true;
+  ev(w, 'left', { p: id });
+}
+
+/** Back afloat after going down, with what she had won and the notoriety she had earned,
+ *  out of the harbour mouth again with a little grace. */
+export function refloat(w: World, p: Player, lives = 1) {
+  const at = berth(w.map, p.id, p.beam);
+  Object.assign(p, {
+    x: at.x, y: at.y, h: at.h, v: p.maxSpeed * 0.5, rot: 0, sail: 1, dead: false, out: false, lives,
+    hull: p.hullMax, hit: 0, invuln: 3, ramT: 0, groundT: 0, shells: p.shellsMax, cool: [0, 0], volley: null,
+    bowCool: 0.5, board: null, aim: null, rim: false, want: [false, false], buffs: { powder: 0, heavy: 0, chain: 0, swivel: 0 },
+  });
+  ev(w, 'refloat', { p: p.id });
 }
 
 /** Home: the harbour mouth, or close enough under Nassau's lee from any side — the

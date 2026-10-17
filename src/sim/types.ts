@@ -45,6 +45,7 @@ export interface Player extends Vessel {
   boarded: number;
   sunk: number;
   out: boolean;            // her last life is gone: no longer hunted, hit or steered
+  left: boolean;           // her captain has gone ashore: the seat is free for the next to join
   cool: [number, number];  // reload left on each side
   volley: { side: Side; next: number; fired: number; t: number } | null;
   bowCool: number;
@@ -132,9 +133,16 @@ export interface World {
   reduce: boolean;
   /** Whether captains' shot hurts other captains. Off, a shared sea is a crew. */
   pvp: boolean;
+  /** A shared sea: it is never lost and never goes home. Waves follow each other on the
+   *  same chart (nextWave), and a captain who goes down is put back afloat by the host. */
+  shared: boolean;
+  /** Seats: captains are numbered 0..cap-1 and everything else from cap up, so a captain
+   *  who joins late never takes an id a Spaniard already has. */
+  cap: number;
   r: Rng;
   weather: Weather;
   t: number;
+  t0: number;              // when this wave put to sea; its squadrons' timetable counts from here
   gi: number;
   quiet: number;
   nextId: number;

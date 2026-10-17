@@ -43,7 +43,7 @@ export function stepFoe(w: World, e: Foe, dt: number) {
       // on the water, and it is what makes the flags climb for a captain who never boards.
       const by = w.players[e.by] ?? w.players[0];
       by.heat = clamp(by.heat + heatEscaped(e.hullMax), 0, HEAT_MAX);
-      ev(w, 'lost-prize', { id: e.id, x: e.x, y: e.y });
+      ev(w, 'lost-prize', { id: e.id, x: e.x, y: e.y, p: by.id });
     }
   } else if (e.state === 'patrol') {
     [heading, sail] = patrol(w, e, dt);

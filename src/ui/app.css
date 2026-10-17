@@ -338,3 +338,29 @@ body{font-family:'Instrument Sans',system-ui,sans-serif;color:var(--parch);-webk
   /* no movement, but a toast still has to go away again */
   .toast.go{animation-name:calm!important;animation-duration:2.2s!important;animation-timing-function:linear!important}
 }
+
+/* shared sea ---------------------------------------------------------------- */
+.hud.shared .bossbar{top:calc(var(--st) + 46px)}
+.seabar{position:absolute;top:calc(var(--st) + 12px);left:50%;transform:translateX(-50%);pointer-events:none;opacity:0;
+  font:500 10.5px 'JetBrains Mono',monospace;letter-spacing:.18em;text-transform:uppercase;color:var(--parch-70);white-space:nowrap;
+  padding:7px 14px;border-radius:var(--r-chip);background:rgba(5,16,22,.55);box-shadow:inset 0 0 0 1px rgba(242,231,206,.16);transition:opacity 300ms}
+.seabar.on{opacity:1}
+.seabar b{color:var(--gold);font-weight:700;letter-spacing:.24em}
+.seaboard{position:absolute;top:calc(var(--st) + 64px);left:50%;transform:translateX(-50%);width:min(400px,78vw);pointer-events:none;
+  padding:18px 20px;border-radius:var(--r-card);background:rgba(5,16,22,.78);box-shadow:inset 0 0 0 1px rgba(217,164,65,.35);
+  display:none;text-align:center}
+.seaboard.on{display:block;animation:fade var(--dur) ease-out}
+.seaboard .disp{font-size:24px;margin:4px 0 12px}
+.seaboard .rows{display:flex;flex-direction:column;text-align:left}
+.seaboard .row{display:flex;align-items:baseline;gap:12px;padding:7px 2px;border-top:1px solid rgba(242,231,206,.1)}
+.seaboard .row .k{width:16px;font:600 11px 'JetBrains Mono',monospace;color:var(--gold)}
+.seaboard .row .c{flex:1;font:600 14px 'Instrument Sans'}
+.seaboard .row .c small{display:inline-block;margin-left:8px;font:500 9.5px 'JetBrains Mono',monospace;letter-spacing:.12em;text-transform:uppercase;color:var(--parch-70)}
+.seaboard .row .v{font:700 14px 'JetBrains Mono',monospace;color:var(--gold)}
+.seaboard .row.you .c{color:var(--gold)}
+.seaboard .more{padding:8px 2px 0;border-top:1px solid rgba(242,231,206,.1);font:500 9.5px 'JetBrains Mono',monospace;letter-spacing:.12em;text-transform:uppercase;color:var(--parch-70)}
+.seanote{position:absolute;inset:0;display:none;place-content:center;justify-items:center;gap:10px;text-align:center;background:rgba(4,12,16,.45)}
+.seanote.on{display:grid}
+.seanote b{font:700 28px 'Cinzel',serif;color:var(--parch);text-shadow:0 3px 14px rgba(0,0,0,.85)}
+.seanote span{font:500 10.5px 'JetBrains Mono',monospace;letter-spacing:.2em;color:var(--gold)}
+.seanote .chip{pointer-events:auto;margin-top:8px}

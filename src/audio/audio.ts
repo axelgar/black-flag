@@ -247,7 +247,8 @@ export function consume(events: GameEvent[], theirs: (e: GameEvent) => boolean =
     const at = place(e.x as number | undefined, e.y as number | undefined);
     switch (e.k) {
       case 'cannon': if (guns++ < 3) cannon(at); break;
-      case 'bow': cannon({ gain: 0.6, pan: 0 }); break;
+      // your own chasers are right under you; another captain's are where she is
+      case 'bow': cannon(theirs(e) ? at : { gain: 0.6, pan: 0 }); break;
       case 'foe-fire': {
         const n = Math.min(4, (e.n as number) || 1);
         for (let i = 0; i < n; i++) foeGun(at, i * 0.05);

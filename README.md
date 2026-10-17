@@ -22,6 +22,11 @@ npm run build        # typecheck + production bundle in dist/
 npm run qr           # print a QR code per unlockable ship into qr/
 npm run icons        # redraw the home-screen icons into public/
 npx supabase db push # apply supabase/migrations to the linked project
+npm run sea:dev      # the shared-sea server on this machine, ws://localhost:8787
+npm run sea:bot      # a bot captain aboard the bar's sea (-- --for 60, --open crew, a url)
+npm run sea:bench    # what a shared sea costs, headless: server CPU, bytes a phone (-- 8 30)
+npm run sea:load     # thirty bot captains against a real sea on this machine (-- 30 --for 60)
+npm run sea:deploy   # the shared-sea server to Cloudflare, after npx wrangler login
 ```
 
 Vite, TypeScript and Three.js. Everything is procedural: no models, textures or sound files.
@@ -139,7 +144,79 @@ game did before there could be more.
 
 In the console, `bf.crew('kestrel')` sails the current wave again with another captain's
 ship abreast of yours, to see a shared sea before there is a server to fill one. She
-holds her course.
+heaves to. `bf.crew('mix', false, 29)` puts a full sea's start in front of you instead, to
+see what a phone makes of it.
+
+## Shared seas
+
+Up to thirty ships on one sea, over the network: a busy night's whole bar. A Cloudflare
+Durable Object runs each sea (`server/`); the phones only send their helm and draw what
+the sea says.
+
+- **Joining.** Shared sea on the title screen. **The bar's sea** puts everyone at the
+  venue on one sea, and opens a second when thirty are aboard. **Open a sea** makes a
+  private one for a table, rivals or crew, with a four-letter code to share; **Join**
+  takes that code.
+- **A round** is eight minutes, about one drink: a 10-second lobby, waves on one chart
+  (a clear sea brings the next after a 6-second breather), then 15 seconds of scoreboard,
+  most plunder first, and a new chart. Everyone sails their ship's own numbers: Nassau's
+  upgrades are for a run on your own.
+- **Putting to sea.** Captains form lines of nine off the harbour mouth, each line sixty
+  metres further out than the last, and go down and come back afloat in their own place
+  in them.
+- **Going down** costs a quarter of your plunder, to whoever sank you among rivals, and
+  you are back afloat out of the harbour mouth five seconds later. Rivals can fire on
+  each other; crew cannot. The bar's seas play `BAR_MODE` (`server/wrangler.jsonc`).
+- **What you are told** is yours: a ship that strikes to you, a prize of yours that gets
+  away, the hunters that come for you. Another captain's are theirs, or thirty captains
+  would have the toasts running all round.
+- **Who you are.** The phone sends its Supabase access token. The sea checks it against
+  the project's public signing keys, asks `me()` for the captain's name and ships, and
+  turns away a ship the player does not own.
+- **The wire** (`src/net/protocol.ts`). The sea steps the world at the game's fixed
+  1/120s and sends a snapshot about fifteen times a second. A snapshot carries what
+  changes and what a phone draws:
+  - every captain as anyone looking on sees her, and your own guns, shells and takings,
+    which go only to your phone;
+  - each ball once, when it is fired (it flies straight; the phone flies it), and again
+    only if it ends early, in a hull or on rock;
+  - events with their numbers to the centimetre.
+
+  The chart is rebuilt from its seed rather than received. Thirty captains firing every
+  gun the moment it is loaded come to about 3.4 KB a snapshot. The sockets negotiate
+  permessage-deflate, so that is about 11 KB/s a phone over the air and 2.7 Mbit/s for
+  the whole sea, at about 1% of the Durable Object's time.
+- **The phone's clock** (`Mirror`). The phone draws a moment behind the sea, sliding every
+  ship between the snapshots either side, and keeps time by the sea's own clock (`ck`),
+  which runs on through a lobby, where the world's stands still. How far behind is one
+  snapshot's gap plus nearly all (95%) of how late snapshots have been arriving: about
+  0.08s on quiet wifi, more on a crowded one. It gets there by running the picture up to
+  8% fast or slow, never by stepping back. Past the newest snapshot, ships sail on for
+  0.15s before they wait. The helm goes up as it changes, at most twenty times a second
+  while the stick moves; presses go at once, and are counts, so none is lost or fired
+  twice. There is no prediction: ships answer their helms slowly enough that the delay
+  barely shows.
+- **Wifi blinks.** A dropped phone keeps its seat, hove to, for 20 seconds, and the line
+  reconnects on its own. A private sea's mode is kept in the object's storage, so its code
+  still works after a restart, and is forgotten after a week unused.
+- **The room** (`src/net/sea.ts`) knows nothing about sockets, so `tests/sea.test.ts`
+  sails whole rounds of it without a server.
+
+`scripts/sea-bot.ts` signs in as a new anonymous player called "Bot …" and sails with
+the test bot's seamanship. Clear them out with
+`delete from auth.users where id in (select id from public.players where captain like 'Bot %')`.
+
+To try a full bar without thirty people or the live project, `npm run sea:load -- 30`
+starts the sea's server on this machine against a stand-in for Supabase's sign-in, sails
+thirty bot captains in over websockets, and says how many came aboard, how evenly their
+snapshots arrived and how far behind each drew. `npm run sea:bench -- 8 30` does the same
+sums headless, in seconds, and says what each phone is sent before and after the wire's
+compression. On this machine: thirty of thirty aboard, a snapshot every 73ms (the
+runtime's timer runs the 30Hz beat a little slow), each phone drawing 0.09s behind.
+
+To put it live: `npx wrangler login`, then `npm run sea:deploy`, and set the URL it prints
+(`wss://black-flag-sea.<account>.workers.dev`) as `VITE_SEA_URL`, or as the default in
+`src/net/link.ts`. Until then the Shared sea button only shows in development.
 
 ## The server
 
@@ -271,7 +348,10 @@ src/
   ui/          screens, HUD (minimap, pointers, reload rings), input, silhouettes, css
   audio/       synthesised, stereo-placed cannons, sea and shanty
   state/       session (localStorage v2, migrates the v1 record book), run banking
-  net/         cloud.ts (the one door to the server), items.ts (inventory ids, reconcile)
+  net/         cloud.ts (the one door to the server), items.ts (inventory ids, reconcile),
+               protocol.ts (the wire, and the Mirror a phone draws), sea.ts (a shared sea's
+               room), link.ts (the phone's line to one)
+server/        the shared seas on Cloudflare: a worker and a Durable Object per sea
 supabase/      config.toml and migrations/: the server's tables, rules and functions
 tests/         vitest, a headless bot captain, and the server's rules in PGlite
 scripts/       qr.ts (QR printer), icons.ts (the home-screen icons)
@@ -295,6 +375,14 @@ public/        manifest.webmanifest and the icons it names
   prize land on the captain who caused them; crew cannot hurt each other and rivals can;
   a captain out of lives is out while the others sail on; a refit clears only the shells
   meant for that ship; home waits for every captain afloat; two captains replay byte for byte
+- a shared sea (`tests/sea.test.ts`): the lobby, rounds and a new chart after them; the
+  wire carries the world into a mirror that matches it, with your own ship's guns and
+  takings only on your phone; each ball is sent once and ends where the sea ended it;
+  the picture never steps back, on quiet wifi or crowded; a press fires once; thirty
+  ships and no more, put to sea with every hull clear of the next; a full sea of
+  trigger-happy captains stays under 4.5 KB a snapshot; a dropped phone keeps its seat,
+  then frees it; a sunk ship's toll among rivals and among crew, and back afloat; the
+  next wave after a clear sea
 - the server's rules (`tests/db.test.ts`): a player is made on first ask; a tap unlocks
   once and counts every time; unknown and switched-off codes unlock nothing; a phone
   reads only its own rows and cannot write any table; the server's register matches the
@@ -358,10 +446,13 @@ fixed. The ones that mattered:
 - **Balance needs a real player.** The numbers above are a bot that knows where every ship is and never dodges; treat them as relative, not absolute.
 - **Frame rate on a real phone is unmeasured.** Desktop Chrome with thirteen ships on
   screen at wave 14: about 80 draw calls, 275k triangles, and half a millisecond of CPU a
-  frame for the view. Low tier, the default on touch devices:
+  frame for the view. A full shared sea's start (`bf.crew('mix', false, 29)`, low tier)
+  has fourteen of the thirty on screen: about 120 draw calls and 340k triangles. Low
+  tier, the default on touch devices:
   - DPR 1.5, 3 swell waves, no shadows, no bloom, a cheaper sea (one ripple layer, no
     caustics);
-  - lighter hulls and 512px ship textures;
+  - lighter hulls and 512px ship textures, and other ships' rigging left out past 260m
+    and their pennants past 420m (a draw each, and a fifth of a pixel wide by then);
   - and a resolution governor: a phone that cannot hold its frame rate drops toward DPR
     0.75 rather than dropping frames, and climbs back after a run of good ones.
 

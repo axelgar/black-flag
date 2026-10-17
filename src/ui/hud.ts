@@ -131,8 +131,9 @@ export function hudTick(w: World | null, view: View, dt: number) {
     hud.bar.classList.toggle('low', hp < 0.34);
     L.hp = hp;
   }
-  const lives = `${s.lives}/${s.stats.lives}`;
-  if (L.lives !== lives) { hud.lives.innerHTML = HEARTS(s.lives, Math.max(s.lives, s.stats.lives)); L.lives = lives; }
+  // on a shared sea a ship that goes down comes back, so there are no lives to count
+  const lives = w.shared ? 'shared' : `${s.lives}/${s.stats.lives}`;
+  if (L.lives !== lives) { hud.lives.innerHTML = w.shared ? '' : HEARTS(s.lives, Math.max(s.lives, s.stats.lives)); L.lives = lives; }
   if (L.coin !== s.plunder) { hud.coin.textContent = `${reales(s.plunder)} R`; L.coin = s.plunder; }
   if (L.wave !== w.wave) { hud.wave.textContent = `WAVE ${w.wave}`; L.wave = w.wave; }
   if (L.shells !== s.shells) {
@@ -161,7 +162,8 @@ export function hudTick(w: World | null, view: View, dt: number) {
     hud.buffs.innerHTML = on.map((k) => `<span class="buff">${k}${b[k] > 0 ? ` ${Math.ceil(b[k])}` : ''}</span>`).join('');
     L.buffs = bs;
   }
-  const clear = w.phase === 'clear';
+  // a shared sea has no Nassau to make for: the next wave comes to you
+  const clear = w.phase === 'clear' && !w.shared;
   if (L.clear !== clear) { hud.dock.classList.toggle('on', clear); L.clear = clear; }
 
   // guns: reload rings, and a glow on a side that bears on something
@@ -304,7 +306,7 @@ function pointers(w: World, view: View) {
       if (arrow(best.x, best.y, 'sail')) label(best.x, best.len + 10, best.y, 'SAIL HO', 'sail');
     }
   }
-  if (w.phase === 'clear') {
+  if (w.phase === 'clear' && !w.shared) {
     const hb = w.map.harbour;
     const on = arrow(hb.x, hb.y, 'home');
     if (on) label(hb.x, 30, hb.y, 'NASSAU', 'prize');
@@ -360,7 +362,7 @@ function minimap(w: World, yaw: number) {
   const P = (x: number, y: number) => [R + x * scale, R + y * scale] as const;
   // harbour
   const [hx, hy] = P(w.map.harbour.x, w.map.harbour.y);
-  c.strokeStyle = w.phase === 'clear' ? '#FFD36A' : 'rgba(217,164,65,.6)'; c.lineWidth = 2;
+  c.strokeStyle = w.phase === 'clear' && !w.shared ? '#FFD36A' : 'rgba(217,164,65,.6)'; c.lineWidth = 2;
   c.beginPath(); c.arc(hx, hy, 5, 0, Math.PI * 2); c.stroke();
   for (const e of w.foes) {
     if (e.state === 'spent') continue;

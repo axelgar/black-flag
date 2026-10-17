@@ -1,0 +1,22 @@
+// Black Flag's shared seas. `npm run sea:dev` runs it on this machine (no account
+// needed); `npm run sea:deploy` puts it on Cloudflare after `npx wrangler login`.
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "name": "black-flag-sea",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-01",
+  "durable_objects": {
+    "bindings": [{ "name": "SEA", "class_name": "SeaRoom" }]
+  },
+  // SQLite-backed Durable Objects are the ones the free plan offers
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["SeaRoom"] }],
+  "vars": {
+    "SUPABASE_URL": "https://vspueoyeaorfmbmefhiv.supabase.co",
+    // publishable, like the one in the page: the player's own token is what gets them in
+    "SUPABASE_KEY": "sb_publishable_mbZmUcrjjPBgNHqvdgu2_g_D_Xvyamy",
+    "VENUE": "main",
+    // how the bar's seas play: "rivals" or "crew"
+    "BAR_MODE": "rivals"
+  },
+  "observability": { "enabled": true }
+}

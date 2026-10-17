@@ -10,7 +10,7 @@ import type { Group } from '../data/waves';
 import type { LegendDef } from '../data/types';
 import { MAP_R, EDGE, openWater } from './map';
 import { hostile } from './combat';
-import { afloat, ev, nearest, type Foe, type Player, type World } from './types';
+import { afloat, ev, nearest, type Foe, type Player, type Port, type World } from './types';
 
 const FAR = 430;   // a squadron never puts to sea closer to you than this
 const FIRST = [360, 560];   // …except the first of a wave, which is on the horizon, not over it
@@ -63,18 +63,22 @@ export function addLegend(w: World, L: LegendDef, x: number, y: number): Foe {
     wp: { x, y }, wpT: 0, seeT: 0, orbit: 1,
     cool: 4, coolAlt: 4, broad: 0, broadSide: 1,
     strikeT: 0, struckOnce: false, by: -1, spentT: 0, hunter: false, chase: 0, slow: 0, ph: 0,
-    // Her weak points: ports split between both sides, spread along her length.
-    ports: Array.from({ length: L.ports }, (_, i) => {
-      const per = Math.ceil(L.ports / 2);
-      const k = Math.floor(i / 2) / Math.max(1, per - 1) - 0.5;
-      return { fwd: k * R.length * 0.55, side: (i % 2 ? 1 : -1) as -1 | 1, hull: 8, dead: false };
-    }),
+    ports: portsFor(L),
     phase: 0, flash: 0, detour: 0, seen: false,
   };
   w.foes.push(e);
   w.boss = e;
   ev(w, 'legend', { id: e.id, name: L.name });
   return e;
+}
+
+/** A legendary's weak points: ports split between both sides, spread along her length. */
+export function portsFor(L: LegendDef): Port[] {
+  const per = Math.ceil(L.ports / 2);
+  return Array.from({ length: L.ports }, (_, i) => {
+    const k = Math.floor(i / 2) / Math.max(1, per - 1) - 0.5;
+    return { fwd: k * L.recipe.length * 0.55, side: (i % 2 ? 1 : -1) as -1 | 1, hull: 8, dead: false };
+  });
 }
 
 function newSquad(w: World, x: number, y: number): number {
@@ -179,7 +183,7 @@ export function release(w: World, dt: number) {
   // A screen only ever held a few ships at once; an open sea lets every squadron that has
   // put to sea converge on you together. Timed releases wait while the water is crowded.
   // Checked squadron by squadron — several overdue ones must not all put to sea at once.
-  while (w.gi < p.groups.length && w.t >= p.groups[w.gi].at && active < crowd(w.wave)) {
+  while (w.gi < p.groups.length && w.t - w.t0 >= p.groups[w.gi].at && active < crowd(w.wave)) {
     const g = p.groups[w.gi++];
     spawnGroup(w, g);
     if (g.cls !== 'spout' && g.cls !== 'legend') active += g.n;
@@ -210,7 +214,7 @@ export function hunt(w: World, dt: number) {
       const e = addFoe(w, HUNTER_CLASS, p.x, p.y, Math.atan2(s.y - p.y, s.x - p.x), newSquad(w, p.x, p.y));
       e.hunter = true; e.state = 'engage'; e.alert = true;
       w.hunterT = 16;
-      ev(w, 'hunter', { id: e.id });
+      ev(w, 'hunter', { id: e.id, p: s.id });
     }
   }
   // The same rule as the hunters: once the fleet is off the water nobody new comes, or a

@@ -7,7 +7,7 @@ import { heightAt, swell } from './waves';
 
 const N = 28;              // points of history per ship
 const EVERY = 0.12;        // seconds between samples
-const MAX = 48;            // ships
+const MAX = 64;            // ships: thirty captains and the Spanish line
 
 const vert = /* glsl */ `
 attribute vec2 aUv;

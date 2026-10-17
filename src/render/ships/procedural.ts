@@ -313,8 +313,14 @@ export class ProceduralShip implements ShipModel {
     this.weak.forEach((m, i) => { m.visible = alive[i] ?? false; });
   }
 
-  /** Far off, her rigging is below a pixel's worth of anything. */
-  detail(distance: number) { this.ropes.visible = distance < 520 && this.faded > 0.55; }
+  /** Far off, her rigging is below a pixel's worth of anything; on a phone it fades to a
+   *  fifth of a pixel by 260m, and her pennants to a streak by 420m. Each is a draw, and a
+   *  full shared sea puts thirty ships in front of the eye at once. */
+  detail(distance: number) {
+    const lo = !quality.high;
+    this.ropes.visible = distance < (lo ? 260 : 520) && this.faded > 0.55;
+    if (this.pennant) this.pennant.visible = this.faded > 0.35 && (!lo || distance < 420);
+  }
 
   /** Going, 1..0: she dissolves into the haze. Her lines and colours go first — they are
    *  too fine to dither — and a ship that is half there casts no shadow. The hull only

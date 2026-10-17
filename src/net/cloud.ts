@@ -122,6 +122,15 @@ export function tap(code: string, via: Via) {
   else if (cloud.status === 'offline') void connect();
 }
 
+/** Who this device is signed in as, and the token that proves it: what a shared sea asks
+ *  for at the gangway. Null when the server cannot be reached. */
+export async function credentials(): Promise<{ token: string; seat: string } | null> {
+  if (cloud.status !== 'online' && !(await connect())) return null;
+  const { data } = await client!.auth.getSession();
+  const s = data.session;
+  return s ? { token: s.access_token, seat: s.user.id } : null;
+}
+
 /** Sail under another name. Resolves to the name as the server stored it. */
 export async function rename(name: string): Promise<string> {
   if (cloud.status !== 'online' && !(await connect())) throw new Error('offline');

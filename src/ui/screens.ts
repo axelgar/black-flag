@@ -17,6 +17,8 @@ import { mapFor } from '../sim/world';
 import * as A from '../audio/audio';
 import { track } from '../analytics';
 import { cloud, rename, tap } from '../net/cloud';
+import { SEA_URL, type Link } from '../net/link';
+import type { Mode } from '../net/protocol';
 import { buzz } from './haptics';
 import { hudHtml, mountHud } from './hud';
 import { touchUi } from './input';
@@ -108,6 +110,7 @@ export function title(v: View): Screen {
             <div><b>Weigh anchor</b><span>${rec.runs ? `BEST · WAVE ${rec.bestWave}` : isTouch() ? 'LEFT THUMB SAILS · RIGHT THUMB FIRES' : 'WASD SAILS · Q/E FIRE BROADSIDES'}</span></div><i>→</i></button>
         `}
         <div class="chips">
+          ${SEA_URL ? '<button class="chip gold" data-go="#/sea">Shared sea</button>' : ''}
           <button class="chip gold" data-go="#/shipyard">Shipyard · ${session.unlocked.length}/${SHIPS.length}</button>
           <button class="chip" data-go="#/records">Records</button>
           <button class="chip" data-go="#/log">Captain's log</button>
@@ -574,9 +577,32 @@ export function menu(v: View): Screen {
 
 /* ================================================================ pause == */
 
-export function pause(v: View, live: boolean): Screen {
+/** A shared sea does not stop for anyone: this is a look away, and the way ashore. */
+function pauseShared(): Screen {
+  return {
+    html: `
+    <div class="screen">
+      <div class="scrim"></div>
+      <div class="center">
+        <div class="disp" style="font-size:36px">Hove to</div>
+        <div class="mono" style="font-size:10.5px;opacity:.65;margin-bottom:8px">THE SEA SAILS ON WITHOUT YOU</div>
+        <div class="stack">
+          <button class="cta gold" data-go="#/aboard"><div><b>Make sail</b><span>BACK TO THE SEA</span></div><i>→</i></button>
+          <button class="cta ghost" data-ashore><div><b>Go ashore</b><span>LEAVE THIS SEA</span></div><i>⚓</i></button>
+          <div class="chips" style="justify-content:center"><button class="chip" data-go="#/menu">Articles</button></div>
+        </div>
+      </div>
+    </div>`,
+    mount(root) {
+      $('[data-ashore]', root)?.addEventListener('click', () => { buzz(12); emit('bf:ashore'); });
+    },
+  };
+}
+
+export function pause(v: View, live: boolean, shared = false): Screen {
   // Over the paused sea if there is one — even after a visit to the Articles or the yard.
   v.setMode(v.world ? 'play' : 'title');
+  if (shared) return pauseShared();
   const wave = session.run?.wave;
   return {
     html: `
@@ -608,4 +634,116 @@ export function pause(v: View, live: boolean): Screen {
       });
     },
   };
+}
+
+/* =========================================================== shared sea == */
+
+/** Where a shared sea is joined: the bar's, one to open for a table, or a table's code. */
+export function seaMenu(v: View): Screen {
+  harbourScene(v, 'clear');
+  v.setMode('title');
+  v.setShowcase(session.ship);
+  const ship = shipById(session.ship);
+  const open = (mode: Mode, name: string, what: string) =>
+    `<button class="cta ghost" data-open="${mode}"><div><b>Open a sea · ${name}</b><span>${what}</span></div><i>+</i></button>`;
+  return {
+    html: `
+    <div class="screen">
+      <div class="side">
+        ${topbar('SHARED SEA', backTo('#/'))}
+        <div class="mid">
+          <div class="eyebrow">${esc(ship.name)} · ${esc(ship.rank)} · her own numbers</div>
+          <div class="disp" style="font-size:clamp(28px,4.4vw,40px);margin:8px 0 10px">One sea, everyone on it</div>
+          <div class="sub" style="font-size:13.5px">A round is about one drink. The Spanish keep coming, and the captain with the most plunder at the end takes it. Go down and you are back afloat in seconds, a quarter of your hold lighter.</div>
+        </div>
+        <button class="cta gold" data-bar><div><b>The bar's sea</b><span>EVERYONE HERE · ONE SEA</span></div><i>→</i></button>
+        ${open('rivals', 'Rivals', 'YOUR TABLE · EVERYONE FIRES ON EVERYONE')}
+        ${open('crew', 'Crew', 'YOUR TABLE · TOGETHER AGAINST THE SPANISH')}
+        <form class="codeform" data-join>
+          <input name="code" maxlength="4" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="A table's sea code" aria-label="Sea code">
+          <button class="chip gold" type="submit">Join</button>
+        </form>
+      </div>
+    </div>`,
+    mount(root) {
+      $('[data-bar]', root)?.addEventListener('click', () => { buzz(10); emit('bf:sea', { kind: 'bar' }); });
+      $$('[data-open]', root).forEach((b) => b.addEventListener('click', () => { buzz(10); emit('bf:sea', { kind: 'open', mode: b.dataset.open }); }));
+      $<HTMLFormElement>('[data-join]', root)?.addEventListener('submit', (e) => {
+        e.preventDefault();
+        const code = ($<HTMLInputElement>('input', e.currentTarget as HTMLElement)?.value || '').toUpperCase().replace(/[^A-Z]/g, '');
+        if (code.length === 4) { buzz(10); emit('bf:sea', { kind: 'code', code }); }
+      });
+      return spinner(root, v);
+    },
+  };
+}
+
+/** A shared sea on screen: the HUD, with the round, the code and the scoreboard over it. */
+export function aboard(v: View): Screen {
+  v.setMode('play');
+  return {
+    html: `<div class="screen">${hudHtml(isTouch())}
+      <div class="seabar" id="sea-bar"></div>
+      <div class="seaboard" id="sea-board"></div>
+      <div class="seanote" id="sea-note"></div>
+    </div>`,
+    mount(root) {
+      root.querySelector('.hud')?.classList.add('shared');
+      return mountHud(root, () => { /* no Nassau on a shared sea */ });
+    },
+  };
+}
+
+const TURNED: Record<string, [string, string]> = {
+  full: ['Every sea is full', 'THIRTY SHIPS TO A SEA · TRY AGAIN SOON'],
+  unknown: ['No sea by that code', 'CHECK THE FOUR LETTERS, OR OPEN ONE'],
+  token: ['Not on the roll', 'THE SEA COULD NOT SIGN YOU IN'],
+  ship: ['Not your ship', 'CHOOSE ONE FROM YOUR SHIPYARD'],
+  version: ['A newer game is sailing', 'RELOAD THE PAGE TO JOIN'],
+  bad: ['The sea is out of reach', 'TRY AGAIN IN A MOMENT'],
+  server: ['The sea is out of reach', 'TRY AGAIN IN A MOMENT'],
+};
+
+/** Keep the overlays over a shared sea in step with the line. Cheap enough to call often. */
+export function seaTick(link: Link | null) {
+  const bar = document.getElementById('sea-bar'), board = document.getElementById('sea-board'), note = document.getElementById('sea-note');
+  if (!bar || !board || !note || !link) return;
+  const r = link.round, you = link.mirror.world?.focus ?? -1;
+
+  let n = '';
+  if (link.state === 'hailing' || (link.state === 'aboard' && !link.mirror.world)) n = '<b>Hailing the sea…</b>';
+  else if (link.state === 'lost') n = '<b>Lost the wind</b><span>COMING ABOUT FOR THE SEA</span>';
+  else if (link.state === 'refused') {
+    const [big, small] = TURNED[link.why ?? 'server'] ?? TURNED.server;
+    n = `<b>${big}</b><span>${small}</span><button class="chip gold" data-go="#/sea">Back</button>`;
+  }
+  if (note.dataset.h !== n) { note.innerHTML = n; note.dataset.h = n; note.classList.toggle('on', !!n); }
+
+  const mode = (r?.mode ?? link.welcome?.mode ?? 'rivals') === 'rivals' ? 'RIVALS' : 'CREW';
+  const code = link.code ? `SEA <b>${link.code}</b> · ` : '';
+  const when = !r ? '' : r.stage === 'lobby' ? `PUTS TO SEA IN ${r.left}` : r.stage === 'results' ? `NEXT ROUND IN ${r.left}` : clock(r.left);
+  const b = link.state === 'aboard' ? `${code}${mode}${when ? ` · ${when}` : ''}` : '';
+  if (bar.dataset.h !== b) { bar.innerHTML = b; bar.dataset.h = b; bar.classList.toggle('on', !!b); }
+
+  let t = '';
+  if (r && link.state === 'aboard' && r.stage !== 'sailing') {
+    const head = r.stage === 'lobby'
+      ? `<div class="eyebrow">Coming aboard</div><div class="disp">Round ${r.n + 1}</div>`
+      : `<div class="eyebrow">Round ${r.n} · over</div><div class="disp">${esc(r.scores[0]?.captain ?? 'Nobody')} takes it</div>`;
+    // A whole bar is thirty rows and a phone held sideways has room for a handful: the top
+    // of the board, as many as fit, and always where you stand on it.
+    const fit = Math.max(3, Math.floor((innerHeight - 170) / 30));
+    const ranked = r.scores.map((s, i) => ({ s, i }));
+    const mine = ranked.findIndex((x) => x.s.id === you);
+    const shown = mine >= fit ? [...ranked.slice(0, fit - 1), ranked[mine]] : ranked.slice(0, fit);
+    const more = ranked.length - shown.length;
+    const rows = shown.map(({ s, i }) => `
+      <div class="row${s.id === you ? ' you' : ''}">
+        <span class="k">${r.stage === 'results' ? i + 1 : '·'}</span>
+        <span class="c">${esc(s.captain)}<small>${esc(shipById(s.ship).name)}</small></span>
+        <span class="v">${r.stage === 'results' ? `${reales(s.plunder)}` : ''}</span>
+      </div>`).join('');
+    t = `${head}<div class="rows">${rows}</div>${more > 0 ? `<div class="more">and ${more} more aboard</div>` : ''}`;
+  }
+  if (board.dataset.h !== t) { board.innerHTML = t; board.dataset.h = t; board.classList.toggle('on', !!t); }
 }

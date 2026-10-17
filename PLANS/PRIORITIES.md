@@ -105,7 +105,11 @@ tough. This rule is cheap to set now and very hard to change later.
 > with an owner and a team, the Spanish hunting the nearest captain, and a `pvp` switch.
 > Checked against eight single-player battles recorded before the change: all eight
 > replay byte for byte. The view draws other captains' ships; `bf.crew()` previews one.
-> Not built: the network. A server still has to step the world and send it out.
+> **The network, built 27 September 2026:** shared seas on Cloudflare Durable Objects
+> (`server/`), the bar's sea and private codes, rivals and crew rounds, snapshots at 15 a
+> second into a mirror the renderer draws. Tested with bots on a local server and in a
+> browser. Not yet deployed (needs a Cloudflare login), no round results written to
+> Supabase yet, and no rankings screen.
 
 **Now.** The world has exactly one player ship (`ship: Player` in `src/sim/types.ts`), and 26
 places in the simulation assume it. Plunder, notoriety and lives are stored on the world,

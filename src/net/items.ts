@@ -4,7 +4,11 @@
 
 import { SHIPS } from '../data/ships';
 import { normCode } from '../data/unlocks';
-import type { Tap } from '../state/session';
+
+/** A tap on a tag, a scanned QR or a typed code, waiting to reach the server. `sync` is a
+ *  ship this device had before the server knew of it. */
+export type Via = 'nfc' | 'link' | 'typed' | 'sync';
+export interface Tap { code: string; via: Via; at: string }
 
 export const itemOf = (shipId: string) => `hull:${shipId}`;
 
