@@ -108,8 +108,10 @@ tough. This rule is cheap to set now and very hard to change later.
 > **The network, built 27 September 2026:** shared seas on Cloudflare Durable Objects
 > (`server/`), the bar's sea and private codes, rivals and crew rounds, snapshots at 15 a
 > second into a mirror the renderer draws. Tested with bots on a local server and in a
-> browser. Not yet deployed (needs a Cloudflare login), no round results written to
-> Supabase yet, and no rankings screen.
+> browser, then made to hold thirty ships to a sea. **Deployed 17 October 2026** to
+> `black-flag-sea.axel-garcia94.workers.dev`; a bot sailed the bar's sea there at 15
+> snapshots a second. The `v2-open-sea` previews on Vercel point at it; production does
+> not yet. Not built: round results written to Supabase, and a rankings screen.
 
 **Now.** The world has exactly one player ship (`ship: Player` in `src/sim/types.ts`), and 26
 places in the simulation assume it. Plunder, notoriety and lives are stored on the world,

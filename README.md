@@ -214,9 +214,11 @@ sums headless, in seconds, and says what each phone is sent before and after the
 compression. On this machine: thirty of thirty aboard, a snapshot every 73ms (the
 runtime's timer runs the 30Hz beat a little slow), each phone drawing 0.09s behind.
 
-To put it live: `npx wrangler login`, then `npm run sea:deploy`, and set the URL it prints
-(`wss://black-flag-sea.<account>.workers.dev`) as `VITE_SEA_URL`, or as the default in
-`src/net/link.ts`. Until then the Shared sea button only shows in development.
+The seas are live at `wss://black-flag-sea.axel-garcia94.workers.dev`: `npm run sea:deploy`
+(after `npx wrangler login`) puts a new version there. A page finds them through
+`VITE_SEA_URL`, set on Vercel for the `v2-open-sea` branch's previews only, so far. Without
+it, the Shared sea button only shows in development. The live sea compresses its
+websockets: it answers `permessage-deflate` with the context kept between messages.
 
 ## The server
 
