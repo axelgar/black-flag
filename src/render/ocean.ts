@@ -52,7 +52,7 @@ void main() {
 }`;
 
 const frag = /* glsl */ `
-uniform vec3 uDeep, uShallow, uFoam, uZenith, uHorizon, uSunDir, uSunColor;
+uniform vec3 uDeep, uShallow, uFoam, uZenith, uHorizon, uSunDir, uSunColor, uMist;
 uniform float uTime, uFogNear, uFogFar, uSunI, uDetail;
 uniform sampler2D uShore;
 uniform vec3 uShoreRect;
@@ -60,6 +60,7 @@ uniform vec4 uHulls[${MAX_HULLS}];   // x, z, heading, half-length at the waterl
 uniform vec4 uHullB[${MAX_HULLS}];   // half-beam, -, way (0..1), reach squared
 uniform int uHullN;
 uniform vec2 uRim;                   // where the rim current starts, and the chart's edge
+uniform float uMistK;                // how thick the mist past the edge gets
 varying vec3 vWorld;
 varying vec3 vN;
 varying float vCrest;
@@ -192,9 +193,11 @@ void main() {
   col = mix(col, uFoam * (0.7 + 0.3 * ndl), foam);
 
   float fog = smoothstep(uFogNear, uFogFar, dist);
-  // and past it, a wall of sea mist: the world stops, and says so
-  fog = max(fog, smoothstep(uRim.y - 40.0, uRim.y + 110.0, rr) * 0.9);
-  col = mix(col, uHorizon, fog);
+  // and past it, a wall of sea mist: the world stops, and says so. Seen from the deck it is
+  // the horizon's colour; from high above (the bar's screen), the night round a lit chart.
+  float mist = smoothstep(uRim.y - 40.0, uRim.y + 110.0, rr) * uMistK;
+  fog = max(fog, mist);
+  col = mix(col, mix(uHorizon, uMist, smoothstep(0.0, 0.3, mist)), fog);
   gl_FragColor = vec4(col, 1.0);
   #include <tonemapping_fragment>
   #include <colorspace_fragment>
@@ -253,7 +256,7 @@ export class Ocean {
       uniforms: {
         ...seaUniforms, uCenter: { value: new THREE.Vector2() },
         uDeep: { value: new THREE.Color() }, uShallow: { value: new THREE.Color() }, uFoam: { value: new THREE.Color() },
-        uZenith: { value: new THREE.Color() }, uHorizon: { value: new THREE.Color() },
+        uZenith: { value: new THREE.Color() }, uHorizon: { value: new THREE.Color() }, uMist: { value: new THREE.Color() },
         uSunDir: { value: new THREE.Vector3(0, 1, 0) }, uSunColor: { value: new THREE.Color() }, uSunI: { value: 1 },
         uFogNear: { value: 300 }, uFogFar: { value: 1500 }, uDetail: { value: high ? 1 : 0.6 },
         uShore: { value: this.shore },
@@ -261,7 +264,7 @@ export class Ocean {
         uHullB: { value: Array.from({ length: MAX_HULLS }, () => new THREE.Vector4()) },
         uHullN: { value: 0 },
         uShoreRect: { value: new THREE.Vector3(-SHORE_SIZE / 2, -SHORE_SIZE / 2, SHORE_SIZE) },
-        uRim: { value: new THREE.Vector2(MAP_R - EDGE, MAP_R) },
+        uRim: { value: new THREE.Vector2(MAP_R - EDGE, MAP_R) }, uMistK: { value: 0.9 },
       },
     });
     this.mesh = new THREE.Mesh(high ? polarGrid(190, 160) : polarGrid(130, 112), this.mat);
@@ -315,7 +318,10 @@ export class Ocean {
     this.shore.needsUpdate = true;
   }
 
-  update(t: number, air: Air, cx: number, cz: number) {
+  /** `cx`, `cz` is where the grid is densest: under the camera, or under what it looks at
+   *  from high up. `fog` overrides the weather's, and `mist` the colour past the rim, for a
+   *  camera far above it. */
+  update(t: number, air: Air, cx: number, cz: number, fog: { near: number; far: number } = { near: air.fogNear, far: air.fogFar }, mist: THREE.Color | null = null) {
     const u = this.mat.uniforms;
     u.uTime.value = t;
     u.uAmp.value = air.swell;
@@ -323,8 +329,8 @@ export class Ocean {
     // Snap the grid's centre so its vertices do not swim across the swell as it follows.
     u.uCenter.value.set(Math.round(cx / 8) * 8, Math.round(cz / 8) * 8);
     u.uDeep.value.copy(air.deep); u.uShallow.value.copy(air.shallow); u.uFoam.value.copy(air.foam);
-    u.uZenith.value.copy(air.zenith); u.uHorizon.value.copy(air.horizon);
+    u.uZenith.value.copy(air.zenith); u.uHorizon.value.copy(air.horizon); u.uMist.value.copy(mist ?? air.horizon); u.uMistK.value = mist ? 1 : 0.9;
     u.uSunDir.value.copy(air.sun); u.uSunColor.value.copy(air.sunColor); u.uSunI.value = air.sunIntensity;
-    u.uFogNear.value = air.fogNear; u.uFogFar.value = air.fogFar;
+    u.uFogNear.value = fog.near; u.uFogFar.value = fog.far;
   }
 }

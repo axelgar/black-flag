@@ -21,9 +21,10 @@ import { hudTick, toast } from './ui/hud';
 import * as Input from './ui/input';
 import { buzz } from './ui/haptics';
 import { track, screen } from './analytics';
-import { connect, credentials, tap } from './net/cloud';
+import { asNobody, connect, credentials, tap } from './net/cloud';
 import { Link, type Berth } from './net/link';
 import { RESPAWN } from './net/sea';
+import { watchFrame, watchOff, watchPaint, watchScreen, watching } from './ui/watch';
 
 const ui = document.getElementById('ui')!;
 const app = document.getElementById('app')!;
@@ -369,6 +370,7 @@ const ROUTES: [RegExp, (m: RegExpMatchArray) => S.Screen][] = [
   [/^\/aboard$/, () => enterAboard()],
   [/^\/shipyard$/, () => S.shipyard(view)],
   [/^\/unlock\/(.+)$/, (m) => S.unlock(view, m[1])],
+  [/^\/watch$/, () => watchScreen(view)],
 ];
 
 const path = () => (location.hash.replace(/^#/, '') || '/').replace(/\/+$/, '') || '/';
@@ -389,6 +391,7 @@ function render() {
   if ((p === '/play' || p === '/aboard') && upright.matches) { location.replace(at('/pause')); return; }
   // anywhere but the shared sea, its pause and the Articles is ashore
   if (link && p !== '/aboard' && p !== '/pause' && p !== '/menu') ashore();
+  if (p !== '/watch') watchOff();
   if (p !== here) {
     nav.from = here; here = p; screen(p);
     // The trail: a root starts it again; a screen already on it is gone back to; anything
@@ -496,12 +499,14 @@ function paint() {
   const dt = Math.min(sincePaint, 0.1);
   view.frame(dt, !paused);
   hudTick(world, view, dt);
+  watchPaint(view);
   sincePaint = 0;
 }
 
 function tick(dt: number) {
   view.holdYaw = !paused && Input.steering();
   if (link) { tickSea(dt); return; }
+  if (watching()) { tickWatch(dt); return; }
 
   if (!paused && world && (world.phase === 'fight' || world.phase === 'clear')) {
     acc += dt;
@@ -573,6 +578,14 @@ function tickSea(dt: number) {
   if (due(dt, paused ? IDLE_HZ : PAINT_HZ)) paint();
 }
 
+/** A frame of the bar's screen. Thirty a second: from that high nothing moves fast enough
+ *  to want more, and it halves what the laptop behind the TV has to draw. */
+function tickWatch(dt: number) {
+  world = watchFrame(view, performance.now() / 1000);
+  if (due(dt, WATCH_HZ)) paint();
+}
+const WATCH_HZ = 30;
+
 /* ----------------------------------------------------------------- boot -- */
 
 if (session.reduceMotion) document.documentElement.style.setProperty('--dur', '120ms');
@@ -586,6 +599,10 @@ if (qr) {
   tap(decodeURIComponent(qr[1]), new URLSearchParams(location.search).get('src') === 'nfc' ? 'nfc' : 'link');
   history.replaceState(null, '', `/#/unlock/${qr[1]}`);
 }
+
+// The bar's screen is /watch, and it is nobody: it never signs in, so the TV makes no player.
+if (location.pathname.replace(/\/+$/, '') === '/watch') history.replaceState(null, '', '/#/watch');
+if (location.hash.startsWith('#/watch')) asNobody();
 
 if (!location.hash) location.hash = '#/';
 render();

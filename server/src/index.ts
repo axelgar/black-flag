@@ -3,6 +3,11 @@
 // (src/net/sea.ts) thirty times a second while anyone is aboard. The worker in front
 // only works out which sea a request is for.
 //
+// A screen may look on at a sea, the bar's TV, by saying the watch key (WATCH_KEY, a secret:
+// `npx wrangler secret put WATCH_KEY -c server/wrangler.jsonc`; server/.dev.vars on this
+// machine). It takes no seat, and an empty sea stays asleep under it. With no key set,
+// nobody can watch.
+//
 //   /sea/bar/<n>      the bar's n-th sea (n from 1); its mode is the venue's, BAR_MODE
 //   /sea/code/<CODE>  a private sea: four letters, opened by whoever says how it plays
 
@@ -10,8 +15,8 @@ import { DurableObject } from 'cloudflare:workers';
 import { createRemoteJWKSet, jwtVerify } from 'jose';
 import { STARTER } from '../../src/data/ships';
 import { itemOf } from '../../src/net/items';
-import { WIRE, type FromSea, type Mode, type Nope, type ToSea } from '../../src/net/protocol';
-import { Sea } from '../../src/net/sea';
+import { WIRE, type FromSea, type Mode, type Nope, type ToSea, type Watch } from '../../src/net/protocol';
+import { CAP, LOBBY, Sea } from '../../src/net/sea';
 
 export interface Env {
   SEA: DurableObjectNamespace<SeaRoom>;
@@ -19,6 +24,7 @@ export interface Env {
   SUPABASE_KEY: string;     // the publishable key: it is sent with the player's own token
   VENUE?: string;
   BAR_MODE?: string;
+  WATCH_KEY?: string;       // a secret: what a screen says to look on
 }
 
 export default {
@@ -39,10 +45,13 @@ let jwks: ReturnType<typeof createRemoteJWKSet> | null = null;
 
 /** A private sea's code is forgotten this long after it was last opened, if nobody is aboard. */
 const FORGET = 7 * 24 * 3600 * 1000;
+/** Screens looking on at one sea: the bar's TV, and one or two more. */
+const WATCHERS = 4;
 
 export class SeaRoom extends DurableObject<Env> {
   private sea: Sea | null = null;
   private socks = new Map<WebSocket, string | null>();   // every socket, and its seat once aboard
+  private watchers = new Set<WebSocket>();                // the screens looking on
   private timer: ReturnType<typeof setInterval> | null = null;
   private last = 0;
 
@@ -63,6 +72,8 @@ export class SeaRoom extends DurableObject<Env> {
   private async hear(ws: WebSocket, data: string | ArrayBuffer, code: string, barMode: Mode | null) {
     let m: ToSea;
     try { m = JSON.parse(typeof data === 'string' ? data : new TextDecoder().decode(data)); } catch { return; }
+    if (this.watchers.has(ws)) return;
+    if (m.t === 'watch') return this.watch(ws, m, code, barMode);
     if (m.t === 'in') {
       const seat = this.socks.get(ws);
       if (seat) this.sea?.helm(seat, m);
@@ -97,6 +108,34 @@ export class SeaRoom extends DurableObject<Env> {
     this.start();
   }
 
+  /** A screen asks to look on. It is sent what every phone aboard is, but its own ship. */
+  private async watch(ws: WebSocket, m: Watch, code: string, barMode: Mode | null) {
+    if (this.socks.get(ws)) return;
+    if (m.v !== WIRE) return this.nope(ws, 'version');
+    if (!(await this.keyed(m.key))) {
+      // a second's pause for every wrong key: guessing one is slow work
+      await new Promise((r) => setTimeout(r, 1000));
+      return this.nope(ws, 'key');
+    }
+    const mode = this.sea?.mode ?? barMode ?? (await this.ctx.storage.get<Mode>('mode'));
+    if (!mode) return this.nope(ws, 'unknown');
+    if (this.watchers.size >= WATCHERS) return this.nope(ws, 'full');
+    this.watchers.add(ws);
+    const sea = this.sea;
+    this.send(ws, { t: 'welcome', v: WIRE, code: sea?.code ?? code, mode, cap: sea?.cap ?? CAP, watch: true });
+    if (sea?.world) this.send(ws, sea.roster());
+    this.send(ws, sea ? sea.round() : { t: 'round', stage: 'lobby', mode, left: LOBBY, n: 0, scores: [] });
+  }
+
+  /** Is this the watch key? Compared in constant time, both sides hashed to one length. */
+  private async keyed(key: unknown) {
+    const want = this.env.WATCH_KEY;
+    if (!want || typeof key !== 'string' || !key) return false;
+    const enc = new TextEncoder();
+    const [a, b] = await Promise.all([key, want].map((k) => crypto.subtle.digest('SHA-256', enc.encode(k))));
+    return crypto.subtle.timingSafeEqual(a, b);
+  }
+
   /** Who this token belongs to, the name they sail under, and what they own. */
   private async who(token: string) {
     const base = this.env.SUPABASE_URL;
@@ -127,6 +166,8 @@ export class SeaRoom extends DurableObject<Env> {
     this.last = now;
     for (const m of sea.step(dt)) {
       const s = JSON.stringify(m);
+      // a screen looking on is sent it all as it is: it has no ship of its own
+      for (const ws of this.watchers) { try { ws.send(s); } catch { /* closing */ } }
       if (m.t !== 's') { for (const [ws, seat] of this.socks) if (seat) { try { ws.send(s); } catch { /* closing */ } } continue; }
       // A snapshot is the same for everyone aboard but for each phone's own ship, whose
       // guns and takings go on the end: written once, finished phone by phone.
@@ -151,6 +192,7 @@ export class SeaRoom extends DurableObject<Env> {
   private gone(ws: WebSocket) {
     const seat = this.socks.get(ws);
     this.socks.delete(ws);
+    this.watchers.delete(ws);
     if (seat && ![...this.socks.values()].includes(seat)) this.sea?.leave(seat);
   }
 

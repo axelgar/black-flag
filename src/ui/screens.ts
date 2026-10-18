@@ -3,6 +3,7 @@
 // loop can stop painting a picture nobody can see. Navigation is delegated: put
 // data-go="#/path" on anything.
 
+import { markOf } from '../data/colors';
 import { CLASSES, CLASS_IDS } from '../data/enemies';
 import { LEGENDS } from '../data/legends';
 import { heatFlags } from '../data/notoriety';
@@ -737,10 +738,12 @@ export function seaTick(link: Link | null) {
     const mine = ranked.findIndex((x) => x.s.id === you);
     const shown = mine >= fit ? [...ranked.slice(0, fit - 1), ranked[mine]] : ranked.slice(0, fit);
     const more = ranked.length - shown.length;
+    // each captain's mark, as the bar's screen rings her: a guest finds her own ship on it by this
+    const mark = (id: number) => { const m = markOf(link.roster?.seats.find((x) => x.id === id && !x.left)?.c ?? -1); return `<i class="dot${m.dashed ? ' dashed' : ''}" style="--c:${m.color}"></i>`; };
     const rows = shown.map(({ s, i }) => `
       <div class="row${s.id === you ? ' you' : ''}">
         <span class="k">${r.stage === 'results' ? i + 1 : '·'}</span>
-        <span class="c">${esc(s.captain)}<small>${esc(shipById(s.ship).name)}</small></span>
+        <span class="c">${mark(s.id)}${esc(s.captain)}<small>${esc(shipById(s.ship).name)}</small></span>
         <span class="v">${r.stage === 'results' ? `${reales(s.plunder)}` : ''}</span>
       </div>`).join('');
     t = `${head}<div class="rows">${rows}</div>${more > 0 ? `<div class="more">and ${more} more aboard</div>` : ''}`;

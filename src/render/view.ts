@@ -2,7 +2,9 @@
 // every frame and never writes to it. The simulation does not know this file exists.
 //
 // Modes are camera and scenery, not screens: 'title' and 'shipyard' orbit a ship at
-// anchor off Nassau, 'port' looks at the town from the harbour, 'play' is the chase.
+// anchor off Nassau, 'port' looks at the town from the harbour, 'play' is the chase, and
+// 'watch' is the bar's screen: the whole chart from high in the south, every captain
+// ringed in her own mark.
 
 import * as THREE from 'three';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
@@ -15,7 +17,8 @@ import { LEGENDS } from '../data/legends';
 import { SHIPS, shipById } from '../data/ships';
 import { recipeOf } from '../data/upgrades';
 import type { HullRecipe } from '../data/types';
-import type { GameMap } from '../sim/map';
+import { MAP_R, type GameMap } from '../sim/map';
+import { markOf } from '../data/colors';
 import { sideVec } from '../sim/combat';
 import { theirs, you, type Foe, type GameEvent, type Player, type World } from '../sim/types';
 import { Air, type Look } from './atmosphere';
@@ -31,7 +34,7 @@ import { ProceduralShip, fadeWarmers, prewarmShips, setShipLights, setShipTime, 
 import type { ShipModel } from './ships/ShipModel';
 import { STRIKE_WINDOW, BOARD_TIME, ESCAPE_TIME } from '../sim/combat';
 
-export type Mode = 'title' | 'shipyard' | 'port' | 'play' | 'none';
+export type Mode = 'title' | 'shipyard' | 'port' | 'play' | 'watch' | 'none';
 export type Tier = 'low' | 'high';
 
 export function detectTier(): Tier {
@@ -50,6 +53,14 @@ interface Hulk { m: ShipModel; t: number; x: number; z: number; h: number; board
 
 const WHITE = new THREE.Color(1, 1, 1);
 const ORIGIN = new THREE.Vector3();
+const FOV = 42;
+// The bar's screen: a long lens from far off, so the far side of the chart is not squashed
+// small behind the near, looking down steeply enough to see between the islands.
+const WATCH_FOV = 30;
+const WATCH_PITCH = 1.08;          // radians below the horizon, about 62°
+const RING = 0.021;                // a captain's ring, at the least: this share of the screen's height
+// past the chart's rim, seen from the bar's screen: the night round a lit table
+const NIGHT = new THREE.Color('#061219');
 
 export class View {
   renderer: THREE.WebGLRenderer;
@@ -119,7 +130,7 @@ export class View {
     prewarmShips([...SHIPS.map(recipeOf), ...Object.values(CLASSES).map((c) => c.recipe), ...LEGENDS.map((l) => l.recipe)]);
     this.scene.fog = new THREE.Fog('#CFE0DF', 380, 1500);
 
-    this.camera = new THREE.PerspectiveCamera(42, 1, 0.5, 5000);
+    this.camera = new THREE.PerspectiveCamera(FOV, 1, 0.5, 5000);
 
     this.sun = new THREE.DirectionalLight('#fff', 2);
     this.sun.castShadow = high;
@@ -177,7 +188,7 @@ export class View {
    */
   private prewarm() {
     const M = this.marks, shown: THREE.Object3D[] = [];
-    for (const pool of [M.foeRings, M.ownRings, M.prizeRings]) { pool.begin(); pool.get(); }
+    for (const pool of [M.foeRings, M.ownRings, M.prizeRings, M.captainRings]) { pool.begin(); pool.get(); }
     M.warm();
     this.warmers ??= fadeWarmers();
     this.scene.add(this.warmers);
@@ -185,7 +196,7 @@ export class View {
     this.renderer.compileAsync(this.scene, this.camera).catch(() => {});
     for (const o of shown) o.visible = false;
     this.scene.remove(this.warmers!);
-    for (const pool of [M.foeRings, M.ownRings, M.prizeRings]) { pool.begin(); pool.end(); }
+    for (const pool of [M.foeRings, M.ownRings, M.prizeRings, M.captainRings]) { pool.begin(); pool.end(); }
   }
   /** Things that exist only to have their programs compiled early, and are never drawn. */
   private warmers: THREE.Object3D | null = null;
@@ -255,7 +266,8 @@ export class View {
 
   setLook(look: Look, snap = false) {
     if (snap) this.air.snap(look); else this.air.set(look);
-    this.fx.rain.on = look === 'storm' && !this.reduced;
+    // rain is drawn round the camera's mark: from as high as the bar's screen, a smudge
+    this.fx.rain.on = look === 'storm' && !this.reduced && this.mode !== 'watch';
   }
 
   /** The seed of the chart the islands are built from, if any yet. */
@@ -278,8 +290,89 @@ export class View {
     const was = this.mode;
     this.mode = mode;
     if (mode !== 'play') this.marks.beacon.visible = false;
-    if (was === 'none') this.snapCamera();
+    if ((mode === 'watch') !== (was === 'watch')) this.lens(mode === 'watch');
+    if (was === 'none' || mode === 'watch' || was === 'watch') this.snapCamera();
   }
+
+  /* ---------------------------------------------------- the bar's screen -- */
+
+  /** On the bar's screen, the share of the width on the right kept clear for the standings. */
+  watchRoom = 0.3;
+  /** How long a captain who goes down is out, seconds: her ring counts her back. */
+  refloatIn = 5;
+  private watchMarks = new Map<number, number>();
+  private downAt = new Map<number, number>();
+  private watchFit = { key: '', d: 3000, ahead: 0 };
+
+  /** Each captain's mark (data/colors.ts), by her place in the world. */
+  setMarks(marks: Map<number, number>) { this.watchMarks = marks; }
+
+  /** The bar's screen looks through a long lens from high up, everything else through the
+   *  chase's; the shadows stretch over whatever each one sees. */
+  private lens(watch: boolean) {
+    const c = this.camera;
+    c.fov = watch ? WATCH_FOV : FOV;
+    if (!watch) { c.near = 0.5; c.far = 5000; c.filmOffset = 0; }
+    this.watchFit.key = '';
+    const sc = this.sun.shadow.camera, half = watch ? MAP_R + 80 : 110;
+    sc.left = -half; sc.right = half; sc.top = half; sc.bottom = -half; sc.far = watch ? 6000 : 600;
+    sc.updateProjectionMatrix();
+    this.sun.shadow.normalBias = watch ? 1.5 : 0.4;
+    this.fx.rain.on = !watch && this.air.look === 'storm' && !this.reduced;
+    this.resize();
+  }
+
+  /**
+   * Where the bar's screen looks from: as close as the whole chart allows, with the chart
+   * centred top to bottom in the frame and, across it, in the part the standings leave
+   * free. A circle looks the same from any bearing, so the sway round it keeps the fit.
+   */
+  private fitWatch() {
+    const c = this.camera, room = clamp(this.watchRoom, 0, 0.5), f = this.watchFit;
+    const key = `${c.aspect.toFixed(4)}:${room.toFixed(3)}`;
+    if (f.key === key) return f;
+    const cam = new THREE.PerspectiveCamera(WATCH_FOV, c.aspect, 1, 50000), v = new THREE.Vector3();
+    const R = MAP_R + 25, P = WATCH_PITCH;
+    const span = (d: number, ahead: number) => {
+      cam.position.set(0, Math.sin(P) * d, ahead + Math.cos(P) * d);
+      cam.lookAt(0, 0, ahead);
+      cam.updateMatrixWorld();
+      let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+      for (let i = 0; i < 96; i++) {
+        const a = (i / 96) * Math.PI * 2;
+        v.set(Math.cos(a) * R, 0, Math.sin(a) * R).project(cam);
+        x0 = Math.min(x0, v.x); x1 = Math.max(x1, v.x); y0 = Math.min(y0, v.y); y1 = Math.max(y1, v.y);
+      }
+      return { w: x1 - x0, h: y1 - y0, cy: (y0 + y1) / 2 };
+    };
+    // the mark the camera looks at slides north or south until the chart sits centred
+    const centre = (d: number) => {
+      let lo = -R, hi = R;
+      for (let i = 0; i < 24; i++) { const m = (lo + hi) / 2; if (span(d, m).cy > 0) hi = m; else lo = m; }
+      return (lo + hi) / 2;
+    };
+    const wide = 2 * (1 - room) - 0.06, tall = 2 - 0.08;
+    let lo = 200, hi = 40000;
+    for (let i = 0; i < 28; i++) {
+      const d = (lo + hi) / 2, s = span(d, centre(d));
+      if (s.w <= wide && s.h <= tall) hi = d; else lo = d;
+    }
+    f.d = hi; f.ahead = centre(hi); f.key = key;
+    // the nearest water is a long way off: a near plane out there keeps the rings, a hand's
+    // breadth above the swell, from sinking into it
+    c.near = hi * 0.35; c.far = hi * 2.2;
+    c.filmOffset = room * c.aspect * Math.tan(THREE.MathUtils.degToRad(WATCH_FOV / 2)) * c.getFilmWidth();
+    c.updateProjectionMatrix();
+    return f;
+  }
+
+  /** How many metres of sea a CSS pixel covers where the camera is looking. */
+  metresPerPixel() {
+    return (2 * this.camera.position.distanceTo(this.camLook) * Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2))) / this.cssH;
+  }
+
+  /** A captain's ring on the bar's screen, metres: round her hull, and never too small to see. */
+  ringOf(o: Player) { return Math.max(o.len * 0.75, this.metresPerPixel() * this.cssH * RING); }
 
   setWorld(w: World | null) {
     if (w === this.world) return;
@@ -296,6 +389,7 @@ export class View {
     this.marks.clear();
     this.flotsam.clear();
     this.becalm();
+    this.downAt.clear();
     this.govT = -3;
     if (w) {
       this.setMap(w.map);
@@ -381,7 +475,8 @@ export class View {
     for (const e of events) {
       const x = e.x as number, z = e.y as number;
       // Smoke and splashes are for everyone's ship; the shake and the flashes only for yours.
-      const other = theirs(w, e);
+      // On the bar's screen, no ship is the screen's own.
+      const other = this.mode === 'watch' || theirs(w, e);
       switch (e.k) {
         case 'cannon': {
           this.fx.muzzle(x, Y + 0.6, z, e.dx as number, e.dy as number);
@@ -411,7 +506,8 @@ export class View {
         case 'fireship': this.fx.explode(x, 2, z, true, t); this.shake(0.8); break;
         case 'port-down': this.fx.explode(x, 4, z, false, t); break;
         case 'refit': if (!other) this.whiteout(0.8); break;
-        case 'dead': if (!other) this.whiteout(0.5, '#8E2B24'); break;
+        case 'dead': if (!other) this.whiteout(0.5, '#8E2B24'); if (typeof e.p === 'number') this.downAt.set(e.p, this.seaT); break;
+        case 'refloat': if (typeof e.p === 'number') this.downAt.delete(e.p); break;
         case 'alert': { const m = this.foes.get(e.id as number); if (m) this.marks.alert(e.id as number, x, m.height + 6, z); break; }
         case 'legend-down': this.shake(1.4); this.whiteout(0.35, '#FFD36A'); break;
         default: break;
@@ -463,7 +559,7 @@ export class View {
     const w = this.world;
     this.wakes.begin();
     this.ocean.beginHulls();
-    if (this.mode === 'play' && w) this.syncWorld(w, dt, t);
+    if ((this.mode === 'play' || this.mode === 'watch') && w) this.syncWorld(w, dt, t);
     else { if (this.player) this.player.root.visible = false; this.flotsam.clear(); this.becalm(); }
     this.syncShowcase(dt, t);
     this.hulksStep(dt, t);
@@ -476,6 +572,14 @@ export class View {
     this.renderer.toneMappingExposure = a.exposure * (1 + this.lightning * 0.6);
     const fog = this.scene.fog as THREE.Fog;
     fog.color.copy(a.horizon); fog.near = a.fogNear; fog.far = a.fogFar;
+    const watch = this.mode === 'watch';
+    if (watch) {
+      // From this high the whole chart is near. The haze starts past its far rim, or across
+      // it when the weather is the haze: thick in fog, less in a storm, none on a clear day.
+      const d = this.camera.position.distanceTo(this.camLook), haze = clamp(1 - a.fogFar / 1500, 0, 0.8);
+      fog.near = d - MAP_R + (1 - haze) * 2.4 * MAP_R;
+      fog.far = fog.near + 2600 * (1 - haze * 0.55);
+    }
     // Lanterns and stern windows: a glow by day, bright at dusk and in weather.
     const low = Math.max(0, 1 - a.sun.y * 1.6), dim = Math.max(0, 1 - a.sunIntensity / 2.6);
     this.shade.copy(a.hemiSky).lerp(WHITE, 0.55).multiplyScalar(clamp(0.35 + a.sunIntensity * 0.25, 0.4, 1));
@@ -486,10 +590,12 @@ export class View {
     this.hemi.groundColor.copy(a.hemiGround);
     this.hemi.intensity = a.hemi * (1 + this.lightning * 2);
     const focus = this.camLook;
-    this.sun.position.copy(focus).addScaledVector(a.sun, 300);
+    this.sun.position.copy(focus).addScaledVector(a.sun, watch ? 3000 : 300);
     this.sun.target.position.copy(focus);
-    this.ocean.endHulls(this.camera.position.x, this.camera.position.z);
-    this.ocean.update(t, a, this.camera.position.x, this.camera.position.z);
+    // the sea's grid is densest under the camera, or, from high above, under what it looks at
+    const grid = watch ? this.camLook : this.camera.position;
+    this.ocean.endHulls(grid.x, grid.z);
+    this.ocean.update(t, a, grid.x, grid.z, fog, watch ? NIGHT : null);
     this.sky.update(t, a, this.camera.position);
     this.fx.update(dt, t, this.camLook);
     this.islands.update(t);
@@ -529,38 +635,23 @@ export class View {
     this.balls.count = 0;
     this.shells.count = 0;
     const M = this.marks;
-    for (const pool of [M.foeRings, M.ownRings, M.prizeRings]) { pool.begin(); pool.end(); }
+    for (const pool of [M.foeRings, M.ownRings, M.prizeRings, M.captainRings]) { pool.begin(); pool.end(); }
     for (const f of M.fans) f.visible = false;
     M.reticle.visible = false;
     M.beacon.visible = false;
   }
 
   private syncWorld(w: World, dt: number, t: number) {
+    // On the bar's screen no ship is the screen's own: every captain is drawn as another's.
+    const watch = this.mode === 'watch';
     const s = you(w);
-    const p = this.player!;
-    p.root.visible = true;
-    const r = ride(s.x, s.y, s.h, s.len, s.beam, t);
-    const heel = clamp(-s.rot * s.v * 0.035, -0.2, 0.2);
-    const lost = w.phase === 'lost';
-    p.pose({
-      x: s.x, z: s.y, h: s.h, heave: r.heave - (lost ? 3 : 0), pitch: r.pitch, roll: r.roll + heel + (lost ? 0.4 : 0),
-      fill: clamp(s.sail * (s.v / s.maxSpeed + 0.4), 0.15, 1), struck: false, damage: 1 - s.hull / s.hullMax, t,
-    });
-    // blink while she has grace
-    p.root.visible = !(s.invuln > 0 && Math.floor(t * 12) % 2 === 0 && w.phase !== 'lost');
-    p.ready?.(w.phase !== 'lost');
-    const fx = Math.cos(s.h), fz = Math.sin(s.h);
-    this.wakes.track(s.id, s.x - fx * s.len * 0.45, s.y - fz * s.len * 0.45, s.beam, s.v, dt, t);
-    if (!lost) this.ocean.hull(s.x, s.y, s.h, s.len, s.beam, s.v / s.maxSpeed);
-    this.fx.bowSpray(s.x + fx * s.len * 0.5, r.heave + 0.5, s.y + fz * s.len * 0.5, s.v);
-    const dmg = 1 - s.hull / s.hullMax;
-    if (dmg > 0.35) this.fx.burn(s.x, r.heave + 3, s.y, dmg, dt);
+    if (watch) { if (this.player) this.player.root.visible = false; } else this.syncOwn(w, s, dt, t);
 
     // the other captains. A seat whose captain has gone ashore is open water (it was drawn
     // as a wreck burning where she was last seen), and a seat taken again may be taken in
     // another ship.
     for (const o of w.players) {
-      if (o === s) continue;
+      if (o === s && !watch) continue;
       let m = this.crew.get(o.id);
       if (m && (o.left || this.crewShip.get(o.id) !== o.shipId)) { this.drop(m); this.crew.delete(o.id); m = undefined; }
       if (o.left) continue;
@@ -593,6 +684,28 @@ export class View {
     this.syncShots(w, t);
     this.syncMarks(w, t);
     this.flotsam.sync(w, t, this.fx, this.scene.fog as THREE.Fog);
+  }
+
+  /** Your own ship, under the chase camera. */
+  private syncOwn(w: World, s: Player, dt: number, t: number) {
+    const p = this.player!;
+    p.root.visible = true;
+    const r = ride(s.x, s.y, s.h, s.len, s.beam, t);
+    const heel = clamp(-s.rot * s.v * 0.035, -0.2, 0.2);
+    const lost = w.phase === 'lost';
+    p.pose({
+      x: s.x, z: s.y, h: s.h, heave: r.heave - (lost ? 3 : 0), pitch: r.pitch, roll: r.roll + heel + (lost ? 0.4 : 0),
+      fill: clamp(s.sail * (s.v / s.maxSpeed + 0.4), 0.15, 1), struck: false, damage: 1 - s.hull / s.hullMax, t,
+    });
+    // blink while she has grace
+    p.root.visible = !(s.invuln > 0 && Math.floor(t * 12) % 2 === 0 && w.phase !== 'lost');
+    p.ready?.(w.phase !== 'lost');
+    const fx = Math.cos(s.h), fz = Math.sin(s.h);
+    this.wakes.track(s.id, s.x - fx * s.len * 0.45, s.y - fz * s.len * 0.45, s.beam, s.v, dt, t);
+    if (!lost) this.ocean.hull(s.x, s.y, s.h, s.len, s.beam, s.v / s.maxSpeed);
+    this.fx.bowSpray(s.x + fx * s.len * 0.5, r.heave + 0.5, s.y + fz * s.len * 0.5, s.v);
+    const dmg = 1 - s.hull / s.hullMax;
+    if (dmg > 0.35) this.fx.burn(s.x, r.heave + 3, s.y, dmg, dt);
   }
 
   /** Another captain's ship, sailing as yours does; down by the head once she is out. */
@@ -681,6 +794,7 @@ export class View {
     this.shells.instanceMatrix.needsUpdate = true;
 
     // prizes: a ring counting down her window, filling as you board her
+    const watch = this.mode === 'watch';
     const sh = you(w);
     for (const e of w.foes) {
       if (e.state !== 'struck' || e.strikeT <= 0) continue;
@@ -689,11 +803,21 @@ export class View {
       ring.scale.setScalar(e.len * 0.5 + sh.len * 0.5 * 0.85 + 12);
       const u = (ring.material as THREE.ShaderMaterial).uniforms;
       u.uProg.value = e.strikeT / STRIKE_WINDOW;
-      u.uFill.value = sh.board && sh.board.id === e.id ? sh.board.t / BOARD_TIME : 0;
+      u.uFill.value = !watch && sh.board && sh.board.id === e.id ? sh.board.t / BOARD_TIME : 0;
       u.uAlpha.value = 0.75 + Math.sin(t * 6) * 0.2;
       u.uDash.value = 0;
     }
     M.foeRings.end(); M.ownRings.end(); M.prizeRings.end();
+
+    if (watch) {
+      // the bar's screen has no guns of its own to aim: every captain's mark instead
+      this.captainMarks(w, t);
+      for (const f of M.fans) f.visible = false;
+      M.reticle.visible = false;
+      M.beacon.visible = false;
+      return;
+    }
+    M.captainRings.begin(); M.captainRings.end();
 
     // broadside fans: brighter when loaded, brighter still when something is in the arc
     const range = sh.stats.range;
@@ -738,6 +862,28 @@ export class View {
     }
   }
 
+  /** On the bar's screen, a ring on the water round every captain in her own mark, never too
+   *  small to see; dim while she is down, its arc counting her back afloat. */
+  private captainMarks(w: World, t: number) {
+    const pool = this.marks.captainRings;
+    pool.begin();
+    for (const o of w.players) {
+      if (o.left) continue;
+      const { color, dashed } = markOf(this.watchMarks.get(o.id) ?? 0);
+      const ring = pool.get();
+      ring.position.set(o.x, 0, o.y);
+      ring.scale.setScalar(this.ringOf(o));
+      const u = (ring.material as THREE.ShaderMaterial).uniforms;
+      u.uColor.value.set(color);
+      u.uDash.value = dashed ? 9 : 0;
+      const down = this.downAt.get(o.id);
+      u.uProg.value = !o.out ? 1 : down == null ? 0 : clamp((this.seaT - down) / this.refloatIn, 0, 1);
+      u.uAlpha.value = o.out ? 0.7 : 1;
+      u.uTime.value = t;
+    }
+    pool.end();
+  }
+
   private hulksStep(dt: number, t: number) {
     this.hulks = this.hulks.filter((h) => {
       h.t += dt;
@@ -779,6 +925,17 @@ export class View {
     if (this.eyeAt) return { pos: this.eyeAt.pos.clone(), look: this.eyeAt.look.clone(), rate: 30 };
     const w = this.world;
     const aspect = this.camera.aspect;
+    if (this.mode === 'watch' && this.map) {
+      const f = this.fitWatch();
+      // a sway of a few degrees either way, over minutes: the picture lives, and a TV left on
+      // all night keeps no ghost of the islands
+      const yaw = this.reduced ? 0 : Math.sin((this.seaT * Math.PI * 2) / 240) * 0.07;
+      const bx = Math.sin(yaw), bz = Math.cos(yaw);
+      const look = new THREE.Vector3(bx * f.ahead, 0, bz * f.ahead);
+      const pos = look.clone().add(new THREE.Vector3(bx * Math.cos(WATCH_PITCH) * f.d, Math.sin(WATCH_PITCH) * f.d, bz * Math.cos(WATCH_PITCH) * f.d));
+      this.camYaw = Math.atan2(-bz, -bx);
+      return { pos, look, rate: 1.5 };
+    }
     if (this.mode === 'play' && w) {
       const s = you(w);
       // Swing round behind her — but hold the bearing while a thumb is on the stick (see

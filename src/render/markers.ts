@@ -58,6 +58,37 @@ void main() {
   #include <colorspace_fragment>
 }`;
 
+// A captain's mark on the bar's screen, read from across a room: a bright band, a soft
+// glow either side of it and a faint wash inside. The second set of marks is dashed, and
+// turns slowly. While she is down the band dims to its arc, which fills as she comes back.
+const haloFrag = /* glsl */ `
+uniform vec3 uColor;
+uniform float uProg, uAlpha, uTime, uDash;
+varying vec2 vUv;
+void main() {
+  vec2 c = vUv - 0.5;
+  float r = length(c) * 2.0;
+  float a = dot(c, c) < 1e-10 ? 0.0 : atan(c.x, -c.y) / 6.28318 + 0.5;
+  float band = smoothstep(0.7, 0.76, r) * (1.0 - smoothstep(0.9, 0.95, r));
+  float glow = exp(-pow((r - 0.83) * 6.0, 2.0));
+  float wash = (1.0 - smoothstep(0.3, 0.74, r)) * 0.08;
+  float d = fract(a * uDash - uTime * 0.05);
+  float on = uDash > 0.0 ? smoothstep(0.0, 0.06, d) * (1.0 - smoothstep(0.5, 0.56, d)) : 1.0;
+  float arc = step(a, uProg);
+  float alpha = (band * on * mix(0.22, 1.0, arc) + glow * on * arc * 0.55 + wash * arc) * uAlpha;
+  if (alpha < 0.01) discard;
+  gl_FragColor = vec4(uColor * (1.0 + band * arc * 0.5), alpha);
+  #include <tonemapping_fragment>
+  #include <colorspace_fragment>
+}`;
+
+export function haloMaterial() {
+  return new THREE.ShaderMaterial({
+    vertexShader: ringVert, fragmentShader: haloFrag, transparent: true, depthWrite: false, side: THREE.DoubleSide,
+    uniforms: { ...seaUniforms, uColor: { value: new THREE.Color('#ffffff') }, uProg: { value: 1 }, uAlpha: { value: 1 }, uDash: { value: 0 }, uTime: { value: 0 } },
+  });
+}
+
 export function ringMaterial(color: string) {
   return new THREE.ShaderMaterial({
     vertexShader: ringVert, fragmentShader: ringFrag, transparent: true, depthWrite: false, side: THREE.DoubleSide,
@@ -73,11 +104,11 @@ class RingPool {
   private items: THREE.Mesh[] = [];
   private used = 0;
   private geo = new THREE.PlaneGeometry(2, 2, 20, 20).rotateX(-Math.PI / 2);
-  constructor(private parent: THREE.Object3D, private color: string) {}
+  constructor(private parent: THREE.Object3D, private make: () => THREE.ShaderMaterial) {}
   begin() { this.used = 0; }
   get(): THREE.Mesh {
     let m = this.items[this.used];
-    if (!m) { m = new THREE.Mesh(this.geo, ringMaterial(this.color)); m.renderOrder = 4; this.parent.add(m); this.items.push(m); }
+    if (!m) { m = new THREE.Mesh(this.geo, this.make()); m.renderOrder = 4; this.parent.add(m); this.items.push(m); }
     this.used++;
     m.visible = true;
     return m;
@@ -113,6 +144,8 @@ function fanGeometry(spread: number, segs = 16): THREE.BufferGeometry {
 export class Markers {
   group = new THREE.Group();
   foeRings: RingPool; ownRings: RingPool; prizeRings: RingPool;
+  /** Every captain's mark, on the bar's screen. */
+  captainRings: RingPool;
   fans: THREE.Mesh[];
   reticle: THREE.Mesh;
   beacon: THREE.Group;
@@ -123,9 +156,10 @@ export class Markers {
   private spare: THREE.Sprite[] = [];
 
   constructor() {
-    this.foeRings = new RingPool(this.group, '#FF5A3C');
-    this.ownRings = new RingPool(this.group, '#FFD36A');
-    this.prizeRings = new RingPool(this.group, '#F6F1E1');
+    this.foeRings = new RingPool(this.group, () => ringMaterial('#FF5A3C'));
+    this.ownRings = new RingPool(this.group, () => ringMaterial('#FFD36A'));
+    this.prizeRings = new RingPool(this.group, () => ringMaterial('#F6F1E1'));
+    this.captainRings = new RingPool(this.group, haloMaterial);
 
     this.fans = [-1, 1].map((side) => {
       const m = new THREE.Mesh(fanGeometry(0.34), new THREE.ShaderMaterial({

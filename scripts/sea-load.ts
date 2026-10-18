@@ -4,10 +4,13 @@
 // tokens of their own and sail with the test bot's seamanship. Nothing touches the live
 // project, so a thousand of these leave no "Bot …" players to clear out.
 //
-//   npm run sea:load -- [captains] [--for 60] [--port 8788]
+//   npm run sea:load -- [captains] [--for 60] [--port 8788] [--watch] [--key KEY]
 //
 // It prints what the phones saw: how many came aboard, how evenly snapshots arrived, how
-// far behind each phone drew, and how much each was sent.
+// far behind each phone drew, and how much each was sent. With --watch, the bar's screen
+// looks on too, from before the first captain is aboard, and a screen with the wrong key
+// tries to. --key sets the watch key, to put the bar's screen up against this sea yourself
+// (VITE_SEA_URL=ws://127.0.0.1:8788 npm run dev, then /watch).
 
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:http';
@@ -26,6 +29,8 @@ const flag = (k: string, d: string) => { const i = args.indexOf(`--${k}`); retur
 const N = Number(args.find((a, i) => /^\d+$/.test(a) && !args[i - 1]?.startsWith('--')) ?? 30);
 const SECS = Number(flag('for', '60'));
 const PORT = Number(flag('port', '8788'));
+const WATCH = args.includes('--watch');
+const KEY = flag('key', crypto.randomUUID());
 const AUTH = PORT + 1000;
 const base = `http://127.0.0.1:${AUTH}`;
 
@@ -33,6 +38,10 @@ const base = `http://127.0.0.1:${AUTH}`;
 
 const { publicKey, privateKey } = await generateKeyPair('ES256');
 const jwk = { ...(await exportJWK(publicKey)), kid: 'load', alg: 'ES256', use: 'sig' };
+// names the bar might sail under, so the bar's screen has real ones to place
+const NAMES = ['Salt Nell', 'Red Jack', 'Grim Bart', 'Iron Cara', 'Mad Ines', 'Calico Tom', 'Black Sal', 'One-Eyed Rui',
+  'Bonny Mae', 'Long Pete', 'Sweet Lou', 'Dread Ana', 'Hook Hal', 'Rum Rosa', 'Cutlass Kit', 'Silver Mo'];
+const named = new Map<string, string>();
 const auth = createServer((req, res) => {
   if (req.url === '/auth/v1/.well-known/jwks.json') { res.setHeader('content-type', 'application/json'); res.end(JSON.stringify({ keys: [jwk] })); return; }
   if (req.url === '/rest/v1/rpc/me' && req.method === 'POST') {
@@ -40,7 +49,8 @@ const auth = createServer((req, res) => {
     const token = String(req.headers.authorization ?? '').replace(/^Bearer /, '');
     const sub = JSON.parse(Buffer.from(token.split('.')[1] ?? '', 'base64url').toString() || '{}').sub as string;
     res.setHeader('content-type', 'application/json');
-    res.end(JSON.stringify({ id: sub, captain: `Load ${sub.slice(0, 4)}`, items: SHIPS.map((s) => itemOf(s.id)) }));
+    if (!named.has(sub)) named.set(sub, named.size < NAMES.length ? NAMES[named.size] : `Load ${sub.slice(0, 4)}`);
+    res.end(JSON.stringify({ id: sub, captain: named.get(sub), items: SHIPS.map((s) => itemOf(s.id)) }));
     req.resume();
     return;
   }
@@ -56,7 +66,7 @@ const token = (sub: string) => new SignJWT({ role: 'authenticated' })
 
 const state = mkdtempSync(join(tmpdir(), 'black-flag-load-'));
 const sea = spawn('npx', ['wrangler', 'dev', '-c', 'server/wrangler.jsonc', '--ip', '127.0.0.1', '--port', String(PORT),
-  '--var', `SUPABASE_URL:${base}`, '--persist-to', state], { stdio: ['ignore', 'pipe', 'pipe'], detached: true });
+  '--var', `SUPABASE_URL:${base}`, '--var', `WATCH_KEY:${KEY}`, '--persist-to', state], { stdio: ['ignore', 'pipe', 'pipe'], detached: true });
 let log = '';
 sea.stdout.on('data', (d) => { log += d; });
 sea.stderr.on('data', (d) => { log += d; });
@@ -117,7 +127,43 @@ async function captain(i: number) {
   setTimeout(() => { clearInterval(helm); ws.close(1000, 'ashore'); }, SECS * 1000);
 }
 
-console.log(`${N} captains aboard a sea on 127.0.0.1:${PORT} for ${SECS}s…`);
+/* ---------------------------------------------------------- the screen -- */
+
+interface Screen { welcome: boolean; nope: string; quiet: boolean; arrivals: number[]; delays: number[]; own: number; drawn: number }
+const screen: Screen = { welcome: false, nope: '', quiet: false, arrivals: [], delays: [], own: 0, drawn: 0 };
+const stranger = { nope: '', snaps: 0 };
+
+function watch(key: string, onto: (m: FromSea, now: number) => void) {
+  const ws = new WebSocket(`ws://127.0.0.1:${PORT}/sea/bar/1`);
+  ws.onopen = () => ws.send(JSON.stringify({ t: 'watch', v: WIRE, key }));
+  ws.onmessage = (ev) => onto(JSON.parse(String(ev.data)) as FromSea, performance.now() / 1000);
+  return ws;
+}
+
+if (WATCH) {
+  watch('not the key', (m) => { if (m.t === 'nope') stranger.nope = m.why; if (m.t === 's') stranger.snaps++; });
+  const mirror = new Mirror();
+  const ws = watch(KEY, (m, now) => {
+    if (m.t === 'welcome') screen.welcome = !!m.watch;
+    else if (m.t === 'nope') screen.nope = m.why;
+    else if (m.t === 'round' && !screen.arrivals.length && !m.scores.length) screen.quiet = true;
+    else if (m.t === 'roster') mirror.roster(m, '');
+    else if (m.t === 's') { mirror.push(m as Snap, now); screen.arrivals.push(now); if ((m as Snap).me !== undefined) screen.own++; }
+  });
+  const paint = setInterval(() => {
+    const now = performance.now() / 1000;
+    mirror.frame(now);
+    const w = mirror.world;
+    if (!w) return;
+    w.events.length = 0;
+    if (now - t0 > 15) screen.delays.push(mirror.delay);
+    screen.drawn = Math.max(screen.drawn, w.players.filter((p) => !p.left).length);
+  }, 50);
+  setTimeout(() => { clearInterval(paint); ws.close(1000, 'off'); }, (SECS + 1) * 1000);
+  await new Promise((r) => setTimeout(r, 1500));
+}
+
+console.log(`${N} captains aboard a sea on 127.0.0.1:${PORT} for ${SECS}s${WATCH ? ', the bar\'s screen looking on' : ''}…`);
 for (let i = 0; i < N; i++) { void captain(i); await new Promise((r) => setTimeout(r, 40)); }
 await new Promise((r) => setTimeout(r, SECS * 1000 + 1500));
 
@@ -135,5 +181,12 @@ console.log(JSON.stringify({
   'drawn behind ms (avg)': Math.round((1000 * aboard.reduce((a, b) => a + b.delays.reduce((x, y) => x + y, 0) / Math.max(1, b.delays.length), 0)) / Math.max(1, aboard.length)),
   'KB/s raw per phone': +(aboard.reduce((a, b) => a + b.bytes / span(b), 0) / Math.max(1, aboard.length) / 1024).toFixed(1),
   everySnapshotHadOwnShip: aboard.every((b) => b.own === b.arrivals.length),
+  screen: WATCH ? {
+    welcomed: screen.welcome, turnedAway: screen.nope || undefined, toldTheSeaWasQuiet: screen.quiet,
+    snapshotsPerSecond: +(screen.arrivals.length / ((screen.arrivals.at(-1)! - screen.arrivals[0]) || 1)).toFixed(1),
+    'drawn behind ms (avg)': Math.round((1000 * screen.delays.reduce((x, y) => x + y, 0)) / Math.max(1, screen.delays.length)),
+    shipsDrawn: screen.drawn, sentAShipOfItsOwn: screen.own > 0,
+    wrongKey: stranger.nope ? `turned away (${stranger.nope}), ${stranger.snaps} snapshots` : 'NOT TURNED AWAY',
+  } : undefined,
 }, null, 1));
 done(0);

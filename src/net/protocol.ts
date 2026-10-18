@@ -34,17 +34,24 @@ export interface Hello { t: 'hello'; v: number; token: string; ship: string; ope
 /** The helm, sent as it changes. The guns are counts of presses, so a press is fired
  *  once however the messages fall. */
 export interface Helm { t: 'in'; h: number | null; r: number; s: number; fl: number; fr: number; mo: number }
-export type ToSea = Hello | Helm;
+/** Looking on, from the bar's screen: no seat and no ship, only the watch key the sea's
+ *  server holds. Sent instead of a hello. */
+export interface Watch { t: 'watch'; v: number; key: string }
+export type ToSea = Hello | Helm | Watch;
 
 /* ------------------------------------------------------------ sea → phone -- */
 
-export interface Seat { id: number; seat: string; captain: string; ship: string; team: number; left: boolean }
+/** `c` is the captain's mark on the bar's screen (data/colors.ts), which she keeps all night
+ *  (see Sea), or -1 for an empty seat. */
+export interface Seat { id: number; seat: string; captain: string; ship: string; team: number; left: boolean; c: number }
 export interface Score { id: number; captain: string; ship: string; plunder: number; sunk: number; boarded: number; sank: number }
-export interface Welcome { t: 'welcome'; v: number; code: string; mode: Mode; cap: number }
-export interface Nope { t: 'nope'; why: 'full' | 'unknown' | 'token' | 'ship' | 'version' | 'bad' }
+/** `watch` is set for a screen looking on rather than a captain coming aboard. */
+export interface Welcome { t: 'welcome'; v: number; code: string; mode: Mode; cap: number; watch?: boolean }
+export interface Nope { t: 'nope'; why: 'full' | 'unknown' | 'token' | 'ship' | 'version' | 'bad' | 'key' }
 /** Who is in which seat. Sent whenever it changes, and with every new chart. */
 export interface Roster { t: 'roster'; seed: string; wave: number; pvp: boolean; cap: number; seats: Seat[] }
-/** Where the round is. `left` is seconds to the end of this stage. */
+/** Where the round is. `left` is seconds to the end of this stage. A sea with nobody aboard
+ *  says so once, as a lobby with no scores. */
 export interface Round { t: 'round'; stage: Stage; mode: Mode; left: number; n: number; scores: Score[] }
 export interface Snap {
   t: 's';

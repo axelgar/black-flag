@@ -6,3 +6,6 @@ node_modules/
 dist/
 qr/
 .wrangler/
+
+# the sea server's secrets on this machine
+.dev.vars

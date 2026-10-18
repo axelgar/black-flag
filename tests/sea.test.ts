@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest';
 import { wound } from '../src/sim/combat';
 import * as Wo from '../src/sim/world';
 import { Mirror, type Helm, type Roster, type Round, type Snap } from '../src/net/protocol';
-import { BREATHER, CAP, GRACE, LOBBY, RESPAWN, RESULTS, Sea, TOLL, type Out } from '../src/net/sea';
+import { BREATHER, CAP, GRACE, HUES, LOBBY, RESPAWN, RESULTS, Sea, TOLL, type Out } from '../src/net/sea';
 import { shoreDist } from '../src/sim/map';
 import { hullGap } from '../src/sim/sailing';
 import { bot } from './bot';
@@ -332,12 +332,53 @@ describe('a shared sea', () => {
     expect(sea.world!.players.every((p) => p.plunder === 0)).toBe(true);
   });
 
-  it('an empty sea goes back to waiting', () => {
+  it('an empty sea goes back to waiting, and says so once', () => {
     const sea = aboard();
     sea.leave('anne'); sea.leave('bart');
-    sail(sea, GRACE + 1);
+    const out = sail(sea, GRACE + 1);
     expect(sea.aboard).toBe(0);
     expect(sea.world).toBeNull();
     expect(sea.stage).toBe('lobby');
+    // the screen looking on hears of it, and then nothing while the sea sleeps
+    const quiet = out.filter((o): o is Round => o.t === 'round' && !o.scores.length);
+    expect(quiet).toEqual([expect.objectContaining({ stage: 'lobby' })]);
+    expect(sail(sea, 5)).toEqual([]);
+  });
+});
+
+describe('the bar\'s screen', () => {
+  const join = (sea: Sea, seat: string) => sea.join({ seat, captain: seat, ship: 'jackdaw' });
+  const colorOf = (sea: Sea, seat: string) => sea.roster().seats.find((s) => s.seat === seat)!.c;
+
+  it('gives everyone aboard a color of their own, as far as the colors go', () => {
+    const sea = new Sea('TEST', 'rivals');
+    for (let i = 0; i < HUES; i++) join(sea, `s${i}`);
+    const seats = sea.roster().seats;
+    expect(new Set(seats.map((s) => s.c)).size).toBe(HUES);
+    expect(seats.every((s) => s.c >= 0 && s.c < HUES)).toBe(true);
+    // past that they repeat, the least worn first
+    for (let i = HUES; i < HUES + 3; i++) join(sea, `s${i}`);
+    const worn = new Array<number>(HUES).fill(0);
+    for (const s of sea.roster().seats) worn[s.c]++;
+    expect(Math.max(...worn) - Math.min(...worn)).toBeLessThanOrEqual(1);
+  });
+
+  it('keeps a captain\'s color all night, if it is free when she comes back', () => {
+    const sea = new Sea('TEST', 'rivals', { seed: () => 'fixed' });
+    join(sea, 'anne'); join(sea, 'bart'); join(sea, 'cara');
+    const bart = colorOf(sea, 'bart');
+    sea.leave('bart');
+    sail(sea, GRACE + 1);
+    join(sea, 'dave');                                // takes the first free color: bart's
+    expect(colorOf(sea, 'dave')).toBe(bart);
+    join(sea, 'bart');
+    expect(colorOf(sea, 'bart')).not.toBe(bart);      // so bart gets another
+    const now = colorOf(sea, 'bart');
+    sea.leave('bart');
+    sail(sea, GRACE + 1);
+    join(sea, 'bart');
+    expect(colorOf(sea, 'bart')).toBe(now);           // and keeps that one from then on
+    // the roster carries it, and an empty seat has none
+    expect(sea.roster().seats.filter((s) => s.left).every((s) => s.c === -1)).toBe(true);
   });
 });

@@ -19,6 +19,7 @@ export type Status = 'off' | 'connecting' | 'online' | 'offline';
 export const cloud = { status: 'off' as Status };
 
 let client: SupabaseClient | null = null;
+let nobody = false;
 let joining: Promise<boolean> | null = null;
 let flushing: Promise<void> | null = null;
 
@@ -44,7 +45,7 @@ async function open(): Promise<SupabaseClient> {
 /** Sign in (anonymously, the first time), bring both lists together, and send what is
  *  waiting. Safe to call as often as you like; calls while one is running share it. */
 export function connect(): Promise<boolean> {
-  if (!KEY) return Promise.resolve(false);
+  if (!KEY || nobody) return Promise.resolve(false);
   return (joining ??= join().finally(() => { joining = null; }));
 }
 
@@ -110,6 +111,10 @@ async function drain(sb: SupabaseClient) {
     save();
   }
 }
+
+/** This page is the bar's screen, which is nobody: it never signs in, so it makes no
+ *  player of its own. */
+export function asNobody() { nobody = true; }
 
 /** A tag tapped, a QR scanned, a code typed: written down here, then sent. */
 export function tap(code: string, via: Via) {

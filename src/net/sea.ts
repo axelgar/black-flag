@@ -15,6 +15,7 @@
 // Rivals can fire on each other; crew cannot. Everyone sails her ship's own numbers:
 // Nassau's upgrades are for a run on your own, not for a sea you are ranked on.
 
+import { MARKS } from '../data/colors';
 import { NO_INPUT } from '../sim/world';
 import * as Wo from '../sim/world';
 import type { GameEvent, Input, World } from '../sim/types';
@@ -28,6 +29,7 @@ export const BREATHER = 6;        // a clear sea, before the next wave puts to s
 export const RESPAWN = 5;         // a ship that goes down is back afloat after this
 export const TOLL = 0.25;         // of her plunder, when she goes down
 export const GRACE = 20;          // a phone that drops off keeps its seat this long
+export const HUES = MARKS;        // marks on the bar's screen: each color, solid and dashed (data/colors.ts)
 const FIXED = 1 / 120;
 const SNAP_EVERY = 2;             // a snapshot every other step(): fifteen a second at thirty
 
@@ -42,6 +44,7 @@ interface Hand extends Aboard {
   seen: { fl: number; fr: number; mo: number };   // the presses already fired
   sank: number;           // rival captains sent down this round
   down: number;           // when their ship went down, or -1
+  c: number;              // their color on the bar's screen
 }
 
 export type Out = Round | Roster | Snap;
@@ -67,6 +70,7 @@ export class Sea {
   private dirty = false;   // the roster has changed since it was last sent
   private told = { stage: '' as Stage | '', second: -1 };
   private seed: () => string;
+  private colors = new Map<string, number>();   // every captain's color tonight, aboard or not
 
   constructor(code: string, mode: Mode, opts: { cap?: number; seed?: () => string; round?: number } = {}) {
     this.code = code;
@@ -88,7 +92,7 @@ export class Sea {
       return null;
     }
     if (this.hands.size >= this.cap) return 'full';
-    const h: Hand = { ...a, id: -1, online: true, gone: 0, helm: idle(), seen: { fl: 0, fr: 0, mo: 0 }, sank: 0, down: -1 };
+    const h: Hand = { ...a, id: -1, online: true, gone: 0, helm: idle(), seen: { fl: 0, fr: 0, mo: 0 }, sank: 0, down: -1, c: this.color(a.seat) };
     if (!this.world) {
       // the first aboard opens the sea: a chart to look at while the table comes aboard
       this.hands.set(a.seat, h);
@@ -130,8 +134,11 @@ export class Sea {
       this.dirty = true;
     }
     if (!this.hands.size) {
-      // nobody left aboard: the sea waits, empty, for the next to open it
+      // nobody left aboard: the sea waits, empty, for the next to open it. A screen looking
+      // on is told once, by a round with nobody in it.
+      const was = this.world;
       this.stage = 'lobby'; this.left = LOBBY; this.world = null; this.told = { stage: '', second: -1 };
+      if (was) out.push(this.round());
       return out;
     }
 
@@ -172,8 +179,8 @@ export class Sea {
     const seats = w.players.map((p) => {
       const h = [...this.hands.values()].find((x) => x.id === p.id);
       return h && !p.left
-        ? { id: p.id, seat: h.seat, captain: h.captain, ship: p.shipId, team: p.team, left: false }
-        : { id: p.id, seat: '', captain: '', ship: p.shipId, team: p.team, left: true };
+        ? { id: p.id, seat: h.seat, captain: h.captain, ship: p.shipId, team: p.team, left: false, c: h.c }
+        : { id: p.id, seat: '', captain: '', ship: p.shipId, team: p.team, left: true, c: -1 };
     });
     return { t: 'roster', seed: w.seed, wave: w.wave, pvp: w.pvp, cap: this.cap, seats };
   }
@@ -188,6 +195,20 @@ export class Sea {
       rows.push({ id: p.id, captain: h.captain, ship: p.shipId, plunder: p.plunder, sunk: p.sunk, boarded: p.boarded, sank: h.sank });
     }
     return rows.sort((a, b) => b.plunder - a.plunder || b.sank - a.sank || b.sunk - a.sunk || a.id - b.id);
+  }
+
+  /**
+   * A captain's color on the bar's screen, kept all night so the table can find her by it.
+   * The one she had before, if nobody aboard has it now; otherwise the first nobody aboard
+   * has. Past HUES aboard they repeat, the least worn first, and her name tells her apart.
+   */
+  private color(seat: string): number {
+    const worn = new Array<number>(HUES).fill(0);
+    for (const h of this.hands.values()) worn[h.c]++;
+    const had = this.colors.get(seat);
+    const c = had != null && !worn[had] ? had : worn.indexOf(Math.min(...worn));
+    this.colors.set(seat, c);
+    return c;
   }
 
   /* ------------------------------------------------------------ the round -- */
