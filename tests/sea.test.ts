@@ -101,6 +101,25 @@ describe('a shared sea', () => {
     expect(s.left).toBe(false);
   });
 
+  it('five in a row on a ticket is a free shot, once; without one, and for a bot, practice', () => {
+    const sea = new Sea('BAR1', { seed: 't' });
+    sea.join({ ...aboard('a'), ticket: true });
+    sea.join(aboard('b'));
+    beat(sea, 0.5);
+    const fifth = (by: ReturnType<typeof shipOf>) => {
+      by.streak = T.win - 1;
+      sink(sea.world, sea.world.ships.find((s) => s !== by && !s.out && !s.left)!, by);
+      return beat(sea, 0.2).flatMap((o) => (o.t === 's' ? o.e : [])).filter((e) => e.k === 'won');
+    };
+    const a = shipOf(sea, 'a'), b = shipOf(sea, 'b'), bot = sea.world.ships.find((s) => s.bot)!;
+    expect(fifth(a)).toEqual([expect.objectContaining({ p: a.id, prize: true })]);
+    expect(fifth(a)).toEqual([expect.objectContaining({ p: a.id, prize: false })]);
+    expect(fifth(b)).toEqual([expect.objectContaining({ p: b.id, prize: false })]);
+    expect(fifth(bot)).toEqual([expect.objectContaining({ p: bot.id, prize: false })]);
+    expect(sea.takeWins()).toEqual([{ seat: 'a', prize: true }, { seat: 'a', prize: false }, { seat: 'b', prize: false }]);
+    expect(sea.takeWins()).toEqual([]);
+  });
+
   it('turns away a captain past the most a sea holds', () => {
     const sea = new Sea('BAR1', { seed: 't', cap: 3 });
     for (const x of ['a', 'b', 'c']) expect(sea.join(aboard(x))).toBeNull();

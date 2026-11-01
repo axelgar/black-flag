@@ -31,7 +31,7 @@ export function hudHtml(practice: boolean) {
       <div class="skulls">${slots}</div>
       <div class="label" id="streak-label">Sink 5 in a row</div>
     </div>
-    ${practice ? '<div class="practice">Practice · order a <b>Black Flag</b> to play for a free shot</div>' : ''}
+    <div class="practice" id="practice"${practice ? '' : ' hidden'}>Practice · order a <b>Black Flag</b> to play for a free shot</div>
     <div class="feed" id="feed"></div>
     <div class="toast" id="toast"></div>
     ${touch ? `
@@ -47,9 +47,10 @@ export function hudHtml(practice: boolean) {
     </div>
     <div class="card won" id="won" hidden>
       <div class="burst"></div>
-      <div class="big">Five in a row!</div>
+      <div class="big" id="won-big">Five in a row!</div>
       <div class="sub" id="won-sub"></div>
-      <button class="cta" data-act="won-ok">Keep sailing</button>
+      <button class="cta" data-act="prize" id="won-save">Save my free shot</button>
+      <button class="cta" data-act="won-ok" id="won-ok">Keep sailing</button>
     </div>
     <div class="card state" id="state" hidden>
       <div class="big" id="state-big"></div>
@@ -146,8 +147,17 @@ export function hudEvents(events: GameEvent[], w: World, seats: Seat[]) {
         if (e.p === me) {
           wonOpen = true;
           const c = root && $('#won', root);
-          if (c) { $('#won-sub', c)!.textContent = 'Five ships sunk without going down once.'; c.hidden = false; }
-        } else say(`${dot(seats, e.p as number)} sank five in a row!`);
+          if (c) {
+            // on a ticket, a free shot to save; without one, what it would have been
+            $('#won-big', c)!.textContent = e.prize ? 'Free shot!' : 'Five in a row!';
+            $('#won-sub', c)!.textContent = e.prize ? 'Five in a row on your ticket. Save it with your email to claim it.' : 'Order a Black Flag and this would have been a free shot.';
+            $('#won-save', c)!.hidden = !e.prize;
+            $('#won-ok', c)!.textContent = e.prize ? 'Later' : 'Keep sailing';
+            $('#won-ok', c)!.classList.toggle('quiet', !!e.prize);
+            $('#practice', root!)!.hidden = false;
+            c.hidden = false;
+          }
+        } else say(e.prize ? `${dot(seats, e.p as number)} won a free shot!` : `${dot(seats, e.p as number)} sank five in a row!`);
         break;
       case 'take':
         if (e.p === me) toast(e.kind === 'repair' ? 'Repaired' : e.kind === 'speed' ? 'Full speed!' : 'Heavy shot', e.kind === 'heavy' ? 'Your next volley hits twice as hard' : '');

@@ -27,8 +27,12 @@ export const BLIP = 3;
 const FIXED = 1 / 120;
 const SNAP_EVERY = 2;             // a snapshot every other step(): fifteen a second at thirty
 
-/** Who is coming aboard: the server has checked the token and the name. */
-export interface Aboard { seat: string; name: string; look: string }
+/** Who is coming aboard: the server has checked the token and the name, and asked the
+ *  database whether they hold a ticket tonight. */
+export interface Aboard { seat: string; name: string; look: string; ticket?: boolean }
+
+/** Five in a row by a captain, for the host to write down: a free shot if `prize`. */
+export interface Win { seat: string; prize: boolean }
 
 interface Hand extends Aboard {
   id: number;             // their ship's place in the world
@@ -38,6 +42,7 @@ interface Hand extends Aboard {
   seen: { f: number; a: number };   // the presses already fired
   ran: Ran;               // which of their hands she is sailing by, and for how many ticks
   c: number;              // their colour
+  ticket: boolean;        // sailing for a free shot: spent by a win
 }
 
 interface Bot { id: number; name: string; c: number }
@@ -62,6 +67,7 @@ export class Sea {
   private shots = new ShotLog();
   private dirty = true;    // the roster has changed since it was last sent
   private colors = new Map<string, number>();   // every captain's colour tonight, aboard or not
+  private wins: Win[] = [];
 
   constructor(code: string, opts: { cap?: number; seed?: string } = {}) {
     this.code = code;
@@ -79,6 +85,7 @@ export class Sea {
       // a new line is a new phone's count of hands, from nothing
       had.online = true;
       had.helm = idle(); had.seen = { f: 0, a: 0 }; had.ran = { n: 0, ticks: 0 };
+      had.ticket = !!a.ticket;
       if (had.name !== a.name) { had.name = a.name; this.dirty = true; }
       return null;
     }
@@ -86,7 +93,7 @@ export class Sea {
     const streak = this.kept.get(a.seat) ?? 0;
     this.kept.delete(a.seat);
     const p = Wo.join(this.world, { seat: a.seat, look: a.look, streak });
-    this.hands.set(a.seat, { ...a, id: p.id, online: true, gone: 0, helm: idle(), seen: { f: 0, a: 0 }, ran: { n: 0, ticks: 0 }, c: this.color(a.seat) });
+    this.hands.set(a.seat, { ...a, id: p.id, online: true, gone: 0, helm: idle(), seen: { f: 0, a: 0 }, ran: { n: 0, ticks: 0 }, c: this.color(a.seat), ticket: !!a.ticket });
     this.drain();
     this.crew();
     this.dirty = true;
@@ -244,6 +251,7 @@ export class Sea {
     for (const e of w.events) {
       for (const f in e) { const v = e[f]; if (typeof v === 'number' && !Number.isInteger(v)) e[f] = Math.round(v * 100) / 100; }
       e.at = Math.round(w.t * 1000) / 1000;
+      if (e.k === 'won') this.won(e);
       this.events.push(e);
       if (e.k === 'left' || e.k === 'joined') this.dirty = true;
     }
@@ -251,10 +259,20 @@ export class Sea {
     if (this.events.length > 300) this.events.splice(0, this.events.length - 300);
   }
 
-  /** The seat of a ship, for the server to act on a win: '' for a bot. */
-  seatOf(id: number): string {
-    for (const h of this.hands.values()) if (h.id === id) return h.seat;
-    return '';
+  /** Five in a row: a free shot on a ticket, which it spends, and practice without. Every
+   *  phone is told which, and the host is handed the win to write down. A bot's is practice. */
+  private won(e: GameEvent) {
+    let h: Hand | null = null;
+    for (const x of this.hands.values()) if (x.id === e.p) h = x;
+    e.prize = !!h?.ticket;
+    if (!h) return;
+    this.wins.push({ seat: h.seat, prize: h.ticket });
+    h.ticket = false;
+  }
+
+  /** The wins since last asked, for the host to write down. */
+  takeWins(): Win[] {
+    return this.wins.splice(0);
   }
 }
 

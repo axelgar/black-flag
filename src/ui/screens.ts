@@ -1,5 +1,6 @@
 // The screens, in the order a guest meets them: the name and the ship, then the sea. Each
-// returns { html, mount? }; mount may return a teardown.
+// returns { html, mount? }; mount may return a teardown. The free shot's screens are in
+// prize.ts.
 
 import { NAME_MAX, checkName } from '../data/names';
 import { LOOKS } from '../data/ships';
@@ -7,7 +8,9 @@ import type { View } from '../render/view';
 import { save, session } from '../state/session';
 import * as A from '../audio/audio';
 import { buzz } from './haptics';
+import { me } from '../net/cloud';
 import { hudHtml, mountHud } from './hud';
+import { footer, standing } from './prize';
 
 export interface Screen { html: string; mount?: (root: HTMLElement) => (() => void) | void }
 
@@ -32,6 +35,7 @@ export function name(v: View): Screen {
       <form class="form" id="form" autocomplete="off">
         <h1 class="logo">Black <span>Flag</span></h1>
         <p class="pitch">Sink <b>5 ships in a row</b> without going down.</p>
+        <div class="standing" id="standing">${standing()}</div>
         <label class="field">
           <span>Your captain's name</span>
           <input id="name" name="name" maxlength="${NAME_MAX}" autocapitalize="words" autocorrect="off" spellcheck="false" enterkeyhint="go" value="${esc(session.name)}" placeholder="Captain…">
@@ -40,6 +44,7 @@ export function name(v: View): Screen {
         <div class="looks" role="group" aria-label="Your ship">${looks}</div>
         <button class="cta" id="go" type="submit">Set sail</button>
         <button class="chip" type="button" id="sound" aria-pressed="${session.sound}">${session.sound ? '🔊 Sound on' : '🔈 Sound off'}</button>
+        ${footer()}
       </form>
     </div>`,
     mount(root) {
@@ -84,7 +89,10 @@ export function name(v: View): Screen {
         emit('bf:sail');
       });
       if (!session.name && matchMedia('(pointer: fine)').matches) input.focus();
-      return () => removeEventListener('resize', shift);
+      // ticket or practice, and any free shot, as the server says
+      const stand = () => { $('#standing', root)!.innerHTML = standing(); };
+      addEventListener('bf:me', stand);
+      return () => { removeEventListener('resize', shift); removeEventListener('bf:me', stand); };
     },
   };
 }
@@ -92,5 +100,5 @@ export function name(v: View): Screen {
 /** At sea: the HUD over the fight. */
 export function sea(v: View, act: (what: string) => void): Screen {
   v.setMode('sea');
-  return { html: hudHtml(false), mount: (root) => mountHud(root, act) };
+  return { html: hudHtml(!me?.ticket), mount: (root) => mountHud(root, act) };
 }

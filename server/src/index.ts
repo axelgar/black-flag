@@ -8,6 +8,10 @@
 // machine). It takes no seat, and an empty sea stays asleep under it. With no key set,
 // nobody can watch.
 //
+// Five in a row is written down by the server, never by a phone: it calls record_win in
+// the database with the project's secret key (SUPABASE_SECRET, a secret set the same way).
+// Without it the sea still plays, and wins go unrecorded.
+//
 //   /sea/bar/<n>      the bar's n-th sea (n from 1). A full sea sends the phone to the next.
 
 import { DurableObject } from 'cloudflare:workers';
@@ -16,7 +20,7 @@ import { checkName } from '../../src/data/names';
 import { lookById } from '../../src/data/ships';
 import { TUNING } from '../../src/data/tuning';
 import { WIRE, type FromSea, type Nope, type ToSea, type Watch } from '../../src/net/protocol';
-import { Sea } from '../../src/net/sea';
+import { Sea, type Win } from '../../src/net/sea';
 
 export interface Env {
   SEA: DurableObjectNamespace<SeaRoom>;
@@ -24,6 +28,7 @@ export interface Env {
   SUPABASE_KEY: string;     // the publishable key: it is sent with the player's own token
   VENUE?: string;
   WATCH_KEY?: string;       // a secret: what a screen says to look on
+  SUPABASE_SECRET?: string; // a secret: the project's secret key, to write down wins
 }
 
 export default {
@@ -88,7 +93,7 @@ export class SeaRoom extends DurableObject<Env> {
     for (const [s, seat] of this.socks) {
       if (seat === who.seat && s !== ws) { this.socks.set(s, null); try { s.close(4000, 'aboard elsewhere'); } catch { /* already gone */ } }
     }
-    const why = this.sea.join({ seat: who.seat, name: named.name, look: lookById(m.look).id });
+    const why = this.sea.join({ seat: who.seat, name: named.name, look: lookById(m.look).id, ticket: who.ticket });
     if (why) return this.nope(ws, why);
     this.socks.set(ws, who.seat);
     this.send(ws, { t: 'welcome', v: WIRE, code: this.sea.code, cap: this.sea.cap });
@@ -121,7 +126,7 @@ export class SeaRoom extends DurableObject<Env> {
     return crypto.subtle.timingSafeEqual(a, b);
   }
 
-  /** Who this token belongs to. */
+  /** Who this token belongs to, and whether they hold a ticket tonight. */
   private async who(token: string) {
     const base = this.env.SUPABASE_URL;
     jwks ??= createRemoteJWKSet(new URL(`${base}/auth/v1/.well-known/jwks.json`));
@@ -131,9 +136,9 @@ export class SeaRoom extends DurableObject<Env> {
       headers: { apikey: this.env.SUPABASE_KEY, Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
     });
     if (!r.ok) return null;
-    const me = (await r.json()) as { id: string };
+    const me = (await r.json()) as { id: string; ticket?: boolean };
     if (me.id !== payload.sub) return null;
-    return { seat: me.id };
+    return { seat: me.id, ticket: !!me.ticket };
   }
 
   private start() {
@@ -159,11 +164,30 @@ export class SeaRoom extends DurableObject<Env> {
       const head = s.slice(0, -1);
       for (const [ws, seat] of this.socks) if (seat) { try { ws.send(`${head},"me":${JSON.stringify(sea.own(seat))}}`); } catch { /* closing */ } }
     }
+    for (const w of sea.takeWins()) void this.record(w);
     if (!sea.aboard && this.timer) {
       // nobody aboard: stop beating, and let the object sleep. The bots stop with it; the
       // next captain aboard finds them where they were.
       clearInterval(this.timer);
       this.timer = null;
+    }
+  }
+
+  /** Write a win down: a free shot, or practice. Tried three times over a few seconds;
+   *  the database spends the ticket once however often it is asked. */
+  private async record(w: Win) {
+    const key = this.env.SUPABASE_SECRET;
+    if (!key) { console.warn('[sea] no SUPABASE_SECRET: a win went unrecorded'); return; }
+    for (let i = 0; i < 3; i++) {
+      try {
+        const r = await fetch(`${this.env.SUPABASE_URL}/rest/v1/rpc/record_win`, {
+          method: 'POST', body: JSON.stringify({ p_player: w.seat, p_sea: this.sea?.code ?? null }),
+          headers: { apikey: key, 'Content-Type': 'application/json' },
+        });
+        if (r.ok) return;
+        console.warn('[sea] record_win said', r.status, await r.text());
+      } catch (err) { console.warn('[sea] record_win failed', err); }
+      await new Promise((ok) => setTimeout(ok, 1000 * 2 ** i));
     }
   }
 

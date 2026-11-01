@@ -1,4 +1,4 @@
-// Boot, the two screens, the line to the sea, and the frame clock.
+// Boot, the screens, the line to the sea, and the frame clock.
 //
 // The phone never steps the sea: the server does (server/, src/net/sea.ts). This device
 // sends its hands and draws the Mirror the Link keeps of the world, a moment behind.
@@ -10,10 +10,11 @@ import type { World } from './sim/types';
 import { View } from './render/view';
 import * as A from './audio/audio';
 import * as S from './ui/screens';
+import * as P from './ui/prize';
 import { hudEvents, hudState, hudTick } from './ui/hud';
 import * as Input from './ui/input';
 import { buzz } from './ui/haptics';
-import { connect, credentials } from './net/cloud';
+import { connect, count, credentials, me, refresh, tap } from './net/cloud';
 import { Link } from './net/link';
 import { inkOn } from './render/ink';
 
@@ -93,19 +94,21 @@ window.addEventListener('bf:sail', () => {
   go('/sea');
 });
 
-/** Leave the sea: the Leave button, Escape, or the back gesture. */
-function ashore() {
+/** Leave the sea: the Leave button, Escape, or the back gesture. To the name screen, or
+ *  (`to`) another. */
+function ashore(to = '/') {
   if (link) { link.close(); link = null; }
   world = null; view.setWorld(null);
   A.stopShanty();
   if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
-  if (atSea()) go('/', true);
+  if (atSea()) go(to, true);
 }
 
 function act(what: string) {
   buzz(6); A.click();
   if (what === 'leave') ashore();
   else if (what === 'again') link?.again();
+  else if (what === 'prize') ashore('/prize');
 }
 
 const WHY: Record<string, [string, string]> = {
@@ -117,8 +120,16 @@ const WHY: Record<string, [string, string]> = {
   reach: ['Can\'t reach the sea', 'This wifi may be blocking it. Try mobile data.'],
 };
 
+/** The lines the bar has heard say they were aboard, or turned away. */
+const counted = new WeakSet<Link>();
+
 /** The line changed: say so on the HUD. */
 function linkChanged(L: Link) {
+  if (!counted.has(L) && (L.state === 'aboard' || L.state === 'refused')) {
+    counted.add(L);
+    if (L.state === 'aboard') count('sail', { sea: L.welcome?.code });
+    else count('turned_away', { why: L.why });
+  }
   if (L !== link || !atSea()) return;
   if (L.state === 'aboard') hudState(null);
   else if (L.state === 'hailing') hudState('Finding the sea…');
@@ -146,12 +157,26 @@ function go(to: string, replace = false) {
   if (replace) { const u = new URL(location.href); u.hash = to; location.replace(u.href); } else location.hash = `#${to}`;
 }
 
+/** A screen drawn before the server said who this phone is: drawn again when it does. */
+let waitingForMe = false;
+
+function screenFor(p: string) {
+  if (p === '/sea') return S.sea(view, act);
+  if (p === '/prize' || p === '/prize/signin') return P.prize(p.endsWith('signin'));
+  const pour = p.match(/^\/redeem\/(\d+)$/);
+  if (pour) return P.redeem(Number(pour[1]));
+  if (p === '/privacy') return P.privacy();
+  return S.name(view);
+}
+
 function render() {
   const p = path();
   if (p === '/sea' && !link) { go('/', true); return; }
   if (p !== '/sea' && link) ashore();
   if (teardown) { try { teardown(); } catch { /* noop */ } teardown = null; }
-  const out = p === '/sea' ? S.sea(view, act) : S.name(view);
+  waitingForMe = !me && (p.startsWith('/prize') || p.startsWith('/redeem'));
+  if (p !== '/sea' && p !== '/') view.setMode('show');
+  const out = screenFor(p);
   ui.innerHTML = out.html;
   const root = (ui.firstElementChild as HTMLElement) || ui;
   if (out.mount) teardown = out.mount(root) || null;
@@ -159,6 +184,7 @@ function render() {
   if (p === '/sea' && link) { linkChanged(link); A.startShanty(); } else A.stopShanty();
 }
 window.addEventListener('hashchange', render);
+window.addEventListener('bf:me', () => { if (waitingForMe) render(); });
 
 // Locking the phone is leaving: the sea docks her (or leaves her on the water a while, in
 // a fight) as it would for the Leave button. She comes back aboard when the phone wakes.
@@ -256,7 +282,13 @@ function tick(dt: number) {
         view.consume(evs, w);
         A.consume(evs, (e) => e.p === w.focus);
         hudEvents(evs, w, L.mirror.seats);
-        for (const e of evs) if (e.p === w.focus && (e.k === 'hit' || e.k === 'sunk')) buzz(e.k === 'sunk' ? 80 : 25);
+        for (const e of evs) {
+          if (e.p !== w.focus) continue;
+          if (e.k === 'hit' || e.k === 'sunk') buzz(e.k === 'sunk' ? 80 : 25);
+          if (e.k === 'streak' && !firstSink) { firstSink = true; count('first_sink'); }
+          // the sea writes the win down a moment after: ask then what it came to
+          if (e.k === 'won') { buzz(200); for (const ms of [2000, 6000]) setTimeout(() => { void refresh().catch(() => {}); }, ms); }
+        }
       }
     }
   }
@@ -269,7 +301,24 @@ function tick(dt: number) {
   meter?.paint(now, (performance.now() - begun) / 1000);
 }
 
+/** The first ship this phone sank since the page opened has been counted. */
+let firstSink = false;
+
 /* ----------------------------------------------------------------- boot -- */
+
+// The Black Flag tag at the bar opens /u/BLACKFLAG?src=nfc, and the QR code on its back
+// /u/BLACKFLAG. Vercel rewrites that to the game; the tap is sent, and the address put
+// back to the plain site, so a reload does not tap again.
+const tag = location.pathname.match(/^\/u\/([^/?#]+)/);
+if (tag) {
+  const via = new URLSearchParams(location.search).get('src') === 'nfc' ? 'nfc' : 'link';
+  history.replaceState(null, '', `/${location.search.includes('fps') ? '?fps' : ''}#/`);
+  tap(decodeURIComponent(tag[1]), via).then((t) => {
+    if (t === 'new') P.tell('🎟 Here\'s your ticket! Sink 5 in a row for a free shot.');
+    else if (t === 'open') P.tell('You already have a ticket waiting: go and win it!');
+    else if (t === 'spent') P.tell('Tonight\'s ticket has been won already. It\'s one a night: come back tomorrow!');
+  }, (err) => { console.warn('[tap]', err); P.tell('Couldn\'t reach the server for your ticket. Check the wifi and tap again.'); });
+}
 
 if (!location.hash) location.hash = '#/';
 render();

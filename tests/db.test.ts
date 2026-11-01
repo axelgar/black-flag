@@ -11,11 +11,12 @@ import { beforeAll, describe, expect, it } from 'vitest';
 const SUPABASE = `
   create role anon nologin;
   create role authenticated nologin;
+  create role service_role nologin;
   create schema auth;
-  create table auth.users (id uuid primary key);
+  create table auth.users (id uuid primary key, email text, email_confirmed_at timestamptz);
   create function auth.uid() returns uuid language sql stable as
     $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;
-  grant usage on schema public, auth to anon, authenticated;
+  grant usage on schema public, auth to anon, authenticated, service_role;
   grant execute on function auth.uid() to anon, authenticated;
   alter default privileges in schema public grant all on tables to anon, authenticated;
   alter default privileges in schema public grant all on sequences to anon, authenticated;
@@ -24,26 +25,40 @@ const SUPABASE = `
 
 const ANNE = '00000000-0000-4000-8000-00000000a111';
 const BART = '00000000-0000-4000-8000-00000000b222';
+const CARA = '00000000-0000-4000-8000-00000000c333';
+const DAVE = '00000000-0000-4000-8000-00000000d444';
+const ERIN = '00000000-0000-4000-8000-00000000e555';
+const FRAN = '00000000-0000-4000-8000-00000000f666';
 
 let db: PGlite;
 
 /** Run a query as a signed-in guest (or, with null, as nobody at all). */
-async function as<T = Record<string, unknown>>(uid: string | null, sql: string, params: unknown[] = []) {
+async function as<T = Record<string, unknown>>(uid: string | null, sql: string, params: unknown[] = [], role = uid ? 'authenticated' : 'anon') {
   await db.query(`select set_config('request.jwt.claim.sub', $1, false)`, [uid ?? '']);
-  await db.exec(`set role ${uid ? 'authenticated' : 'anon'}`);
+  await db.exec(`set role ${role}`);
   try { return (await db.query<T>(sql, params)).rows; } finally { await db.exec('reset role'); }
 }
 
-const me = async (uid: string) => (await as<{ me: { id: string; captain: string; items: string[] } }>(uid, 'select public.me()'))[0].me;
+/** The sea server, with its secret key: nobody in particular. */
+const server = <T = Record<string, unknown>>(sql: string, params: unknown[] = []) => as<T>(null, sql, params, 'service_role');
+
+interface Prize { id: number; saved: boolean; redeemed_at: string | null; valid_until: string }
+interface Me { id: string; captain: string; items: string[]; ticket: boolean; email: string | null; marketing: boolean; prizes: Prize[] }
+const me = async (uid: string) => (await as<{ me: Me }>(uid, 'select public.me()'))[0].me;
 const redeem = async (uid: string, code: string, via = 'nfc', at: string | null = null) =>
-  (await as<{ redeem: { item: string | null; news: boolean } }>(uid, 'select public.redeem($1, $2, $3)', [code, via, at]))[0].redeem;
+  (await as<{ redeem: { item: string | null; news: boolean; ticket?: string } }>(uid, 'select public.redeem($1, $2, $3)', [code, via, at]))[0].redeem;
+const win = async (uid: string) => (await server<{ record_win: { prize: number | null } }>('select public.record_win($1, $2)', [uid, 'BAR1']))[0].record_win.prize;
+/** They type the code Supabase sent them: the email is theirs. */
+const proves = (uid: string, email: string) => db.query('update auth.users set email = $2, email_confirmed_at = now() where id = $1', [uid, email]);
+const save = async (uid: string, marketing = false) => (await as<{ save_prizes: { saved: number; taken: number } }>(uid, 'select public.save_prizes($1)', [marketing]))[0].save_prizes;
+const events = async (uid: string) => (await db.query<{ kind: string }>('select kind from public.events where player_id = $1 order by id', [uid])).rows.map((r) => r.kind);
 
 beforeAll(async () => {
   db = new PGlite();
   await db.exec(SUPABASE);
   const dir = 'supabase/migrations';
   for (const f of readdirSync(dir).filter((x) => x.endsWith('.sql')).sort()) await db.exec(readFileSync(`${dir}/${f}`, 'utf8'));
-  await db.query('insert into auth.users (id) values ($1), ($2)', [ANNE, BART]);
+  await db.query('insert into auth.users (id) values ($1), ($2), ($3), ($4), ($5), ($6)', [ANNE, BART, CARA, DAVE, ERIN, FRAN]);
 }, 60_000);
 
 describe('a player', () => {
@@ -119,5 +134,105 @@ describe('what a phone can touch', () => {
     await expect(as(ANNE, `update public.players set captain = 'Blackbeard' where id = $1`, [ANNE])).rejects.toThrow(/permission denied/);
     await expect(as(ANNE, `insert into public.unlock_codes (code, item) values ('FREE', 'hull:maree')`)).rejects.toThrow(/permission denied/);
     await expect(as(ANNE, `select public.ensure_player($1)`, [BART])).rejects.toThrow(/permission denied/);
+  });
+});
+
+describe('a night at the bar', () => {
+  it('runs from six in the morning to six the next, Madrid time', async () => {
+    const night = async (t: string) => (await db.query<{ n: string }>('select public.night($1)::text as n', [t])).rows[0].n;
+    expect(await night('2026-11-02T04:59:00Z')).toBe('2026-11-01');   // 05:59 in Madrid
+    expect(await night('2026-11-02T05:00:00Z')).toBe('2026-11-02');
+    expect(await night('2026-07-02T03:59:00Z')).toBe('2026-07-01');   // summer time: 05:59
+  });
+});
+
+describe('a ticket', () => {
+  it('is given by a tap on the Black Flag tag, once: tapping again while it is open does nothing', async () => {
+    expect(await redeem(CARA, 'BLACKFLAG', 'nfc')).toEqual({ item: 'ticket:black-flag', news: true, ticket: 'new' });
+    expect(await redeem(CARA, 'BLACKFLAG', 'link')).toEqual({ item: 'ticket:black-flag', news: false, ticket: 'open' });
+    expect((await me(CARA)).ticket).toBe(true);
+    expect((await me(CARA)).items).toEqual([]);
+    expect(await events(CARA)).toEqual(['ticket']);
+  });
+
+  it('wins a free shot on five in a row, said by the sea server, and then is spent for the night', async () => {
+    const prize = await win(CARA);
+    expect(prize).toBeTypeOf('number');
+    const m = await me(CARA);
+    expect(m.ticket).toBe(false);
+    expect(m.prizes).toEqual([expect.objectContaining({ id: prize, saved: false, redeemed_at: null })]);
+    expect(Date.parse(m.prizes[0].valid_until) - Date.now()).toBeGreaterThan(29 * 86400e3);
+    expect(await redeem(CARA, 'BLACKFLAG')).toEqual({ item: 'ticket:black-flag', news: false, ticket: 'spent' });
+    expect((await me(CARA)).ticket).toBe(false);
+  });
+
+  it('without one, five in a row is practice: counted, and nothing won', async () => {
+    expect(await win(CARA)).toBeNull();
+    expect(await win(BART)).toBeNull();
+    expect((await me(BART)).prizes).toEqual([]);
+    expect(await events(CARA)).toEqual(['ticket', 'win', 'practice_win']);
+  });
+
+  it('cannot be won by a phone itself', async () => {
+    await redeem(DAVE, 'BLACKFLAG');
+    await expect(as(DAVE, 'select public.record_win($1)', [DAVE])).rejects.toThrow(/permission denied/);
+    expect((await me(DAVE)).ticket).toBe(true);
+  });
+});
+
+describe('a free shot', () => {
+  it('is saved with an email they have proved, with the bar\'s news only if they ask for it', async () => {
+    await expect(save(CARA)).rejects.toThrow(/no email/);
+    await proves(CARA, 'Cara@Example.com');
+    expect(await save(CARA, true)).toEqual({ saved: 1, taken: 0 });
+    const m = await me(CARA);
+    expect(m.prizes[0].saved).toBe(true);
+    expect(m.email).toBe('Cara@Example.com');
+    expect(m.marketing).toBe(true);
+    expect((await db.query('select email from public.prizes where player_id = $1', [CARA])).rows).toEqual([{ email: 'cara@example.com' }]);
+  });
+
+  it('is one a night for each email, whichever phone it was won on', async () => {
+    await win(DAVE);
+    await proves(DAVE, 'cara@example.com');
+    expect(await save(DAVE)).toEqual({ saved: 0, taken: 1 });
+    expect((await me(DAVE)).prizes[0].saved).toBe(false);
+  });
+
+  it('is poured once, in front of the bartender, and only once saved', async () => {
+    const dave = (await me(DAVE)).prizes[0].id, cara = (await me(CARA)).prizes[0].id;
+    await expect(as(DAVE, 'select public.redeem_prize($1)', [dave])).rejects.toThrow(/cannot be poured/);
+    await expect(as(DAVE, 'select public.redeem_prize($1)', [cara])).rejects.toThrow(/cannot be poured/);
+    const [{ redeem_prize: at }] = await as<{ redeem_prize: Date }>(CARA, 'select public.redeem_prize($1)', [cara]);
+    expect(Math.abs(new Date(at).getTime() - Date.now())).toBeLessThan(5000);
+    await expect(as(CARA, 'select public.redeem_prize($1)', [cara])).rejects.toThrow(/cannot be poured/);
+    expect((await me(CARA)).prizes[0].redeemed_at).not.toBeNull();
+    expect(await events(CARA)).toEqual(['ticket', 'win', 'practice_win', 'email', 'redeem']);
+  });
+
+  it('comes along when a phone signs in to the account its email already has', async () => {
+    await proves(FRAN, 'fran@example.com');
+    await redeem(ERIN, 'BLACKFLAG');
+    const prize = await win(ERIN);
+    const [{ hand_over: token }] = await as<{ hand_over: string }>(ERIN, 'select public.hand_over()');
+    // the code is typed, and the phone is Fran now
+    await as(FRAN, 'select public.take_over($1)', [token]);
+    expect((await me(ERIN)).prizes).toEqual([]);
+    expect((await me(FRAN)).prizes.map((p) => p.id)).toEqual([prize]);
+    expect(await save(FRAN)).toEqual({ saved: 1, taken: 0 });
+    // a token works once
+    await redeem(ERIN, 'BLACKFLAG');
+    await as(BART, 'select public.take_over($1)', [token]);
+    expect((await me(BART)).prizes).toEqual([]);
+  });
+});
+
+describe('the bar\'s numbers', () => {
+  it('a phone can say it sailed, was turned away or sank its first ship, and nothing else', async () => {
+    await as(BART, `select public.log_event('sail', '{"sea":"BAR1"}')`);
+    await expect(as(BART, `select public.log_event('win')`)).rejects.toThrow(/not a phone's to say/);
+    expect(await as(BART, 'select * from public.events')).toEqual([]);
+    await expect(as(BART, `insert into public.events (player_id, kind) values ($1, 'win')`, [BART])).rejects.toThrow(/permission denied/);
+    await expect(as(BART, `insert into public.prizes (player_id, night, valid_until) values ($1, current_date, now())`, [BART])).rejects.toThrow(/permission denied/);
   });
 });
