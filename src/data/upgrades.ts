@@ -42,6 +42,11 @@ export function recipeOf(def: ShipDef) {
   return def.model.kind === 'procedural' ? def.model.recipe : def.model.fallback;
 }
 
+/** Her model file, if she has one. */
+export function fileOf(def: ShipDef) {
+  return def.model.kind === 'gltf' ? def.model.file : undefined;
+}
+
 export function shipStats(def: ShipDef, up: Upgrades = {}): ShipStats {
   const b = def.base;
   const p = up.plating ?? 0, g = up.broadside ?? 0, r = up.racks ?? 0, m = up.ram ?? 0;

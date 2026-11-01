@@ -27,13 +27,14 @@ const clamp = (v: number, lo: number, hi: number) => (v < lo ? lo : v > hi ? hi 
 
 /* ------------------------------------------------------------ settings ---- */
 
-let quality = { high: true, aniso: 4 };
+let quality = { high: true, aniso: 4, tex: 1024, a2c: true };
 let timberTex: THREE.Texture | null = null;
 let canvasTex: THREE.Texture | null = null;
 
-/** Set before the first ship is built: map sizes, bump and soft canvas edges depend on it. */
-export function shipQuality(high: boolean, aniso: number) {
-  quality = { high, aniso: Math.min(aniso, high ? 8 : 2) };
+/** Set before the first ship is built: map sizes, bump and soft canvas edges depend on it.
+ *  Soft edges (alpha to coverage) only where the picture is multisampled. */
+export function shipQuality(high: boolean, aniso: number, tex = high ? 1024 : 512, a2c = high) {
+  quality = { high, aniso, tex, a2c };
   LOD.lo = !high;
 }
 
@@ -53,8 +54,8 @@ export function prewarmShips(recipes: HullRecipe[]) {
 
 /** The shipwright's timber and canvas, painted on first use and shared with the land. */
 export function textures() {
-  timberTex ??= paintTimber(quality.high ? 1024 : 512, quality.aniso);
-  canvasTex ??= paintCanvas(quality.high ? 1024 : 512, quality.aniso);
+  timberTex ??= paintTimber(quality.tex, quality.aniso);
+  canvasTex ??= paintCanvas(quality.tex, quality.aniso);
   return { timber: timberTex, canvas: canvasTex };
 }
 
@@ -118,7 +119,7 @@ export function bunting(list: Flag[]): THREE.BufferGeometry {
 }
 
 /** Long tapering masthead pennants in her own colour. */
-function pennants(list: { at: THREE.Vector3; len: number; w: number; ph: number }[], color: string): THREE.BufferGeometry {
+export function pennants(list: { at: THREE.Vector3; len: number; w: number; ph: number }[], color: string): THREE.BufferGeometry {
   const P: number[] = [], C: number[] = [], F: number[] = [], I: number[] = [];
   const c = new THREE.Color(color), NX = 16;
   for (const pn of list) {
@@ -178,6 +179,10 @@ function kit(R: HullRecipe): Kit {
   return k;
 }
 
+/** Where her recipe's guns are, muzzle by muzzle: a ship from a file that does not say
+ *  where hers are fires from these. */
+export const recipeGuns = (R: HullRecipe): Gun[] => kit(R).guns;
+
 /** A hull material already in her going-away variant, never drawn: the view compiles its
  *  program at start-up, so the first prize to escape does not stall a frame to build it. */
 export function fadeWarmers(): THREE.Object3D {
@@ -233,7 +238,7 @@ export class ProceduralShip implements ShipModel {
     if (K.sails) {
       const emblem = R.emblem ?? (R.flag === 'spain' ? 'cross' : 'none');
       const ink = R.ink ?? (emblem === 'cross' ? '#A5282B' : '#17130F');
-      this.canvas = canvasMaterial(tex.canvas, R.palette.sail, ink, quality.high);
+      this.canvas = canvasMaterial(tex.canvas, R.palette.sail, ink, quality.a2c);
       this.sails = new THREE.Mesh(K.sails, this.canvas.mat);
       this.sails.customDepthMaterial = this.canvas.depth;
       this.root.add(this.sails);

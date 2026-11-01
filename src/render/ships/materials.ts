@@ -11,6 +11,8 @@
 //            pixel and faded by how much of that pixel it really covers, so a shroud a
 //            hundred metres off is a hairline and not a crawl of broken dashes.
 //   bunting  flags and pennants, streaming.
+//   model    a ship from a file keeps the file's own materials, and takes the same ports,
+//            char, canvas, fade and fog through them (see gltf.ts).
 //
 // All of them are three.js's own standard or basic materials with a few lines spliced in,
 // so the sun, the sky's light, shadows and fog reach them the way they reach everything.
@@ -216,6 +218,18 @@ float flap = sin(ph * 7.1 + position.z * 1.05 + position.y * 0.45) * luff * 0.32
 transformed -= aAxis * aBillow * (luff * 0.85 - ripple - flap);
 vCuv = aCuv;`;
 
+const SAIL_GLOW = /* glsl */ `#include <lights_fragment_end>
+// Cloth is thin: with the sun behind her, a sail glows.
+#if NUM_DIR_LIGHTS > 0
+{
+  float bfNL = dot(normal, directionalLights[0].direction);
+  float bfBack = saturate(-bfNL);
+  // and it scatters: a sail catches the sun at any angle, never quite edge-dark
+  float bfWrap = saturate(bfNL * 0.5 + 0.5);
+  reflectedLight.directDiffuse += diffuseColor.rgb * directionalLights[0].color * (bfBack * 0.32 + bfWrap * bfWrap * 0.16);
+}
+#endif`;
+
 export function canvasMaterial(map: THREE.Texture, color: string, ink: string, a2c: boolean): {
   mat: THREE.MeshStandardMaterial; depth: THREE.MeshDepthMaterial; u: CanvasUniforms;
 } {
@@ -249,17 +263,7 @@ diffuseColor.rgb = mix(diffuseColor.rgb, uInk, bfC.g * 0.94);
 diffuseColor.rgb *= mix(vec3(1.0), vec3(0.62, 0.52, 0.38), bfC.b * 0.85);
 // a rip's edge is frayed and darker
 if (uTatter > 0.0) diffuseColor.rgb *= mix(0.55, 1.0, smoothstep(0.0, 0.035, bfCut));`)
-      .replace('#include <lights_fragment_end>', /* glsl */ `#include <lights_fragment_end>
-// Cloth is thin: with the sun behind her, a sail glows.
-#if NUM_DIR_LIGHTS > 0
-{
-  float bfNL = dot(normal, directionalLights[0].direction);
-  float bfBack = saturate(-bfNL);
-  // and it scatters: a sail catches the sun at any angle, never quite edge-dark
-  float bfWrap = saturate(bfNL * 0.5 + 0.5);
-  reflectedLight.directDiffuse += diffuseColor.rgb * directionalLights[0].color * (bfBack * 0.32 + bfWrap * bfWrap * 0.16);
-}
-#endif`)
+      .replace('#include <lights_fragment_end>', SAIL_GLOW)
       .replace('#include <fog_fragment>', FOG);
   };
   mat.customProgramCacheKey = () => `bf-canvas${a2c ? '-a2c' : ''}`;
@@ -338,4 +342,129 @@ transformed.y += sin(fly * 1.3 - uTime * 5.0 + ph) * fly * 0.04 - fly * fly * 0.
   m.customProgramCacheKey = () => 'bf-bunting';
   flagCache.set(key, m);
   return m;
+}
+
+/* ---------------------------------------------------------------- model --- */
+
+/** One set per ship from a file, shared by all her materials. */
+export interface ModelUniforms {
+  uPorts: { value: THREE.Vector4 };   // as the timber's: lids larboard, starboard; guns larboard, starboard
+  uScorch: { value: number };
+  uFill: { value: number };
+  uTatter: { value: number };
+  uPhase: { value: number };
+  uFogK: { value: number };
+  uFade: { value: number };
+}
+
+export const modelUniforms = (): ModelUniforms => ({
+  uPorts: { value: new THREE.Vector4(0, 0, 0, 0) },
+  uScorch: { value: 0 },
+  uFill: { value: 1 },
+  uTatter: { value: 0 },
+  uPhase: { value: Math.random() * 20 },
+  uFogK: { value: 1 },
+  uFade: { value: 1 },
+});
+
+/**
+ * A file's own material, taught what a lofted ship's do. 'solid' is her hull and fittings:
+ * its lids and guns move by `aAnim` exactly as the timber's do, it chars in patches as she
+ * is holed and darkens where the sea wets her, and its lanterns brighten at dusk. 'sail'
+ * flogs by `aSail` (how far a point is free to move: nothing at her edges, most at her
+ * middle) as the wind goes out of her, and rags as she is shot. A file made unlit is lit:
+ * it has to take the sun, the fog and the char like every other ship.
+ */
+export function modelMaterial(src: THREE.Material, kind: 'solid' | 'sail', u: ModelUniforms): THREE.MeshStandardMaterial {
+  const m = src instanceof THREE.MeshStandardMaterial ? src.clone() : lit(src);
+  if (kind === 'sail') m.side = THREE.DoubleSide;
+  // a blended material is cut out instead: merged into one draw, her parts can't be sorted.
+  // A file's blended material comes without depth writes too, and without them the sky,
+  // drawn after her, paints over her
+  if (m.transparent) { m.transparent = false; m.depthWrite = true; m.alphaTest = Math.max(m.alphaTest, 0.5); }
+  m.onBeforeCompile = (sh) => {
+    Object.assign(sh.uniforms, u, { uTime: shipTime, uLamp: lampGlow });
+    if (kind === 'solid') {
+      sh.vertexShader = sh.vertexShader
+        .replace('#include <common>', /* glsl */ `#include <common>
+attribute vec4 aAnim;
+uniform vec4 uPorts;
+varying vec3 vLocal;`)
+        .replace('#include <beginnormal_vertex>', /* glsl */ `#include <beginnormal_vertex>
+float bfSide = aAnim.y;
+bool bfLid = aAnim.x > 0.5 && aAnim.x < 1.5;
+float bfAng = bfLid ? -bfSide * (bfSide > 0.0 ? uPorts.y : uPorts.x) * 1.3 : 0.0;
+float bfC = cos(bfAng), bfS = sin(bfAng);
+objectNormal.yz = vec2(objectNormal.y * bfC - objectNormal.z * bfS, objectNormal.y * bfS + objectNormal.z * bfC);`)
+        .replace('#include <begin_vertex>', /* glsl */ `#include <begin_vertex>
+if (bfLid) {
+  vec2 d = transformed.yz - aAnim.zw;
+  transformed.yz = aAnim.zw + vec2(d.x * bfC - d.y * bfS, d.x * bfS + d.y * bfC);
+} else if (aAnim.x > 1.5 && aAnim.x < 2.5) {
+  float run = bfSide > 0.0 ? uPorts.w : uPorts.z;
+  transformed.z -= bfSide * (1.0 - run) * aAnim.z;
+}
+vLocal = position;`);
+      sh.fragmentShader = sh.fragmentShader
+        .replace('#include <common>', /* glsl */ `#include <common>
+uniform float uScorch, uLamp, uFogK;
+varying vec3 vLocal;
+${NOISE}
+${FADE}`)
+        .replace('#include <color_fragment>', /* glsl */ `#include <color_fragment>
+${HULL_FADE_CUT}
+float bfN = bfNoise(vLocal * 0.42) * 0.62 + bfNoise(vLocal * 1.9) * 0.38;
+float bfThr = uScorch * 0.6;
+float bfBurn = (1.0 - smoothstep(bfThr - 0.1, bfThr, bfN)) * step(0.001, uScorch);
+float bfWet = 1.0 - smoothstep(0.0, 1.2, vLocal.y);
+diffuseColor.rgb *= 1.0 - bfWet * 0.28;
+diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * 0.18 + vec3(0.03, 0.025, 0.022), bfBurn * 0.85);`)
+        .replace('#include <roughnessmap_fragment>', /* glsl */ `#include <roughnessmap_fragment>
+roughnessFactor = clamp(roughnessFactor + bfBurn * 0.25 - bfWet * 0.3, 0.05, 1.0);`)
+        .replace('#include <emissivemap_fragment>', /* glsl */ `#include <emissivemap_fragment>
+totalEmissiveRadiance *= uLamp * 1.5;`)
+        .replace('#include <fog_fragment>', FOG);
+    } else {
+      sh.vertexShader = sh.vertexShader
+        .replace('#include <common>', /* glsl */ `#include <common>
+attribute float aSail;
+uniform float uFill, uTime, uPhase;
+varying vec3 vLocal;`)
+        .replace('#include <begin_vertex>', /* glsl */ `#include <begin_vertex>
+// Full, she holds the shape she was modelled in, with a ripple running through her; as
+// the wind goes out of her she flogs.
+float bfLuff = 1.0 - uFill;
+float bfPh = uTime + uPhase;
+float bfRipple = sin(bfPh * 2.7 + position.y * 0.5 + position.x * 0.31) * 0.012 + sin(bfPh * 4.3 + position.z * 0.7 + position.y * 0.2) * 0.008;
+float bfFlap = (sin(bfPh * 7.1 + position.z * 1.05 + position.y * 0.45) * 0.07 + sin(bfPh * 3.3 + position.y * 0.85) * 0.05) * bfLuff;
+transformed += normalize(objectNormal) * aSail * (bfRipple + bfFlap);
+vLocal = position;`);
+      sh.fragmentShader = sh.fragmentShader
+        .replace('#include <common>', /* glsl */ `#include <common>
+uniform float uTatter, uFogK;
+varying vec3 vLocal;
+${NOISE}
+${FADE}`)
+        .replace('#include <color_fragment>', /* glsl */ `#include <color_fragment>
+${FADE_CUT}
+// shot holes her where the noise runs lowest, and a rip's edge is frayed and darker
+float bfRag = bfNoise(vLocal * 0.5) * 0.6 + bfNoise(vLocal * 2.3) * 0.4;
+float bfCut = bfRag - uTatter * 0.85;
+if (bfCut < 0.0) discard;
+if (uTatter > 0.0) diffuseColor.rgb *= mix(0.55, 1.0, smoothstep(0.0, 0.035, bfCut));`)
+        .replace('#include <lights_fragment_end>', SAIL_GLOW)
+        .replace('#include <fog_fragment>', FOG);
+    }
+  };
+  m.customProgramCacheKey = () => `bf-model-${kind}`;
+  return m;
+}
+
+/** A material that is not three's standard one (a file's unlit or legacy one), as one. */
+export function lit(src: THREE.Material): THREE.MeshStandardMaterial {
+  const o = src as THREE.Material & { map?: THREE.Texture | null; color?: THREE.Color; vertexColors?: boolean };
+  return new THREE.MeshStandardMaterial({
+    map: o.map ?? null, color: o.color ?? new THREE.Color(1, 1, 1), vertexColors: !!o.vertexColors,
+    transparent: src.transparent, opacity: src.opacity, alphaTest: src.alphaTest, side: src.side, roughness: 0.9, metalness: 0,
+  });
 }

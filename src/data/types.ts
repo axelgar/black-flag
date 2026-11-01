@@ -50,10 +50,39 @@ export interface HullRecipe {
   squareTops?: boolean;
 }
 
-/** A ship model is either built from a recipe or loaded. Every ShipModel honours both. */
+/** A ship modelled by hand and exported as a GLB, drawn in place of her recipe. What the
+ *  file must hold is set out at the top of src/render/ships/gltf.ts. */
+export interface ModelFile {
+  url: string;
+  /** Quarter turns that bring her bow round to the file's +Z, glTF's forward: 1 if it
+   *  points along -X, 2 along -Z, 3 along +X. */
+  turn?: number;
+  /** She is scaled so her overall length is her recipe's. This replaces that with a plain
+   *  factor on the file's own units. */
+  scale?: number;
+  /** Metres she is raised by once scaled: how far below the file's origin her waterline is. */
+  lift?: number;
+}
+
+/** A set of land models in one GLB: buildings, trees, rocks, each a top-level node named by
+ *  what it is (`house_a`, `palm_2`). What a set must hold is set out at the top of
+ *  src/render/land/props.ts. */
+export interface PropSet {
+  url: string;
+  /** Quarter turns that bring the file's fronts (a door, a palm's lean) round to its +Z:
+   *  1 if they face along -X, 2 along -Z, 3 along +X. */
+  turn?: number;
+  /** A plain factor on the file's own units, for a set not made in metres. Trees and rocks
+   *  are sized by the game whatever their units; this is for buildings. */
+  scale?: number;
+}
+
+/** A ship model is either built from a recipe or loaded. Every ShipModel honours both. A
+ *  loaded one is drawn from her recipe until her file arrives, or if it never does: the
+ *  recipe also sets her length and beam, which the simulation sails by. */
 export type ModelSpec =
   | { kind: 'procedural'; recipe: HullRecipe }
-  | { kind: 'gltf'; url: string; scale: number; fallback: HullRecipe };
+  | { kind: 'gltf'; file: ModelFile; fallback: HullRecipe };
 
 export interface BowGun { reload: number; dmg: number; range: number }
 
@@ -110,6 +139,8 @@ export interface FoeClass {
   prefRange: number;     // where she likes to fight from
   sight: number;         // how far she sees you on a clear day
   recipe: HullRecipe;
+  /** Drawn from this file once it has loaded; from her recipe until then. */
+  model?: ModelFile;
 }
 
 export type LegendPattern = 'sweep' | 'shroud' | 'rain' | 'spiral';

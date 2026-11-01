@@ -47,6 +47,8 @@ export const CLASSES: Record<string, FoeClass> = {
     ram: 8, strikes: true, guns: 'beam', gunsPerSide: 2, reload: 2.6, range: 140, shotDmg: 2,
     prefRange: 95, sight: 340,
     note: 'Square-rigged and stubborn. She brings her beam round and throws two shot down it.',
+    // a stand-in, to prove a foe can be drawn from a file: Kenney's Pirate Kit (CC0)
+    model: { url: '/ships/kenney-ship-large.glb', lift: -2.2 },
     recipe: {
       length: 28, beam: 7.6, freeboard: 2.3, draft: 2.4, sheer: 0.8, stern: 'castle',
       forecastle: false, bowsprit: true, masts: 2, rig: 'square', mastHeight: 0.95, tiers: 3,

@@ -11,6 +11,8 @@
     "typecheck": "tsc --noEmit && tsc --noEmit -p server",
     "qr": "tsx scripts/qr.ts",
     "icons": "tsx scripts/icons.ts",
+    "ships:pack": "tsx scripts/pack-models.ts",
+    "props:pack": "tsx scripts/pack-models.ts --to props",
     "sea:dev": "wrangler dev -c server/wrangler.jsonc --ip 0.0.0.0",
     "sea:deploy": "wrangler deploy -c server/wrangler.jsonc",
     "sea:bot": "tsx scripts/sea-bot.ts",

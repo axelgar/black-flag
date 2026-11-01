@@ -1,0 +1,10 @@
+{
+  "source": "Stylized Pirate Ship by Maksim Batyrev, CC BY 4.0: https://sketchfab.com/3d-models/stylized-pirate-ship-1c62191534174bf7a67470fb02b97db1",
+  "drop": ["^WaterPlane$"],
+  "rename": [
+    ["^StylShip_(Sail\\w*)$", "sail_$1"],
+    ["^StylShip_(Ropes|Wire\\w*)$", "rope_$1"],
+    ["^StylShip_(MainFlag)$", "flag_$1"],
+    ["^StylShip_(Flag\\d)$", "pennant_$1"]
+  ]
+}

@@ -7,7 +7,7 @@
 import './ui/app.css';
 import { legendById, legendFor } from './data/legends';
 import { CLASSES } from './data/enemies';
-import { recipeOf } from './data/upgrades';
+import { fileOf, recipeOf } from './data/upgrades';
 import { sailCount } from './data/waves';
 import { SHIPS, shipById } from './data/ships';
 import { session, save, meet, beat, nav, sea } from './state/session';
@@ -44,6 +44,7 @@ try {
 }
 const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches || session.reduceMotion;
 view.setReduced(reduced());
+view.setModelFiles(session.models);
 
 const FIXED = 1 / 120;
 let world: World | null = null;
@@ -452,6 +453,7 @@ upright.addEventListener('change', () => { if (upright.matches) heaveTo(); });
 
 window.addEventListener('bf:prefs', () => {
   view.setReduced(reduced());
+  view.setModelFiles(session.models);
   if (world) world.reduce = reduced();
   A.prefs();
 });
@@ -608,7 +610,9 @@ if (!location.hash) location.hash = '#/';
 render();
 requestAnimationFrame(frame);
 requestAnimationFrame(() => setTimeout(() => document.getElementById('boot')?.classList.add('gone'), 250));
-// The server comes after the sea: sign in, send any taps waiting, and learn the captain's name.
+// The model files (ships' and land's) come after the sea is up, and the server after them:
+// sign in, send any taps waiting, and learn the captain's name.
+setTimeout(() => view.loadModels(), 400);
 setTimeout(() => { void connect(); }, 1200);
 
 // For poking at from the console, and for the browser checks.
@@ -635,6 +639,7 @@ setTimeout(() => { void connect(); }, 1200);
   /** Look at any hull in the game at anchor: `inspect('foe', 'manowar')`, `inspect('legend', 'dama', 2)`. */
   inspect(kind: 'ship' | 'foe' | 'legend', id: string, zoom = 1) {
     const R = kind === 'foe' ? CLASSES[id]?.recipe : kind === 'legend' ? legendById(id).recipe : recipeOf(shipById(id));
-    view.inspect(R ?? null, zoom);
+    const file = kind === 'foe' ? CLASSES[id]?.model : kind === 'ship' ? fileOf(shipById(id)) : undefined;
+    view.inspect(R ?? null, zoom, file);
   },
 };

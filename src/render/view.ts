@@ -14,9 +14,10 @@ import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { angleTo, clamp } from '../core/vec';
 import { CLASSES } from '../data/enemies';
 import { LEGENDS } from '../data/legends';
+import { PROP_SETS } from '../data/props';
 import { SHIPS, shipById } from '../data/ships';
-import { recipeOf } from '../data/upgrades';
-import type { HullRecipe } from '../data/types';
+import { fileOf, recipeOf } from '../data/upgrades';
+import type { HullRecipe, ModelFile } from '../data/types';
 import { MAP_R, type GameMap } from '../sim/map';
 import { markOf } from '../data/colors';
 import { sideVec } from '../sim/combat';
@@ -25,28 +26,47 @@ import { Air, type Look } from './atmosphere';
 import { Flotsam } from './flotsam';
 import { Fx } from './fx';
 import { Islands } from './islands';
+import { Dress, propKit, type PropKit } from './land/props';
 import { Markers } from './markers';
 import { Ocean } from './ocean';
 import { Sky } from './sky';
 import { Wakes } from './wakes';
 import { heightAt, ride } from './waves';
 import { ProceduralShip, fadeWarmers, prewarmShips, setShipLights, setShipTime, setShipView, shipQuality } from './ships/procedural';
+import { GltfShip, loadFile, shipFiles, shipKit } from './ships/gltf';
 import type { ShipModel } from './ships/ShipModel';
 import { STRIKE_WINDOW, BOARD_TIME, ESCAPE_TIME } from '../sim/combat';
 
 export type Mode = 'title' | 'shipyard' | 'port' | 'play' | 'watch' | 'none';
-export type Tier = 'low' | 'high';
+/** 'mid' is 'low' drawn sharper: the same sea, sky and effects, but antialiased, at up to
+ *  twice the pixels and with the finer textures. It is for phones that can afford it. */
+export type Tier = 'low' | 'mid' | 'high';
 
 export function detectTier(): Tier {
   const coarse = matchMedia('(pointer: coarse)').matches;
   const cores = navigator.hardwareConcurrency || 4;
-  const mem = (navigator as { deviceMemory?: number }).deviceMemory ?? 8;
-  if (coarse || cores <= 4 || mem <= 4) return 'low';
+  const mem = (navigator as { deviceMemory?: number }).deviceMemory;
+  if (coarse) {
+    // An iPhone says it has two cores whatever it has (WebKit's guard against
+    // fingerprinting) and says nothing of its memory, so it is known by name; the
+    // oldest that can run WebGL 2 lean on the resolution governor. An Android says how
+    // much memory it has, to the power of two below; 8 is a phone from the middle of
+    // the range up.
+    const apple = /iP(hone|ad|od)/.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
+    return apple || (mem ?? 0) >= 8 ? 'mid' : 'low';
+  }
+  if (cores <= 4 || (mem ?? 8) <= 4) return 'low';
   return 'high';
 }
 
-function modelFor(R: HullRecipe, weak?: { fwd: number; side: -1 | 1 }[]): ShipModel {
-  return new ProceduralShip(R, weak);
+/** Whether ships and land with model files are drawn from them. Off, every ship is drawn
+ *  from her recipe and the islands from code, to set the two side by side. */
+const art = { files: true };
+
+/** A ship: from her file if she has one and it is here, from her recipe otherwise. */
+function modelFor(R: HullRecipe, file?: ModelFile, weak?: { fwd: number; side: -1 | 1 }[]): ShipModel {
+  const K = file && art.files ? shipKit(file, R) : null;
+  return K ? new GltfShip(K, R) : new ProceduralShip(R, weak);
 }
 
 interface Hulk { m: ShipModel; t: number; x: number; z: number; h: number; boarded: boolean }
@@ -113,11 +133,13 @@ export class View {
 
   constructor(canvas: HTMLCanvasElement, tier: Tier) {
     this.tier = tier;
-    const high = tier === 'high';
-    // No multisampling on the canvas itself: on 'high' everything is drawn into the
-    // composer's own multisampled target (below) and the canvas only takes the finished
-    // picture, and on 'low' it is fill rate a phone does not have.
-    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance', stencil: false });
+    const high = tier === 'high', sharp = tier !== 'low';
+    // Multisampling on the canvas itself only on 'mid'. On 'high' everything is drawn into
+    // the composer's own multisampled target (below) and the canvas only takes the
+    // finished picture. A phone's GPU keeps the samples in its tile memory and resolves
+    // them there, cheaply beside what the sea costs per pixel; on 'low' it is still fill
+    // rate a weak phone does not have.
+    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: tier === 'mid', powerPreference: 'high-performance', stencil: false });
     // Checking every shader's log as it links makes each compile block until it is done.
     this.renderer.debug.checkShaderErrors = import.meta.env.DEV;
     canvas.addEventListener('webglcontextrestored', () => { this.envLook = null; });
@@ -126,7 +148,10 @@ export class View {
     this.renderer.shadowMap.enabled = high;
     this.renderer.shadowMap.type = THREE.PCFShadowMap;
     this.pmrem = new THREE.PMREMGenerator(this.renderer);
-    shipQuality(high, this.renderer.capabilities.getMaxAnisotropy());
+    this.aniso = Math.min(high ? 8 : sharp ? 4 : 2, this.renderer.capabilities.getMaxAnisotropy());
+    this.texSize = sharp ? 1024 : 512;
+    shipQuality(high, this.aniso, this.texSize, sharp);
+    shipFiles(this.renderer);
     prewarmShips([...SHIPS.map(recipeOf), ...Object.values(CLASSES).map((c) => c.recipe), ...LEGENDS.map((l) => l.recipe)]);
     this.scene.fog = new THREE.Fog('#CFE0DF', 380, 1500);
 
@@ -207,7 +232,7 @@ export class View {
     const c = this.renderer.domElement;
     const w = c.clientWidth || window.innerWidth, h = c.clientHeight || window.innerHeight;
     this.cssW = w; this.cssH = h;
-    this.dprCap = Math.min(window.devicePixelRatio || 1, this.tier === 'high' ? 2 : 1.5);
+    this.dprCap = Math.min(window.devicePixelRatio || 1, this.tier === 'low' ? 1.5 : 2);
     const dpr = this.dprCap * this.dprScale;
     this.renderer.setPixelRatio(dpr);
     this.renderer.setSize(w, h, false);
@@ -226,6 +251,9 @@ export class View {
   // Measured only while a fight is being sailed — behind the menus it idles at 30 on
   // purpose — stepped down quickly, and back up only after a long run of good frames.
   private cssW = 1; private cssH = 1;
+  /** Texture filtering and the size the timber, canvas and ground are painted at. */
+  private aniso = 2;
+  private texSize = 512;
   private dprCap = 1;
   private dprScale = 1;
   private govLog: number[] = [];
@@ -277,7 +305,7 @@ export class View {
   setMap(m: GameMap) {
     if (this.map === m) return;
     this.map = m;
-    this.islands.build(m, this.tier === 'high', Math.min(this.tier === 'high' ? 8 : 2, this.renderer.capabilities.getMaxAnisotropy()));
+    this.islands.build(m, this.tier === 'high', this.aniso, this.texSize, this.tier !== 'low');
     this.ocean.bakeShore(m);
     const h = m.harbour;
     this.marks.beacon.position.set(h.x, 0.3, h.y);
@@ -404,7 +432,7 @@ export class View {
     if (this.playerShip === id && this.player) return;
     if (this.player) this.drop(this.player);
     this.playerShip = id;
-    this.player = modelFor(recipeOf(shipById(id)));
+    this.player = modelFor(recipeOf(shipById(id)), fileOf(shipById(id)));
     this.player.setShadows(this.tier === 'high');
     this.player.fog?.(0.35);
     this.scene.add(this.player.root);
@@ -417,7 +445,7 @@ export class View {
     this.showcase = null;
     this.showcaseId = id || '';
     if (!id) return;
-    this.showcase = modelFor(recipeOf(shipById(id)));
+    this.showcase = modelFor(recipeOf(shipById(id)), fileOf(shipById(id)));
     this.showcase.setShadows(this.tier === 'high');
     this.scene.add(this.showcase.root);
   }
@@ -427,13 +455,13 @@ export class View {
 
   /** For the console: put any recipe at anchor where the showcase ship rides, and look
    *  at her from `zoom` times closer. `bf.inspect('foe', 'frigate')`. */
-  inspect(R: HullRecipe | null, zoom = 1) {
+  inspect(R: HullRecipe | null, zoom = 1, file?: ModelFile) {
     if (this.showcase) this.drop(this.showcase);
     this.showcase = null;
     this.showcaseId = R ? `inspect:${JSON.stringify(R).length}` : '';
     this.zoom = zoom;
     if (!R) return;
-    this.showcase = modelFor(R);
+    this.showcase = modelFor(R, file);
     this.showcase.setShadows(this.tier === 'high');
     this.scene.add(this.showcase.root);
   }
@@ -458,6 +486,82 @@ export class View {
   private drop(m: ShipModel) {
     this.scene.remove(m.root);
     m.dispose();
+  }
+
+  /* -------------------------------------------------------- model files -- */
+
+  /** Fetch every model file, ships' and land's, in the background. */
+  loadModels() {
+    this.loadShips();
+    this.loadProps();
+  }
+
+  /**
+   * Fetch every ship's model file. Ships drawn from their recipes meanwhile are built again
+   * from the file once it is here and its shaders are built, so its arrival is not also a
+   * dropped frame.
+   */
+  private loadShips() {
+    const want: [ModelFile, HullRecipe][] = [];
+    for (const d of SHIPS) { const f = fileOf(d); if (f) want.push([f, recipeOf(d)]); }
+    for (const c of Object.values(CLASSES)) if (c.model) want.push([c.model, c.recipe]);
+    for (const [f, R] of want) {
+      loadFile(f.url)
+        .then(() => {
+          // one of her, never drawn and kept, so her programs stay built
+          const warm = new GltfShip(shipKit(f, R)!, R);
+          this.warmShips.push(warm);
+          return this.renderer.compileAsync(warm.root, this.camera, this.scene);
+        })
+        .then(() => this.refit(), (err) => console.warn(`[ships] ${f.url} did not load; she is drawn from her recipe`, err));
+    }
+  }
+  private warmShips: ShipModel[] = [];
+
+  /**
+   * Fetch the land's sets, all of them before any is used, so the islands are dressed
+   * once. A set that fails is left out and its kinds are built from code.
+   */
+  private loadProps() {
+    if (!PROP_SETS.length) return;
+    Promise.all(PROP_SETS.map((set) => loadFile(set.url).then(
+      (scene) => ({ set, scene }),
+      (err) => { console.warn(`[props] ${set.url} did not load; the land is built from code`, err); return null; })))
+      .then((files) => {
+        const kit = propKit(files.filter((f) => f !== null));
+        if (!kit.size) return;
+        // one of every prop, never drawn and kept, so their programs are built before the
+        // islands are dressed with them
+        const warm = new Dress(kit);
+        for (const kind of kit.keys()) warm.put(kind, new THREE.Matrix4());
+        const g = warm.build(this.tier === 'high', this.tier !== 'low');
+        if (g) this.warmProps.push(g);
+        return (g ? this.renderer.compileAsync(g, this.camera, this.scene) : Promise.resolve()).then(() => {
+          this.props = kit;
+          if (art.files) this.islands.setProps(kit);
+        });
+      });
+  }
+  private warmProps: THREE.Object3D[] = [];
+  private props: PropKit | null = null;
+
+  /** Draw ships and land from their files where they have one, or all of it from code. */
+  setModelFiles(on: boolean) {
+    if (art.files === on) return;
+    art.files = on;
+    this.refit();
+    this.islands.setProps(on ? this.props : null);
+  }
+
+  /** Build every ship afloat again, the next time she is drawn. */
+  private refit() {
+    if (this.player) { const id = this.playerShip; this.playerShip = ''; this.setPlayerShip(id); }
+    if (this.showcase && !this.showcaseId.startsWith('inspect:')) { const id = this.showcaseId; this.showcaseId = ''; this.setShowcase(id); }
+    for (const m of this.crew.values()) this.drop(m);
+    this.crew.clear();
+    this.crewShip.clear();
+    for (const m of this.foes.values()) this.drop(m);
+    this.foes.clear();
   }
 
   whiteout(v: number, color = '#ffffff') {
@@ -656,7 +760,7 @@ export class View {
       if (m && (o.left || this.crewShip.get(o.id) !== o.shipId)) { this.drop(m); this.crew.delete(o.id); m = undefined; }
       if (o.left) continue;
       if (!m) {
-        m = modelFor(recipeOf(shipById(o.shipId)));
+        m = modelFor(recipeOf(shipById(o.shipId)), fileOf(shipById(o.shipId)));
         m.setShadows(this.tier === 'high');
         this.scene.add(m.root);
         this.crew.set(o.id, m);
@@ -671,8 +775,9 @@ export class View {
       live.add(e.id);
       let m = this.foes.get(e.id);
       if (!m) {
+        // a legendary is always lofted: her weak points are placed on her recipe's hull
         const R = e.L ? e.L.recipe : CLASSES[e.cls].recipe;
-        m = modelFor(R, e.ports ?? undefined);
+        m = modelFor(R, e.L ? undefined : CLASSES[e.cls].model, e.ports ?? undefined);
         m.setShadows(this.tier === 'high' && e.len > 20);
         this.scene.add(m.root);
         this.foes.set(e.id, m);

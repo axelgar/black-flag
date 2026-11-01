@@ -6,7 +6,7 @@ import type { Tap } from '../net/items';
 
 export type { Tap, Via } from '../net/items';
 
-export type Quality = 'auto' | 'low' | 'high';
+export type Quality = 'auto' | 'low' | 'mid' | 'high';
 
 export interface Records {
   bestWave: number; bestPlunder: number; bestTime: number;
@@ -35,6 +35,7 @@ export interface Session {
   v: 2;
   sound: boolean; haptics: boolean; reduceMotion: boolean;
   fullscreen: boolean;               // on a phone that allows it, the sea takes the whole screen
+  models: boolean;                   // ships and land with model files are drawn from them; off, all from code
   quality: Quality;
   records: Records;
   seen: Record<string, number>;      // class or legend id → times met
@@ -54,7 +55,7 @@ export const AUTH_KEY = 'blackflag.auth';
 
 const blank = (): Session => ({
   v: 2,
-  sound: true, haptics: true, reduceMotion: false, fullscreen: true, quality: 'auto',
+  sound: true, haptics: true, reduceMotion: false, fullscreen: true, models: true, quality: 'auto',
   records: { bestWave: 0, bestPlunder: 0, bestTime: 0, runs: 0, boarded: 0, sunk: 0, legends: 0 },
   seen: {}, beaten: {},
   unlocked: [STARTER], ship: STARTER,

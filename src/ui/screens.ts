@@ -503,11 +503,11 @@ export function log(): Screen {
 
 /* ================================================================= menu == */
 
-const QUALITY: Quality[] = ['auto', 'low', 'high'];
+const QUALITY: Quality[] = ['auto', 'low', 'mid', 'high'];
 
 export function menu(v: View): Screen {
   const s = session;
-  const toggles: [keyof typeof s, string][] = [['sound', 'Sound'], ['haptics', 'Haptics'], ['reduceMotion', 'Reduce motion']];
+  const toggles: [keyof typeof s, string][] = [['sound', 'Sound'], ['haptics', 'Haptics'], ['reduceMotion', 'Reduce motion'], ['models', 'Models']];
   // Only where a page can have the whole screen: Android and tablets, not iPhones.
   if (document.fullscreenEnabled && isTouch()) toggles.push(['fullscreen', 'Full screen']);
   return {
@@ -553,7 +553,7 @@ export function menu(v: View): Screen {
       const onCloud = () => { if (!$('[data-rename]', root)) redraw(); };
       addEventListener('bf:cloud', onCloud);
       $$('[data-t]', root).forEach((b) => b.addEventListener('click', () => {
-        const k = b.dataset.t as 'sound' | 'haptics' | 'reduceMotion' | 'fullscreen';
+        const k = b.dataset.t as 'sound' | 'haptics' | 'reduceMotion' | 'fullscreen' | 'models';
         s[k] = !s[k];
         save(); buzz(6);
         emit(k === 'fullscreen' ? 'bf:fullscreen' : 'bf:prefs');

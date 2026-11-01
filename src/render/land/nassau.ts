@@ -16,6 +16,7 @@ import { bunting, textures } from '../ships/procedural';
 import { Stock, type Nursery } from './flora';
 import { shape, type Flat, type Path, type Shape } from './ground';
 import { masonryTexture } from './paint';
+import type { Dress } from './props';
 
 const TAU = Math.PI * 2;
 const UP = new THREE.Vector3(0, 1, 0);
@@ -605,20 +606,25 @@ export interface Town {
 
 let masonry: THREE.Texture | null = null;
 
-export function buildTown(sh: Shape, _harbour: Harbour, sites: Sites, N: Nursery, lo: boolean, aniso: number): Town {
+/** Nassau, built. Whatever `dress` has a model of is set down from it, and the rest is
+ *  built here. */
+export function buildTown(sh: Shape, _harbour: Harbour, sites: Sites, N: Nursery, lo: boolean, aniso: number, dress: Dress | null = null): Town {
   const m = new Mesh();
   const r = rng(`nassau:town:${sh.is.seed}`);
   const flagsAt: THREE.Vector3[] = [];
+  const frame = (s: Spot) => lotFrame(s.x, s.y, s.z, s.face);
   for (const lot of sites.lots) {
     const y = sh.height(lot.x, lot.z);
+    if (dress?.fit(lot.kind, lotFrame(lot.x, y, lot.z, lot.face), lot.w, lot.d)) continue;
     if (lot.kind === 'church') church(m, lot, y);
     else if (lot.kind === 'governor') governor(m, lot, y, flagsAt);
     else if (lot.kind === 'warehouse') warehouse(m, lot, r, y);
     else if (lot.kind === 'shack') shack(m, lot, r, y);
     else house(m, lot, r, y);
   }
-  fortress(m, sites.fort, flagsAt);
-  const lamp = lighthouse(m, sites.light);
+  if (!dress?.stand('fort', frame(sites.fort))) fortress(m, sites.fort, flagsAt);
+  const light = dress?.stand('lighthouse', frame(sites.light));
+  const lamp = light?.light ?? lighthouse(m, sites.light);
   quays(m, sites, r);
   camp(m, sh, sites.camps, r);
   market(m, sites.square, r);
@@ -640,8 +646,10 @@ export function buildTown(sh: Shape, _harbour: Harbour, sites: Sites, N: Nursery
     if (sites.camps.some((s) => Math.hypot(s.x - x, s.z - z) < 3.5)) continue;
     const s = 0.9 + r() * 0.35;
     const mm = new THREE.Matrix4().compose(new THREE.Vector3(x, sh.height(x, z) - 0.2, z), new THREE.Quaternion().setFromEuler(new THREE.Euler(0, -aa + (r() - 0.5), 0)), new THREE.Vector3(s, s, s));
-    grove.add(N.palms[Math.floor(r() * N.palms.length)], mm, new THREE.Color(1, 1, 1), x * 0.13 + z * 0.17);
+    const t = N.palms[Math.floor(r() * N.palms.length)];
+    if (!dress?.put('palm', mm)) grove.add(t, mm, new THREE.Color(1, 1, 1), x * 0.13 + z * 0.17);
   }
+  if (dress) flagsAt.push(...dress.flags);
 
   const tex = textures();
   // The masonry is the same for every Nassau, so it is painted once and kept: painting it

@@ -3,8 +3,10 @@
 //   ground   a heightfield shaped to her coastline (land/ground.ts), with her rocks
 //   flora    palms, the jungle's canopy, scrub and hardwoods (land/flora.ts), in the wind
 //   town     Nassau's streets, fort, light and quays (land/nassau.ts)
+//   props    whatever of those a model file has (land/props.ts), set down in their place
 //
-// Each island is two or three draws, culled on her own; reefs are one more.
+// Each island is two or three draws, culled on her own, and one more for each prop she
+// has and its materials; reefs are one more.
 
 import * as THREE from 'three';
 import { rng, type Rng } from '../core/rng';
@@ -13,17 +15,19 @@ import { Soil, groundMaterial, groundMesh, shape, type Shape } from './land/grou
 import { Stock, floraMaterial, stock, type Nursery } from './land/flora';
 import { foliageTexture, groundTexture } from './land/paint';
 import { buildTown, nassauSites, type Town } from './land/nassau';
+import { Dress, type PropKind, type PropKit } from './land/props';
 import { shipTime } from './ships/materials';
 
 const TAU = Math.PI * 2;
 
-/** Set her plants and rocks down according to what kind of island she is. */
-function plant(sh: Shape, grove: Stock, soil: Soil, N: Nursery, lo: boolean, avoid: (x: number, z: number) => boolean) {
+/** Set her plants and rocks down according to what kind of island she is: each from a
+ *  model, where `dress` has one of its kind, or grown from the nursery. */
+function plant(sh: Shape, grove: Stock, soil: Soil, N: Nursery, lo: boolean, avoid: (x: number, z: number) => boolean, dress: Dress | null) {
   const is = sh.is;
   const r = rng(is.seed + 11);
-  const put = (t: Stock, x: number, z: number, y: number, rot: number, sx: number, sy: number, tint: THREE.Color) => {
+  const put = (kind: PropKind, t: Stock, x: number, z: number, y: number, rot: number, sx: number, sy: number, tint: THREE.Color) => {
     const m = new THREE.Matrix4().compose(new THREE.Vector3(x, y, z), new THREE.Quaternion().setFromEuler(new THREE.Euler(0, rot, 0)), new THREE.Vector3(sx, sy, sx));
-    grove.add(t, m, tint, x * 0.13 + z * 0.17);
+    if (!dress?.put(kind, m)) grove.add(t, m, tint, x * 0.13 + z * 0.17);
   };
   // leaf greens: olive to deep, a few going yellow; the atlas is already green, so these are tints
   const green = (k: number) => new THREE.Color().setHSL(0.2 + (r() - 0.5) * 0.08, 0.28 + r() * 0.2, 0.36 + k * 0.08 + (r() - 0.5) * 0.12).multiplyScalar(1.75);
@@ -45,7 +49,7 @@ function plant(sh: Shape, grove: Stock, soil: Soil, N: Nursery, lo: boolean, avo
         // emergent giants here and there over the general run of the canopy
         const giant = r() < 0.12;
         const size = (f > edge - 0.14 ? 2.6 : 3.4) + r() * 2 + (giant ? 1.8 : 0);
-        put(pick(N.crowns), x, z, y + size * 0.4 + 1.2 + (giant ? 2.5 : r() * 1.2), r() * TAU, size, size * (0.65 + r() * 0.35), green(giant ? 0.3 : 0));
+        put('canopy', pick(N.crowns), x, z, y + size * 0.4 + 1.2 + (giant ? 2.5 : r() * 1.2), r() * TAU, size, size * (0.65 + r() * 0.35), green(giant ? 0.3 : 0));
       }
     }
   }
@@ -59,7 +63,7 @@ function plant(sh: Shape, grove: Stock, soil: Soil, N: Nursery, lo: boolean, avo
     const y = sh.height(x, z);
     if (y < 0.7 || avoid(x, z) || slope(x, z) > 0.6) continue;
     const s = 0.85 + r() * 0.4;
-    put(pick(N.palms), x, z, y - 0.2, -a + (r() - 0.5) * 1.2, s, s * (0.9 + r() * 0.25), new THREE.Color(1, 1, 1).multiplyScalar(0.9 + r() * 0.2));
+    put('palm', pick(N.palms), x, z, y - 0.2, -a + (r() - 0.5) * 1.2, s, s * (0.9 + r() * 0.25), new THREE.Color(1, 1, 1).multiplyScalar(0.9 + r() * 0.2));
   }
   // scrub at the jungle's edge, on rock plateaus, and in the lee of the dunes
   const bushes = is.kind === 'rock' ? Math.round(is.r * 0.55) : is.kind === 'sand' ? 6 + Math.floor(r() * 6) : Math.round(is.r * 0.5);
@@ -70,7 +74,7 @@ function plant(sh: Shape, grove: Stock, soil: Soil, N: Nursery, lo: boolean, avo
     const y = sh.height(x, z);
     if (y < 0.8 || avoid(x, z)) continue;
     const s = 0.9 + r() * 1.1;
-    put(pick(N.bushes), x, z, y + s * 0.3, r() * TAU, s, s * 0.8, green(is.kind === 'rock' ? -0.8 : -0.3).lerp(new THREE.Color(1.2, 1.1, 0.6), is.kind === 'rock' ? 0.3 : 0));
+    put('bush', pick(N.bushes), x, z, y + s * 0.3, r() * TAU, s, s * 0.8, green(is.kind === 'rock' ? -0.8 : -0.3).lerp(new THREE.Color(1.2, 1.1, 0.6), is.kind === 'rock' ? 0.3 : 0));
   }
   // a few hardwoods: stunted on the rocks, tall round Nassau's hill
   const trees = is.kind === 'rock' ? Math.round(is.r * 0.12) : is.kind === 'nassau' ? 14 : is.kind === 'jungle' ? Math.round(is.r * 0.1) : 0;
@@ -79,7 +83,7 @@ function plant(sh: Shape, grove: Stock, soil: Soil, N: Nursery, lo: boolean, avo
     const [x, z] = at(a, f);
     if (avoid(x, z) || (is.kind === 'nassau' && z > is.y)) continue;
     const s = is.kind === 'rock' ? 0.6 + r() * 0.3 : 0.9 + r() * 0.4;
-    put(pick(N.trees), x, z, sh.height(x, z) - 0.2, r() * TAU, s, s, green(0));
+    put('tree', pick(N.trees), x, z, sh.height(x, z) - 0.2, r() * TAU, s, s, green(0));
   }
   // rocks: in the surf, at the foot of cliffs, on the tops
   const grey = is.kind === 'rock' ? '#857B6B' : '#6E685E';
@@ -94,11 +98,12 @@ function plant(sh: Shape, grove: Stock, soil: Soil, N: Nursery, lo: boolean, avo
     const s = is.kind === 'rock' ? (top ? 1 + r() * 1.8 : 1.6 + r() * 3.4) : 0.8 + r() * 1.9;
     const y = Math.max(sh.height(x, z), -0.8) - s * 0.25;
     const m = new THREE.Matrix4().compose(new THREE.Vector3(x, y, z), new THREE.Quaternion().setFromEuler(new THREE.Euler(r() * 0.5, r() * TAU, r() * 0.5)), new THREE.Vector3(s * (0.8 + r() * 0.5), s * (0.6 + r() * 0.5), s * (0.8 + r() * 0.5)));
-    soil.rock(pick(N.rocks), m, new THREE.Color(grey).multiplyScalar(0.8 + r() * 0.3), moss);
+    const t = pick(N.rocks), tint = new THREE.Color(grey).multiplyScalar(0.8 + r() * 0.3);
+    if (!dress?.put('rock', m)) soil.rock(t, m, tint, moss);
   }
 }
 
-function reefs(m: GameMap, soil: Soil, N: Nursery, r: Rng) {
+function reefs(m: GameMap, soil: Soil, N: Nursery, r: Rng, dress: Dress | null) {
   for (const k of m.reefs) {
     const n = 4 + Math.floor(k.r / 2.5);
     for (let i = 0; i < n; i++) {
@@ -108,7 +113,9 @@ function reefs(m: GameMap, soil: Soil, N: Nursery, r: Rng) {
         new THREE.Vector3(k.x + Math.cos(a) * d, -0.7 + r() * 0.8 - s * 0.2, k.y + Math.sin(a) * d),
         new THREE.Quaternion().setFromEuler(new THREE.Euler(r() * 0.6, r() * TAU, r() * 0.6)),
         new THREE.Vector3(s, s * (0.5 + r() * 0.4), s * (0.8 + r() * 0.4)));
-      soil.rock(N.rocks[Math.floor(r() * N.rocks.length)], mm, new THREE.Color(r() < 0.3 ? '#4A4038' : '#3A3632').multiplyScalar(0.9 + r() * 0.3), 0.15);
+      const t = N.rocks[Math.floor(r() * N.rocks.length)], tint = new THREE.Color(r() < 0.3 ? '#4A4038' : '#3A3632').multiplyScalar(0.9 + r() * 0.3);
+      // a reef's stones are under the sea, or only just out of it: darker for being wet
+      if (!dress?.put('rock', mm, 0.55)) soil.rock(t, mm, tint, 0.15);
     }
   }
 }
@@ -119,15 +126,19 @@ export class Islands {
   private groundMat: THREE.MeshStandardMaterial | null = null;
   private floraMat: THREE.MeshStandardMaterial | null = null;
   private towns: Town[] = [];
+  private dresses: Dress[] = [];
   private nursery: ReturnType<typeof stock> | null = null;
+  private props: PropKit | null = null;
+  private last: Parameters<Islands['build']> | null = null;
 
-  build(m: GameMap, high: boolean, aniso = 4) {
+  build(m: GameMap, high: boolean, aniso = 4, tex = high ? 1024 : 512, a2c = high) {
+    this.last = [m, high, aniso, tex, a2c];
     if (this.key === m.seed) return;
     this.key = m.seed;
     this.clear();
     const lo = !high;
-    this.groundMat ??= groundMaterial(groundTexture(high ? 1024 : 512, aniso));
-    this.floraMat ??= floraMaterial(foliageTexture(high ? 1024 : 512, aniso), shipTime, high);
+    this.groundMat ??= groundMaterial(groundTexture(tex, aniso));
+    this.floraMat ??= floraMaterial(foliageTexture(tex, aniso), shipTime, a2c);
     // The nursery (every palm, crown, tree and rock shape) is the same for every chart.
     const N = (this.nursery ??= stock(lo));
 
@@ -137,19 +148,40 @@ export class Islands {
       const cell = Math.max(1.4, Math.min(3, is.r / 26)) * (lo ? 1.6 : 1);
       const soil = groundMesh(sh, cell);
       const grove = new Stock();
-      plant(sh, grove, soil, N, lo, sites ? sites.avoid : () => false);
+      const dress = this.props ? new Dress(this.props) : null;
+      plant(sh, grove, soil, N, lo, sites ? sites.avoid : () => false, dress);
       this.add(soil.geometry(), this.groundMat, high, true);
       if (grove.count) this.add(grove.geometry(), this.floraMat, high, false);
       if (sites) {
-        const town = buildTown(sh, m.harbour, sites, N, lo, aniso);
+        const town = buildTown(sh, m.harbour, sites, N, lo, aniso, dress);
         this.towns.push(town);
         this.group.add(town.group);
         if (town.grove.count) this.add(town.grove.geometry(), this.floraMat, high, false);
       }
+      this.dressed(dress, high, a2c);
     }
     const reef = new Soil();
-    reefs(m, reef, N, rng(`${m.seed}:reefs`));
+    const dress = this.props ? new Dress(this.props) : null;
+    reefs(m, reef, N, rng(`${m.seed}:reefs`), dress);
     if (reef.I.length) this.add(reef.geometry(), this.groundMat, high, true);
+    this.dressed(dress, high, a2c);
+  }
+
+  /**
+   * Dress the islands from these props, or from nothing but code: built again at once if
+   * they are already up, which costs as much as a new chart does.
+   */
+  setProps(kit: PropKit | null) {
+    if (this.props === kit) return;
+    this.props = kit;
+    if (this.last) { this.key = ''; this.build(...this.last); }
+  }
+
+  private dressed(d: Dress | null, shadows: boolean, a2c: boolean) {
+    const g = d?.build(shadows, a2c);
+    if (!g) return;
+    this.dresses.push(d!);
+    this.group.add(g);
   }
 
   private add(g: THREE.BufferGeometry, mat: THREE.Material, shadows: boolean, receive: boolean) {
@@ -165,6 +197,8 @@ export class Islands {
   private clear() {
     for (const tw of this.towns) tw.dispose();
     this.towns = [];
+    for (const d of this.dresses) d.dispose();
+    this.dresses = [];
     for (const c of [...this.group.children]) {
       this.group.remove(c);
       if (c instanceof THREE.Mesh) c.geometry.dispose();

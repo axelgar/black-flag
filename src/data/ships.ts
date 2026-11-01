@@ -18,8 +18,10 @@ export const SHIPS: ShipDef[] = [
       shellsMax: 3, boardRepair: 10, ramDmg: 2, lives: 3,
     },
     model: {
-      kind: 'procedural',
-      recipe: {
+      kind: 'gltf',
+      // a stand-in, to prove the loader: Kenney's Pirate Kit (CC0), until her own is bought or made
+      file: { url: '/ships/kenney-ship-pirate-large.glb', lift: -2.2 },
+      fallback: {
         length: 30, beam: 8, freeboard: 2.5, draft: 2.5, sheer: 0.9, stern: 'castle',
         forecastle: false, bowsprit: true, masts: 2, rig: 'square', mastHeight: 0.98, tiers: 3,
         gunsPerSide: 5, gunDecks: 1, flag: 'black', chasers: true,
@@ -62,8 +64,13 @@ export const SHIPS: ShipDef[] = [
       shellsMax: 5, boardRepair: 16, ramDmg: 6, lives: 3,
     },
     model: {
-      kind: 'procedural',
-      recipe: {
+      kind: 'gltf',
+      // a stand-in, to try a detailed model: "Stylized Pirate Ship" by Maksim Batyrev (CC BY 4.0,
+      // credited in public/ships/CREDITS.md). Bow along -X and her hull 7.4 units long. Sized
+      // by her hull, not her bowsprit, so she is the Revenant's 46 m, and sunk to her
+      // recipe's 4 m draft: in the sea she came with she sat high
+      file: { url: '/ships/stylized-pirate-ship.glb', turn: 1, scale: 6.2, lift: -0.5 },
+      fallback: {
         length: 46, beam: 13, freeboard: 4.6, draft: 4, sheer: 1.6, stern: 'galleon',
         forecastle: true, bowsprit: true, masts: 3, rig: 'square', mastHeight: 0.9, tiers: 3,
         gunsPerSide: 9, gunDecks: 2, flag: 'black', gilt: true,
