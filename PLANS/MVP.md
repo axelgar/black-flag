@@ -193,8 +193,9 @@ The bar is in the EU.
 - **Email:** the only email sent is Supabase's code email, worded to say the free shot is
   saved. Voucher and reminder emails come later and would need a mail service.
 - **Privacy notice:** a short notice covering who runs the game, what is kept, for how
-  long and how to have it deleted. I draft it. It needs the bar's legal name and a
-  contact email. Deletion is by email request for now.
+  long and how to have it deleted. I draft it. The game is run by **Glitch Bars**, and
+  the contact is **info@glitchbars.com**. Deletion is by email request to that address
+  for now.
 - **Analytics:** Google Tag Manager goes. In the EU its cookies would need a consent
   banner. In its place, our own events go into Supabase: tag tapped, first sink, win,
   email given, redeemed (plus joining and being turned away from a sea). There are no
@@ -275,8 +276,6 @@ Each step goes to a Vercel preview of a new branch, `v3-mvp`, made from `v2-open
 
 ## Open
 
-- The bar's legal name and a contact email, for the privacy notice (needed by step 3).
-- Whether this Mac can still deploy to Cloudflare (`wrangler` login). Checked at step 1.
 - Later, not in the MVP:
   - secure tags per coaster;
   - voucher and reminder emails;
