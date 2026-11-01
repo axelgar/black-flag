@@ -28,7 +28,9 @@ export function newCode(): string {
 
 export class Link {
   state: LinkState = 'hailing';
-  why: Nope['why'] | 'server' | null = null;
+  /** Why the sea turned this phone away. 'server' is a line that kept dropping; 'reach', a
+   *  phone that never got through to the sea at all (a wifi that blocks it, a filter). */
+  why: Nope['why'] | 'server' | 'reach' | null = null;
   readonly mirror = new Mirror();
   welcome: Welcome | null = null;
   round: Round | null = null;
@@ -37,6 +39,8 @@ export class Link {
   private bar = 1;
   private tries = 0;
   private closed = false;
+  /** Has a socket to the sea ever opened? */
+  private opened = false;
   private presses = { fl: 0, fr: 0, mo: 0 };
   private sent = '';
   private sentAt = 0;
@@ -71,6 +75,7 @@ export class Link {
     const ws = new WebSocket(this.url());
     this.ws = ws;
     ws.onopen = () => {
+      this.opened = true;
       ws.send(JSON.stringify({ t: 'hello', v: WIRE, token: this.token, ship: this.ship, open: this.berth.kind === 'open' ? this.berth.mode : undefined }));
     };
     ws.onmessage = (e) => this.hear(JSON.parse(String(e.data)) as FromSea);
@@ -79,7 +84,7 @@ export class Link {
       // wifi comes and goes; the sea keeps the seat for a while, so come back for it
       this.state = this.state === 'aboard' ? 'lost' : this.state;
       this.changed();
-      if (++this.tries > RETRIES) { this.state = 'refused'; this.why = 'server'; this.changed(); return; }
+      if (++this.tries > RETRIES) { this.state = 'refused'; this.why = this.opened ? 'server' : 'reach'; this.changed(); return; }
       setTimeout(() => this.hail(), Math.min(8000, 500 * 2 ** this.tries));
     };
   }
@@ -131,6 +136,14 @@ export class Link {
     if (this.ws?.readyState !== WebSocket.OPEN || this.state !== 'aboard') return;
     this.ws.send(s);
     this.sent = s; this.sentAt = now; this.sentPresses = { fl: m.fl, fr: m.fr, mo: m.mo };
+  }
+
+  /** Try again, from the start, after the line gave up: a guest's wifi may have come back. */
+  again() {
+    if (this.state !== 'refused' || (this.why !== 'server' && this.why !== 'reach') || !this.token) return;
+    this.state = 'hailing'; this.why = null; this.tries = 0;
+    this.changed();
+    this.hail();
   }
 
   /** Go ashore. */

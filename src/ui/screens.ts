@@ -690,6 +690,10 @@ export function aboard(v: View): Screen {
     </div>`,
     mount(root) {
       root.querySelector('.hud')?.classList.add('shared');
+      // the note's buttons come and go with the line, so it is asked of the note itself
+      $('#sea-note', root)?.addEventListener('click', (e) => {
+        if ((e.target as HTMLElement).closest('[data-again]')) { buzz(10); emit('bf:again', null); }
+      });
       return mountHud(root, () => { /* no Nassau on a shared sea */ });
     },
   };
@@ -703,6 +707,7 @@ const TURNED: Record<string, [string, string]> = {
   version: ['A newer game is sailing', 'RELOAD THE PAGE TO JOIN'],
   bad: ['The sea is out of reach', 'TRY AGAIN IN A MOMENT'],
   server: ['The sea is out of reach', 'TRY AGAIN IN A MOMENT'],
+  reach: ['This phone cannot reach the sea', 'ON WIFI? TRY MOBILE DATA · OR THE OTHER WAY ROUND'],
 };
 
 /** Keep the overlays over a shared sea in step with the line. Cheap enough to call often. */
@@ -716,7 +721,8 @@ export function seaTick(link: Link | null) {
   else if (link.state === 'lost') n = '<b>Lost the wind</b><span>COMING ABOUT FOR THE SEA</span>';
   else if (link.state === 'refused') {
     const [big, small] = TURNED[link.why ?? 'server'] ?? TURNED.server;
-    n = `<b>${big}</b><span>${small}</span><button class="chip gold" data-go="#/sea">Back</button>`;
+    const again = link.why === 'server' || link.why === 'reach' ? '<button class="chip gold" data-again>Try again</button>' : '';
+    n = `<b>${big}</b><span>${small}</span><div class="acts">${again}<button class="chip${again ? '' : ' gold'}" data-go="#/sea">Back</button></div>`;
   }
   if (note.dataset.h !== n) { note.innerHTML = n; note.dataset.h = n; note.classList.toggle('on', !!n); }
 

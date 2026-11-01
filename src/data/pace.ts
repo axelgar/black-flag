@@ -6,3 +6,7 @@
 // round an island.
 export const PACE = 1.25;
 export const HELM = 1.1;
+/** The captains' own ships sail this much faster again than their tables say. Tried at the
+ *  bar, sailing felt slow on a phone. The Spanish keep their pace, so a captain can run
+ *  from more of them than she used to. */
+export const SAIL = 1.2;

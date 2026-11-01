@@ -75,6 +75,21 @@ app.addEventListener('wheel', (e) => {
 // not when it lands (iOS is strict about it). So every kind of tap asks, which also
 // wakes the sound again after the phone has been locked.
 for (const k of ['pointerdown', 'pointerup', 'touchend', 'click'] as const) addEventListener(k, () => A.unlock(), { capture: true, passive: true });
+// The page never zooms. iOS lets a pinch or a double tap zoom it whatever the viewport tag
+// says (for accessibility), and on the fixed layer the game lives in it does not always
+// honour touch-action either: a quick double tap on the guns zoomed the whole sea. So the
+// gestures themselves are refused. A second tap within a moment of the last loses only its
+// click (the guns, the stick and the HUD's buttons go on pointerdown), never a text box's
+// focus.
+for (const k of ['gesturestart', 'gesturechange', 'gestureend']) document.addEventListener(k, (e) => e.preventDefault(), { passive: false });
+document.addEventListener('touchmove', (e) => { if (e.touches.length > 1) e.preventDefault(); }, { passive: false });
+let tapped = -1e9;
+document.addEventListener('touchend', (e) => {
+  const t = e.target as HTMLElement | null;
+  const typing = !!t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName));
+  if (e.timeStamp - tapped < 350 && !typing && e.cancelable) e.preventDefault();
+  tapped = e.timeStamp;
+}, { passive: false });
 
 /* ------------------------------------------------------------ run flow --- */
 
@@ -200,10 +215,19 @@ window.addEventListener('bf:sea', (e) => {
   const berth = (e as CustomEvent<Berth>).detail;
   ashore();
   takeScreen();
-  link = new Link(berth, credentials(), session.ship, () => S.seaTick(link));
+  let turned = '';
+  const L = new Link(berth, credentials(), session.ship, () => {
+    S.seaTick(link);
+    // every time the sea turns a guest away, and why: a bar whose wifi cannot reach it shows here
+    const why = L.state === 'refused' ? String(L.why) : '';
+    if (why && why !== turned) track('sea_refused', { kind: berth.kind, why });
+    turned = why;
+  });
+  link = L;
   track('sea_join', { kind: berth.kind, mode: berth.kind === 'open' ? berth.mode : undefined, ship: session.ship });
   go('/aboard');
 });
+window.addEventListener('bf:again', () => link?.again());
 
 window.addEventListener('bf:ashore', () => { ashore(); go('/', true); });
 
@@ -456,6 +480,11 @@ window.addEventListener('bf:prefs', () => {
   A.prefs();
 });
 
+// The canvas's own size, not the window's. A phone that loads upright, as one does scanning
+// the bar's QR code, has the sea hidden behind the turn-me card; iOS can say it has turned
+// before the new size is known, and the sea stayed drawn at the upright shape, stretched
+// flat across the sideways screen, until a reload. The observer hears it once laid out.
+new ResizeObserver(() => view.resize()).observe(canvas);
 addEventListener('resize', () => view.resize());
 window.addEventListener('bf:pause', () => togglePause());
 // A finger on a screen that said it had none: put the stick and the thumb buttons up.
