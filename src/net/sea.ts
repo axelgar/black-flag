@@ -19,7 +19,7 @@ import { botName } from '../sim/bots';
 import * as Wo from '../sim/world';
 import { NO_INPUT } from '../sim/world';
 import type { GameEvent, Input, World } from '../sim/types';
-import { ShotLog, mine, pack, type Helm, type Nope, type Roster, type Snap } from './protocol';
+import { ShotLog, mine, pack, type Helm, type Nope, type Ran, type Roster, type Snap } from './protocol';
 
 export const HUES = MARKS;        // colours, each solid and dashed on the bar's screen (data/colors.ts)
 /** A phone that drops off out of a fight docks after this long, so a moment's wifi does not move her. */
@@ -36,6 +36,7 @@ interface Hand extends Aboard {
   gone: number;           // when the phone dropped off, by the sea's clock
   helm: Helm;
   seen: { f: number; a: number };   // the presses already fired
+  ran: Ran;               // which of their hands she is sailing by, and for how many ticks
   c: number;              // their colour
 }
 
@@ -43,7 +44,7 @@ interface Bot { id: number; name: string; c: number }
 
 export type Out = Roster | Snap;
 
-const idle = (): Helm => ({ t: 'in', m: null, f: 0, fa: 0, a: 0 });
+const idle = (): Helm => ({ t: 'in', n: 0, m: null, f: 0, fa: 0, a: 0 });
 
 export class Sea {
   readonly code: string;
@@ -75,7 +76,9 @@ export class Sea {
   join(a: Aboard): Nope['why'] | null {
     const had = this.hands.get(a.seat);
     if (had) {
+      // a new line is a new phone's count of hands, from nothing
       had.online = true;
+      had.helm = idle(); had.seen = { f: 0, a: 0 }; had.ran = { n: 0, ticks: 0 };
       if (had.name !== a.name) { had.name = a.name; this.dirty = true; }
       return null;
     }
@@ -83,7 +86,7 @@ export class Sea {
     const streak = this.kept.get(a.seat) ?? 0;
     this.kept.delete(a.seat);
     const p = Wo.join(this.world, { seat: a.seat, look: a.look, streak });
-    this.hands.set(a.seat, { ...a, id: p.id, online: true, gone: 0, helm: idle(), seen: { f: 0, a: 0 }, c: this.color(a.seat) });
+    this.hands.set(a.seat, { ...a, id: p.id, online: true, gone: 0, helm: idle(), seen: { f: 0, a: 0 }, ran: { n: 0, ticks: 0 }, c: this.color(a.seat) });
     this.drain();
     this.crew();
     this.dirty = true;
@@ -95,7 +98,7 @@ export class Sea {
     const h = this.hands.get(seat);
     if (!h || !h.online) return;
     h.online = false; h.gone = this.clock;
-    h.helm = idle(); h.seen = { f: 0, a: 0 };
+    h.helm = idle(); h.seen = { f: 0, a: 0 }; h.ran = { n: 0, ticks: 0 };
   }
 
   /** The hands, as the phone last sent them. */
@@ -123,7 +126,7 @@ export class Sea {
   own(seat: string): number[] | null {
     const h = this.hands.get(seat);
     const p = h ? this.world.ships[h.id] : null;
-    return p && !p.left ? mine(p) : null;
+    return p && h && !p.left ? mine(p, h.ran) : null;
   }
 
   /** Who is in which seat, under what name, in which colour. Two captains of the same name
@@ -223,6 +226,8 @@ export class Sea {
         const auto = first && m.a > h.seen.a;
         inputs[h.id] = { move: m.m ? { x: m.m[0], y: m.m[1] } : null, fire, auto: fire == null && auto };
         if (first) h.seen = { f: m.f, a: m.a };
+        if (m.n !== h.ran.n) h.ran = { n: m.n, ticks: 0 };
+        h.ran.ticks++;
       }
       Wo.step(w, FIXED, inputs);
       this.shots.note(w);

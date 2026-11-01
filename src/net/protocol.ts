@@ -25,8 +25,10 @@ export interface Hello { t: 'hello'; v: number; token: string; name: string; loo
  * The hands, sent as they change. `m` is the left stick on the chart (north up), or null
  * when let go. The guns are counts of presses, so a press is fired once however the
  * messages fall: `f` volleys aimed by a drag, the last of them along `fa`; `a` quick taps.
+ * `n` numbers the hands, one more each time they change, so the phone knows which of its
+ * own the sea has sailed her by (see mine() and net/lead.ts).
  */
-export interface Helm { t: 'in'; m: [number, number] | null; f: number; fa: number; a: number }
+export interface Helm { t: 'in'; n: number; m: [number, number] | null; f: number; fa: number; a: number }
 /** Going ashore from the Leave button. A dropped line is taken the same way. */
 export interface Ashore { t: 'leave' }
 /** Looking on, from the bar's screen: no seat and no ship, only the watch key the sea's
@@ -53,7 +55,7 @@ export interface Snap {
                            // heavy 4, boost 8
   me?: number[] | null;    // the phone's own ship's own (see mine()). Put on by the host, phone
                            // by phone: nobody else's phone needs to know her guns
-  s: number[][];           // balls fired since the last: [id, x, y, vx, vy, fired at, life, heavy]
+  s: number[][];           // balls fired since the last: [id, x, y, vx, vy, fired at, life, heavy, by]
   sx: number[][];          // balls that ended early since the last, in a hull or on land: [id, at]
   c: number[][];           // crates: [id, kind, x, y, age]
   e: GameEvent[];          // what happened since the last, each stamped `at`
@@ -90,7 +92,7 @@ export class ShotLog {
       this.ids.set(sh, id);
       this.fired.push([
         id, q(sh.x - sh.vx * sh.age, 10), q(sh.y - sh.vy * sh.age, 10), q(sh.vx, 10), q(sh.vy, 10),
-        q(w.t - sh.age, 1000), q(sh.life, 1000), sh.heavy ? 1 : 0,
+        q(w.t - sh.age, 1000), q(sh.life, 1000), sh.heavy ? 1 : 0, sh.by,
       ]);
     }
   }
@@ -118,10 +120,26 @@ export function pack(w: World, ck: number, events: GameEvent[], log: ShotLog): S
   };
 }
 
-/** What only a ship's own phone needs: her guns for the HUD, what she has sunk tonight,
- *  and how long she has been out of a fight. */
-export function mine(p: Ship): number[] {
-  return [p.ammo, q(p.reloadT), q(p.gapT), p.sank, q(p.calm, 10), q(p.down, 10)];
+/** Which of the phone's hands the sea is sailing her by: helm number `n`, for `ticks`
+ *  ticks so far. */
+export interface Ran { n: number; ticks: number }
+
+/**
+ * What only a ship's own phone needs: her guns for the HUD, what she has sunk tonight, how
+ * long she has been out of a fight; and, for the phone to step her ahead of the sea, which
+ * of its hands she has sailed by so far and all of her own way, finely:
+ *   [ammo, reloadT, gapT, sank, calm, down, n, ticks, x, y, h, v, sail, trim, rim, boost]
+ */
+export function mine(p: Ship, ran: Ran): number[] {
+  return [
+    p.ammo, q(p.reloadT), q(p.gapT), p.sank, q(p.calm, 10), q(p.down, 10), ran.n, ran.ticks,
+    q(p.x, 1000), q(p.y, 1000), q(p.h, 10000), q(p.v, 1000), q(p.sail, 1000), q(p.trim, 1000), p.rim ? 1 : 0, q(p.boost, 1000),
+  ];
+}
+
+/** Put her own way, as mine() sent it, on a ship. */
+export function wayOf(s: Ship, m: number[]) {
+  s.x = m[8]; s.y = m[9]; s.h = m[10]; s.v = m[11]; s.sail = m[12]; s.trim = m[13]; s.rim = !!m[14]; s.boost = m[15];
 }
 
 /* ---------------------------------------------------------------- the mirror -- */
@@ -140,7 +158,7 @@ const WARP = 0.08;    // the picture runs at most this much fast or slow while i
 const LEAP = 0.4;     // further from its place than this, and it jumps there instead
 const FIRST = 0.12;   // the delay until there is a second of snapshots to judge by
 
-interface Ball { x: number; y: number; vx: number; vy: number; born: number; life: number; end: number; heavy: boolean }
+interface Ball { x: number; y: number; vx: number; vy: number; born: number; life: number; end: number; heavy: boolean; by: number }
 
 /**
  * The phone's copy of a shared sea: a real World, kept by the snapshots. Build it from a
@@ -153,8 +171,13 @@ export class Mirror {
   seats: Seat[] = [];
   /** How far behind the sea this phone is drawing, seconds. */
   delay = FIRST;
-  /** The newest snapshot's own guns for this phone's ship, as sent. */
+  /** The newest snapshot's own row for this phone's ship, as sent (see mine()). */
   own: number[] | null = null;
+  /** The sea's clock at the newest snapshot. */
+  newest = 0;
+  /** How far ahead of the sea this phone is stepping its own ship, seconds (net/lead.ts).
+   *  Its own balls are drawn that far on too, so they leave from her where she is drawn. */
+  ahead = 0;
   private seed = '';
   private snaps: Snap[] = [];
   private heard: { now: number; off: number; late: number }[] = [];
@@ -173,7 +196,7 @@ export class Mirror {
       this.snaps = []; this.balls.clear(); this.said = -1;
       // as often as not a new chart is a new sea clock too (a server that restarted), so it
       // is judged afresh
-      this.heard = []; this.ck = null; this.delay = FIRST;
+      this.heard = []; this.ck = null; this.delay = FIRST; this.newest = 0; this.own = null;
     }
     const w = this.world;
     for (const s of r.seats) {
@@ -210,9 +233,10 @@ export class Mirror {
     const want = this.gap + late[Math.floor((late.length - 1) * COVER)] + 0.012;
     this.delay = Math.min(0.5, this.heard.length < 15 ? Math.max(FIRST, want) : want);
 
-    for (const r of s.s) this.balls.set(r[0], { x: r[1], y: r[2], vx: r[3], vy: r[4], born: r[5], life: r[6], end: r[5] + r[6], heavy: !!r[7] });
+    for (const r of s.s) this.balls.set(r[0], { x: r[1], y: r[2], vx: r[3], vy: r[4], born: r[5], life: r[6], end: r[5] + r[6], heavy: !!r[7], by: r[8] });
     for (const [id, at] of s.sx) { const b = this.balls.get(id); if (b) b.end = Math.min(b.end, at); }
     if (s.me) this.own = s.me;
+    this.newest = Math.max(this.newest, s.at);
     this.snaps.push(s);
     if (this.snaps.length > 40) this.snaps.shift();
   }
@@ -257,13 +281,16 @@ export class Mirror {
     w.R = a.R + (b.R - a.R) * Math.min(1, k);
     this.ships(w, a, b, k);
     w.shots = [];
+    // your own balls in your own ship's time, the rest in the sea's a moment ago
+    const own = this.ahead > 0 ? newest.at + this.ahead : t;
     for (const [id, ball] of this.balls) {
       if (ball.end < t - 1) { this.balls.delete(id); continue; }
-      if (t < ball.born || t >= ball.end) continue;
-      const age = t - ball.born;
+      const at = ball.by === w.focus ? own : t;
+      if (at < ball.born || at >= ball.end) continue;
+      const age = at - ball.born;
       w.shots.push({
         x: ball.x + ball.vx * age, y: ball.y + ball.vy * age, vx: ball.vx, vy: ball.vy, age, life: ball.life,
-        r: ball.heavy ? 1.6 : 1, dmg: 0, heavy: ball.heavy, dead: false, by: -1,
+        r: ball.heavy ? 1.6 : 1, dmg: 0, heavy: ball.heavy, dead: false, by: ball.by,
       });
     }
     w.crates = b.c.map((r) => ({ id: r[0], kind: CRATES[r[1]] as CrateKind, x: r[2], y: r[3], age: r[4], dead: false }));

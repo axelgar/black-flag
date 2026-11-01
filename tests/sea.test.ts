@@ -112,7 +112,7 @@ describe('a shared sea', () => {
     sea.join(aboard('a'));
     beat(sea, 0.1);
     const s = shipOf(sea, 'a');
-    const h: Helm = { t: 'in', m: null, f: 1, fa: 1.2, a: 0 };
+    const h: Helm = { t: 'in', n: 1, m: null, f: 1, fa: 1.2, a: 0 };
     sea.helm('a', h);
     const out = beat(sea, 0.5);
     const volleys = out.flatMap((m) => (m.t === 's' ? m.e : [])).filter((e) => e.k === 'volley' && e.p === s.id);
@@ -134,7 +134,7 @@ describe('the mirror', () => {
       }
     };
     for (let i = 0; i < 90; i++) { now += STEP; take(sea.step(STEP)); }
-    sea.helm('a', { t: 'in', m: null, f: 1, fa: 0, a: 0 });
+    sea.helm('a', { t: 'in', n: 1, m: null, f: 1, fa: 0, a: 0 });
     for (let i = 0; i < 6; i++) { now += STEP; take(sea.step(STEP)); }
     m.frame(now + 0.2);
     const w = m.world!;

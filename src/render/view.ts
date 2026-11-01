@@ -292,6 +292,8 @@ export class View {
       if (!s.out && v.out) {
         v.popT = 0;
         this.fx.pop(s.x, s.y, color);
+        // back in the sea: the camera cuts to her, rather than sweeping across it
+        if (s.id === w.focus) this.snap = true;
       }
       v.out = s.out;
       v.hit = Math.max(0, v.hit - dt * 4);

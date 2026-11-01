@@ -140,7 +140,12 @@ export function step(w: World, dt: number, inputs: readonly (Input | undefined)[
 /** The stick past this is a heading; this far out is full sail. */
 const DEAD = 0.18, FULL = 0.75;
 
-function sail(w: World, s: Ship, dt: number, input: Input) {
+/**
+ * Her helm, her way and where they take her, for one tick: all of a tick that is her own,
+ * which is what lets a phone step its own ship ahead of the sea (net/lead.ts). It reads
+ * only her, the chart and the sea's radius.
+ */
+export function move(w: Pick<World, 'map' | 'R'>, s: Ship, dt: number, input: Input) {
   const back = rimHelm(s, w.R);
   let heading: number | null = null;
   const m = input.move;
@@ -151,14 +156,16 @@ function sail(w: World, s: Ship, dt: number, input: Input) {
       s.trim = clamp((k - DEAD) / (FULL - DEAD), 0.25, 1);
     }
   }
-  const boost = s.boost > 0 ? 1 + T.boost : 1;
-  helm(s, dt, back ?? heading, 0, s.trim, boost);
+  helm(s, dt, back ?? heading, 0, s.trim, s.boost > 0 ? 1 + T.boost : 1);
   ground(w.map, s);
   rim(s, w.R, dt, 0.8);
+  s.boost = Math.max(0, s.boost - dt);
+}
 
+function sail(w: World, s: Ship, dt: number, input: Input) {
+  move(w, s, dt, input);
   s.invuln = Math.max(0, s.invuln - dt);
   s.hit = Math.max(0, s.hit - dt * 4);
-  s.boost = Math.max(0, s.boost - dt);
   s.calm += dt;
   s.mendT += dt;
   if (s.mendT >= T.mendAfter && s.hull < s.hullMax) s.hull = Math.min(s.hullMax, s.hull + T.mend * dt);
