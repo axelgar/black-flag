@@ -231,7 +231,8 @@ body{font-family:'Instrument Sans',system-ui,sans-serif;color:var(--parch);-webk
   background:conic-gradient(var(--gold) calc(var(--load) * 360deg),rgba(242,231,206,.14) 0);
   -webkit-mask:radial-gradient(circle,transparent 62%,#000 63%);mask:radial-gradient(circle,transparent 62%,#000 63%)}
 .gun b{font:700 22px 'Cinzel',serif;display:block;line-height:1}
-.gun .cannon{width:48px;height:30px;display:block;transform:var(--aim,none);transition:color 150ms}
+.gun .cannon{width:48px;height:30px;display:block;transition:color 150ms}
+#h-gunL .cannon{transform:scaleX(-1)}
 .gun.bears .cannon{color:var(--gold)}
 .gun.ready{box-shadow:0 0 22px rgba(217,164,65,.35)}
 .gun.bears b{color:var(--gold)}
@@ -366,6 +367,7 @@ body{font-family:'Instrument Sans',system-ui,sans-serif;color:var(--parch);-webk
 .seanote b{font:700 28px 'Cinzel',serif;color:var(--parch);text-shadow:0 3px 14px rgba(0,0,0,.85)}
 .seanote span{font:500 10.5px 'JetBrains Mono',monospace;letter-spacing:.2em;color:var(--gold)}
 .seanote .chip{pointer-events:auto;margin-top:8px}
+.seanote .acts{display:flex;gap:10px;justify-content:center}
 
 /* the bar's screen ------------------------------------------------------------
    Read across a room on a TV, so it is sized by the screen's height, not in pixels.

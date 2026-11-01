@@ -1092,8 +1092,9 @@ export class View {
    *  ship, so the screen the stick is read against holds still under the thumb. */
   holdYaw = false;
   private yawFollow = 1;
-  /** The chase camera: how far back (landscape), and how steeply it looks down. */
-  chase = { dist: 135, pitch: 0.72 };
+  /** The chase camera: how far back (landscape), and how steeply it looks down (about 30°:
+   *  low enough that the sea runs off toward the islands ahead, not a chart under her). */
+  chase = { dist: 135, pitch: 0.52 };
   /** The player's own pull on the chase camera, from the mouse wheel: under 1 is closer. */
   chaseZoom = 1;
   private moveCamera(dt: number, t: number) {

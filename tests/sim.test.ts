@@ -13,7 +13,7 @@ import { DROPS, rollDrop } from '../src/data/drops';
 import { HUNTER_AT, heatBoarded, heatEscaped, heatSunk } from '../src/data/notoriety';
 import { SHIPS, shipById } from '../src/data/ships';
 import { UPGRADES, bribeCost, shipStats } from '../src/data/upgrades';
-import { PACE } from '../src/data/pace';
+import { PACE, SAIL } from '../src/data/pace';
 import { isBossWave, waveBudget, wavePlan, waveWeather } from '../src/data/waves';
 import { addFoe, crowd } from '../src/sim/spawn';
 import { EDGE, MAP_R, lineOfSight, openWater, islandSd } from '../src/sim/map';
@@ -110,9 +110,9 @@ describe('ships and upgrades', () => {
       const w = Wo.create({ seed: 'hulls', wave: 1, run: { ship: def.id } });
       expect(w.players[0].shipId).toBe(def.id);
       expect(w.players[0].hullMax).toBe(shipStats(def).hullMax);
-      // the tables are sailed at the sea's pace (data/pace.ts)
+      // the tables are sailed at the sea's pace, and the captains' own a little faster (data/pace.ts)
       expect(w.players[0].maxSpeed).toBe(shipStats(def).maxSpeed);
-      expect(w.players[0].maxSpeed).toBeCloseTo(def.base.maxSpeed * PACE);
+      expect(w.players[0].maxSpeed).toBeCloseTo(def.base.maxSpeed * PACE * SAIL);
     }
   });
 });
@@ -230,6 +230,8 @@ describe('the surrender window', () => {
   it('opens at her quarter hull and lasts exactly STRIKE_WINDOW', () => {
     const w = lab('window');
     const e = abeam(w, 'schooner', 80);
+    // hove to, so her broadsides go on bearing however fast her hull would carry her past
+    w.players[0].v = 0; w.players[0].sail = 0;
     let t = 0;
     while (e.state !== 'struck' && t < 30) {
       Wo.step(w, DT, { ...idle, fireR: true });

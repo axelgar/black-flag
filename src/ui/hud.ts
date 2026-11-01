@@ -31,8 +31,9 @@ interface Hud {
 
 let hud: Hud | null = null;
 
-/** A great gun on her truck carriage, side on, muzzle to the right. Each broadside button
- *  turns its own to point the way that side will fire on screen (see aimGuns). */
+/** A great gun on her truck carriage, side on, muzzle to the right. The port button's is
+ *  mirrored to point left, and neither ever turns: a thumb finds the side by where the gun
+ *  points, and one that swung with the camera had to be read before every shot. */
 const CANNON = `<svg class="cannon" viewBox="0 0 48 30" aria-hidden="true">
   <path d="M5 19.5h24l-2.2 5.3H7.2z" fill="currentColor" opacity=".72"/>
   <circle cx="10" cy="25.2" r="3.9" fill="currentColor"/><circle cx="24" cy="25.2" r="3.9" fill="currentColor"/>
@@ -175,7 +176,6 @@ export function hudTick(w: World | null, view: View, dt: number) {
     const side = -Math.sin(s.h) * dx + Math.cos(s.h) * dy;       // + starboard
     if (Math.abs(side) / d > 0.93) bears[side > 0 ? 1 : 0] = true;
   }
-  aimGuns(s.h - view.yaw);
   [hud.gunL, hud.gunR].forEach((g, i) => {
     const load = 1 - s.cool[i] / (s.stats.reload || 1);
     g.style.setProperty('--load', load.toFixed(3));
@@ -195,27 +195,6 @@ export function hudTick(w: World | null, view: View, dt: number) {
   pointers(w, view);
   hud.mapT -= dt;
   if (hud.mapT <= 0) { hud.mapT = 0.1; minimap(w, view.yaw); }
-}
-
-/**
- * Point each broadside button's gun the way that side fires, as the camera sees it. With
- * the camera behind her that is simply port to the left and starboard to the right; while
- * a thumb holds the camera still she can point anywhere on screen, and a gun drawn to the
- * left would then lie. rel is her heading less the camera's. The gun is mirrored when it
- * points into the left half, so it always stands on its wheels.
- */
-function aimGuns(rel: number) {
-  const h = hud!;
-  [[h.gunL, rel + Math.PI], [h.gunR, rel]].forEach(([el, a]) => {
-    const b = el as HTMLElement;
-    let ang = Math.atan2(Math.sin(a as number), Math.cos(a as number));
-    const key = Math.round(ang * 40);
-    if (b.dataset.aim === String(key)) return;
-    b.dataset.aim = String(key);
-    const left = Math.abs(ang) > Math.PI / 2;
-    if (left) ang = ang > 0 ? ang - Math.PI : ang + Math.PI;
-    b.style.setProperty('--aim', `rotate(${ang.toFixed(3)}rad)${left ? ' scaleX(-1)' : ''}`);
-  });
 }
 
 /** The phone's notch and rounded corners, as the CSS has them. */
