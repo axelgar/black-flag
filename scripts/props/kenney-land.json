@@ -1,7 +1,12 @@
 {
   "rename": [
-    ["^palm-(.+)$", "palm_$1"],
-    ["^rocks-([a-c])$", "rock_$1"],
-    ["^structure-roof$", "shack_hut"]
+    [
+      "^palm-(.+)$",
+      "palm_$1"
+    ],
+    [
+      "^rocks-([a-c])$",
+      "rock_$1"
+    ]
   ]
 }

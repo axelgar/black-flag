@@ -15,6 +15,7 @@ import * as Input from './ui/input';
 import { buzz } from './ui/haptics';
 import { connect, credentials } from './net/cloud';
 import { Link } from './net/link';
+import { inkOn } from './render/ink';
 
 const ui = document.getElementById('ui')!;
 const app = document.getElementById('app')!;
@@ -186,6 +187,36 @@ window.addEventListener('bf:touch', () => { if (atSea()) render(); });
 const PAINT_HZ = 60, IDLE_HZ = 30;
 let sincePaint = 0, pace = 0, last = -1;
 
+// `?fps` on the address shows how long frames take, to measure on a phone at the bar:
+// the time between pictures (what the eye gets), the time this code spends on one (what
+// the phone's CPU spends), how many pixels per CSS pixel the governor has left it, and
+// the draws. `?plain` draws without outlines, to see what they cost.
+const query = new URLSearchParams(location.search);
+if (query.has('plain')) inkOn(false);
+const meter = query.has('fps') ? meterOn() : null;
+
+function meterOn() {
+  const el = document.createElement('div');
+  el.style.cssText = 'position:fixed;left:8px;bottom:8px;z-index:99;padding:4px 7px;border-radius:6px;background:rgba(0,0,0,.6);color:#fff;font:11px/1.35 ui-monospace,monospace;pointer-events:none;white-space:pre';
+  document.body.appendChild(el);
+  const gaps: number[] = [], cpu: number[] = [];
+  let at = 0, shown = 0;
+  return {
+    paint(now: number, spent: number) {
+      if (at) gaps.push(now - at);
+      at = now;
+      cpu.push(spent);
+      if (now - shown < 0.5 || gaps.length < 5) return;
+      shown = now;
+      const ms = (xs: number[], q: number) => [...xs].sort((a, b) => a - b)[Math.min(xs.length - 1, Math.floor(xs.length * q))] * 1000;
+      const med = ms(gaps, 0.5), worst = ms(gaps, 0.95), info = view.info().render;
+      el.textContent = `${(1000 / med).toFixed(0)} fps  ${med.toFixed(1)} ms  worst ${worst.toFixed(1)}\n`
+        + `cpu ${ms(cpu, 0.5).toFixed(1)} ms  ×${view.pixelRatio.toFixed(2)} px  ${info.calls} draws  ${(info.triangles / 1000).toFixed(0)}k tris${query.has('plain') ? '  plain' : ''}`;
+      gaps.length = 0; cpu.length = 0;
+    },
+  };
+}
+
 function frame(ms: number) {
   requestAnimationFrame(frame);
   const now = ms / 1000;
@@ -205,6 +236,7 @@ function due(dt: number, hz: number): boolean {
 
 function tick(dt: number) {
   const now = performance.now() / 1000;
+  const begun = performance.now();
   const L = link;
   if (L) {
     // the hands first, so your own ship is stepped on before the sea is drawn
@@ -234,6 +266,7 @@ function tick(dt: number) {
   view.frame(d, atSea());
   hudTick(world, L?.mirror.seats ?? [], view, d, (look) => view.heightOf(look));
   sincePaint = 0;
+  meter?.paint(now, (performance.now() - begun) / 1000);
 }
 
 /* ----------------------------------------------------------------- boot -- */

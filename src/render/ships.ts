@@ -2,7 +2,8 @@
 // two shapes in her own frame (x forward, y up, z starboard; scaled to the one length
 // every ship has, her waterline at y = 0): her hull, and her canvas and colours, which
 // are tinted with her captain's colour. Every ship of a look is an instance of those two,
-// so thirty ships cost two draws a look, plus one for the shadows and one for the rings.
+// so thirty ships cost two draws a look and two more for their outlines (ink.ts), plus
+// one for the shadows and one for the rings.
 //
 // Nodes named sail… or flag… in the file are her canvas; everything else is hull
 // (PLANS/ART_BRIEF.md).
@@ -13,6 +14,7 @@ import type { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { LOOKS } from '../data/ships';
 import { TUNING } from '../data/tuning';
 import type { ModelFile } from '../data/types';
+import { outline } from './ink';
 import { toon } from './toon';
 
 const MAX = 40;
@@ -131,10 +133,13 @@ export class Fleet {
         const gltf = await loader.loadAsync(look.file.url);
         const b = bakeFile(gltf.scene, look.file);
         const hull = new THREE.InstancedMesh(b.hull, toon({ map: b.map }), MAX);
-        const sail = new THREE.InstancedMesh(b.sail, toon({ map: b.map }), MAX);
+        // her canvas is plain cloth in her captain's colour, whatever the file paints it:
+        // some paint their sails black, and a black sail shows no colour
+        const sail = new THREE.InstancedMesh(b.sail, toon(), MAX);
         for (const im of [hull, sail]) {
           im.count = 0; im.frustumCulled = false;
           im.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(MAX * 3).fill(1), 3);
+          outline(im);
         }
         this.kits.set(look.id, { hull, sail, height: b.height, n: 0 });
         this.group.add(hull, sail);
@@ -163,7 +168,7 @@ export class Fleet {
         k.hull.setMatrixAt(k.n, this.m);
         k.sail.setMatrixAt(k.n, this.m);
         k.hull.setColorAt(k.n, this.c.copy(WHITE).lerp(HURT, d.hit));
-        k.sail.setColorAt(k.n, this.c.copy(d.color).lerp(WHITE, 0.25));
+        k.sail.setColorAt(k.n, this.c.copy(d.color).lerp(WHITE, 0.08));
         k.n++;
       }
       if (d.lift > -3) {

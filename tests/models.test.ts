@@ -6,6 +6,7 @@
 import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
 import { TUNING } from '../src/data/tuning';
+import { inkNormals, outline } from '../src/render/ink';
 import { propsFrom } from '../src/render/land';
 import { bakeFile } from '../src/render/ships';
 
@@ -64,7 +65,7 @@ describe('a ship from a file', () => {
 });
 
 describe('props from a file', () => {
-  it('stands each palm and rock on its base, a metre tall, and leaves the rest', () => {
+  it('stands each palm, rock and crate on its base, a metre tall, and leaves the rest', () => {
     const scene = new THREE.Group();
     const palm = new THREE.Group();
     palm.name = 'palm_bend';
@@ -72,13 +73,39 @@ describe('props from a file', () => {
     palm.add(box('trunk', 1, 8, 1, [0, -1, 0]));
     palm.add(box('leaves', 5, 2, 5, [0, 7, 0]));
     const rock = box('rock_a', 3, 2, 3, [-10, 0, 0]);
-    scene.add(palm, rock, box('shack_hut', 4, 4, 4));
+    scene.add(palm, rock, box('crate', 1, 0.8, 1, [20, 0, 0]), box('shack_hut', 4, 4, 4));
     const kit = propsFrom(scene, 0);
-    expect(Object.keys(kit).sort()).toEqual(['palm', 'rock']);
+    expect(Object.keys(kit).sort()).toEqual(['crate', 'palm', 'rock']);
+    expect(sizeOf(kit.crate![0].geometry).max.y).toBeCloseTo(1, 4);
     const g = kit.palm![0].geometry;
     const b = sizeOf(g);
     expect(b.min.y).toBeCloseTo(0, 4);
     expect(b.max.y).toBeCloseTo(1, 4);
     expect((b.max.x + b.min.x) / 2).toBeCloseTo(0, 4);
+  });
+});
+
+describe('outlines', () => {
+  it('fattens a hard-edged box along each corner, so its outline stays closed', () => {
+    // a box's corners are three vertices each, one per face, each with that face's normal
+    const g = inkNormals(new THREE.BoxGeometry(2, 2, 2));
+    const P = g.getAttribute('position'), N = g.getAttribute('ink');
+    for (let i = 0; i < P.count; i++) {
+      const p = new THREE.Vector3().fromBufferAttribute(P, i), n = new THREE.Vector3().fromBufferAttribute(N, i);
+      expect(n.length()).toBeCloseTo(1, 5);
+      // out from the middle, through the corner
+      expect(n.dot(p.normalize())).toBeCloseTo(1, 5);
+    }
+  });
+
+  it('outlines an instanced mesh with its own instances and count', () => {
+    const im = new THREE.InstancedMesh(new THREE.BoxGeometry(), new THREE.MeshBasicMaterial(), 8);
+    im.count = 3;
+    const o = outline(im) as THREE.InstancedMesh;
+    expect(o.parent).toBe(im);
+    expect(o.instanceMatrix).toBe(im.instanceMatrix);
+    im.count = 5;
+    o.onBeforeRender(null as never, null as never, null as never, null as never, null as never, null as never);
+    expect(o.count).toBe(5);
   });
 });

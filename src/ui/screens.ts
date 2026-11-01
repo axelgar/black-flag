@@ -25,7 +25,7 @@ const WHY: Record<string, string> = {
 /** The first screen: a name, a ship, and away. Works held upright too. */
 export function name(v: View): Screen {
   v.setMode('show');
-  const looks = LOOKS.map((l) => `<button class="look${l.id === session.look ? ' on' : ''}" data-look="${l.id}" aria-pressed="${l.id === session.look}">${esc(l.name)}</button>`).join('');
+  const looks = LOOKS.map((l) => `<button type="button" class="look${l.id === session.look ? ' on' : ''}" data-look="${l.id}" aria-pressed="${l.id === session.look}">${esc(l.name)}</button>`).join('');
   return {
     html: `
     <div class="screen name">

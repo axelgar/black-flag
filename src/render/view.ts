@@ -13,10 +13,11 @@ import { TUNING } from '../data/tuning';
 import type { GameEvent, World } from '../sim/types';
 import type { GameMap } from '../sim/map';
 import { Fleet, type ShipDraw } from './ships';
+import { CRATE_COLOR, Crates } from './crates';
 import { Fx } from './fx';
+import { inkWidth } from './ink';
 import { Land, propsFrom } from './land';
 import { SEA, Sea } from './sea';
-import { toon } from './toon';
 import { PROP_SETS } from '../data/props';
 
 export type Mode = 'show' | 'sea';
@@ -26,14 +27,10 @@ const FOV = 36;
 const PITCH = 0.98;
 /** Sea a landscape phone shows: this much from the middle to the top edge, and to each side. */
 const SEE_UP = 82, SEE_SIDE = 130;
+/** Outlines, CSS pixels wide: at sea, and on the name screen, where the ship is close. */
+const INK_SEA = 1.6, INK_SHOW = 2.4;
 const SINK = 1.8;   // seconds a sinking ship is drawn going down
 const POP = 0.35;   // seconds a ship coming in takes to swell to her size
-
-const CRATE_COLOR: Record<string, THREE.Color> = {
-  repair: new THREE.Color('#3FD46A'),
-  speed: new THREE.Color('#3FA9FF'),
-  heavy: new THREE.Color('#FF5A3C'),
-};
 
 /** What the view remembers of each ship between frames. */
 interface Seen { out: boolean; sinkT: number; popT: number; hit: number; foam: number; x: number; y: number; h: number; heel: number }
@@ -48,7 +45,7 @@ export class View {
   private land = new Land();
   readonly fleet = new Fleet();
   readonly fx = new Fx();
-  private crates: THREE.InstancedMesh;
+  private crates = new Crates(PITCH);
   private aimMesh: THREE.Mesh;
   private mode: Mode = 'show';
   private world: World | null = null;
@@ -75,21 +72,19 @@ export class View {
     this.scene.background = new THREE.Color(SEA.closed);
     this.camera = new THREE.PerspectiveCamera(FOV, 1, 5, 2000);
 
-    const sun = new THREE.DirectionalLight('#FFF6E0', 2.6);
+    // Lit so a sunlit face shows its own colour, just about, and the toon bands
+    // (toon.ts) step down from there: a material's colour is what you see, not washed
+    // out above it. Lambert divides by π; these add up to a little over π.
+    const sun = new THREE.DirectionalLight('#FFF6E0', 2.3);
     sun.position.set(-50, 140, 70);
-    const sky = new THREE.HemisphereLight('#FFFFFF', '#7FB2D8', 1.5);
+    const sky = new THREE.HemisphereLight('#FFFFFF', '#9CC6E6', 1.0);
     this.scene.add(sun, sky);
-
-    const box = new THREE.BoxGeometry(4.6, 3.6, 4.6);
-    this.crates = new THREE.InstancedMesh(box, toon(), 32);
-    this.crates.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(32 * 3), 3);
-    this.crates.count = 0; this.crates.frustumCulled = false;
 
     this.aimMesh = new THREE.Mesh(wedge(), new THREE.MeshBasicMaterial({ color: '#FFFFFF', transparent: true, opacity: 0.32, depthWrite: false, side: THREE.DoubleSide }));
     this.aimMesh.visible = false;
     this.aimMesh.renderOrder = 3;
 
-    this.scene.add(this.sea.mesh, this.land.group, this.fleet.group, this.fx.group, this.crates, this.aimMesh);
+    this.scene.add(this.sea.mesh, this.land.group, this.fleet.group, this.fx.group, this.crates.group, this.aimMesh);
     this.resize();
   }
 
@@ -108,6 +103,7 @@ export class View {
     this.renderer.setSize(w, h, false);
     this.camera.aspect = w / h;
     this.shiftView();
+    inkWidth(this.mode === 'show' ? INK_SHOW : INK_SEA, h);
   }
 
   /** On the name screen the ship sits off to one side of the form. */
@@ -169,7 +165,9 @@ export class View {
       ...PROP_SETS.map(async (set) => {
         try {
           const gltf = await loader.loadAsync(set.url);
-          this.land.setProps(propsFrom(gltf.scene, set.turn ?? 0));
+          const kit = propsFrom(gltf.scene, set.turn ?? 0);
+          this.land.setProps(kit);
+          if (kit.crate?.length) this.crates.setModel(kit.crate[0]);
         } catch (err) { console.warn('[land] could not load', set.url, err); }
       }),
     ]);
@@ -186,6 +184,7 @@ export class View {
     if (mode === this.mode) return;
     this.mode = mode;
     this.shiftView();
+    inkWidth(mode === 'show' ? INK_SHOW : INK_SEA, this.cssH);
     this.snap = true;
   }
   private snap = true;
@@ -245,7 +244,7 @@ export class View {
           this.fx.sink(e.x as number, e.y as number);
           if (mine || e.by === w.focus) this.shake = Math.max(this.shake, 1);
           break;
-        case 'take': this.fx.pop(e.x as number, e.y as number, CRATE_COLOR[e.kind as string] ?? WHITE, 10); break;
+        case 'take': this.fx.pop(e.x as number, e.y as number, CRATE_COLOR[e.kind as keyof typeof CRATE_COLOR] ?? WHITE, 10); break;
         default: break;
       }
     }
@@ -275,7 +274,7 @@ export class View {
       scale: 1, color: S.color, hit: 0, ring: 2, shine: false,
     });
     this.fx.balls([]);
-    this.crates.count = 0;
+    this.crates.hide();
     this.aimMesh.visible = false;
   }
 
@@ -331,21 +330,7 @@ export class View {
     }
     this.fx.balls(w.shots);
 
-    // crates, bobbing and turning
-    const m = new THREE.Matrix4(), q = new THREE.Quaternion(), p = new THREE.Vector3(), sc = new THREE.Vector3();
-    let n = 0;
-    for (const c of w.crates) {
-      if (c.dead || n >= 32) continue;
-      const k = Math.min(1, c.age / 0.4);
-      q.setFromEuler(new THREE.Euler(0.15 * Math.sin(t * 1.7 + c.id), t * 0.9 + c.id, 0.15 * Math.cos(t * 1.3 + c.id)));
-      m.compose(p.set(c.x, 1.2 + Math.sin(t * 2 + c.id) * 0.45, c.y), q, sc.setScalar(Math.max(0.01, easeBack(k))));
-      this.crates.setMatrixAt(n, m);
-      this.crates.setColorAt(n, CRATE_COLOR[c.kind] ?? WHITE);
-      n++;
-    }
-    this.crates.count = n;
-    this.crates.instanceMatrix.needsUpdate = true;
-    if (this.crates.instanceColor) this.crates.instanceColor.needsUpdate = true;
+    this.crates.draw(w.crates, t, easeBack);
 
     // the aim, from your own ship
     const me = w.ships[w.focus];

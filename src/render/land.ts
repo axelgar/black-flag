@@ -1,6 +1,7 @@
 // The islands, low and chunky: every coast on the chart lofted into a little hill of flat
-// faces, sand round the edge and grass or rock on top, all in one draw. Palms and rocks
-// from the props file are set on them once it has loaded, one draw for each kind.
+// faces, sand round the edge and grass or rock on top, all in one draw, and its outline
+// in another. Palms and rocks from the props file are set on them once it has loaded,
+// two draws for each shape.
 //
 // Low on purpose: the camera is high in the south, and nothing on an island may hide a
 // ship behind it (the art brief keeps hills to about 6 m and palms to 8).
@@ -9,13 +10,15 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { rng } from '../core/rng';
 import { coastAt, type GameMap, type Island } from '../sim/map';
+import { INK, outline } from './ink';
 import { toon } from './toon';
 
 const TAU = Math.PI * 2;
 const SPOKES = 32;
 
 const C = {
-  wet: new THREE.Color('#E5C27C'),
+  // the strip at the waterline: what shows of it above the water is the coast's outline
+  wet: INK,
   sand: new THREE.Color('#F6DD94'),
   grass: new THREE.Color('#79C850'),
   grass2: new THREE.Color('#5DB043'),
@@ -70,7 +73,7 @@ function islandGeometry(is: Island): THREE.BufferGeometry {
   return g;
 }
 
-export type PropKind = 'palm' | 'rock';
+export type PropKind = 'palm' | 'rock' | 'crate';
 /** A prop's shape, ready to set down: base at y = 0, a height of 1. */
 export interface Prop { geometry: THREE.BufferGeometry; map: THREE.Texture | null }
 
@@ -89,6 +92,7 @@ export class Land {
     const g = mergeGeometries(geos)!;
     for (const x of geos) x.dispose();
     this.ground = new THREE.Mesh(g, toon({ vertexColors: true }));
+    outline(this.ground);
     this.group.add(this.ground);
     this.dress();
   }
@@ -133,6 +137,7 @@ export class Land {
       ms.forEach((mx, i) => im.setMatrixAt(i, mx));
       im.instanceMatrix.needsUpdate = true;
       im.computeBoundingSphere();
+      outline(im);
       this.props.push(im);
       this.group.add(im);
     }
@@ -156,13 +161,13 @@ function heightOn(is: Island, f: number): number {
   return is.peak;
 }
 
-/** The props file's palms and rocks, each set on its base and a metre tall. */
+/** The props file's palms, rocks and crate, each set on its base and a metre tall. */
 export function propsFrom(scene: THREE.Object3D, turn: number): Partial<Record<PropKind, Prop[]>> {
   scene.updateMatrixWorld(true);
   const O = new THREE.Matrix4().makeRotationY((turn * Math.PI) / 2);
   const out: Partial<Record<PropKind, Prop[]>> = {};
   for (const node of scene.children) {
-    const kind: PropKind | null = /^palm/i.test(node.name) ? 'palm' : /^rock/i.test(node.name) ? 'rock' : null;
+    const kind: PropKind | null = /^palm/i.test(node.name) ? 'palm' : /^rock/i.test(node.name) ? 'rock' : /^crate/i.test(node.name) ? 'crate' : null;
     if (!kind) continue;
     const geos: THREE.BufferGeometry[] = [];
     let map: THREE.Texture | null = null;

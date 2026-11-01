@@ -8,7 +8,7 @@ let bands: THREE.DataTexture | null = null;
 
 function ramp(): THREE.DataTexture {
   if (bands) return bands;
-  const steps = [150, 205, 255];
+  const steps = [118, 186, 255];
   bands = new THREE.DataTexture(new Uint8Array(steps), steps.length, 1, THREE.RedFormat);
   bands.minFilter = bands.magFilter = THREE.NearestFilter;
   bands.generateMipmaps = false;

@@ -50,8 +50,9 @@ flag are tinted to it.
 | Third ship | your pitch again: for example a patched-up raider, or a ghost ship |
 
 What each ship needs:
-- **Sails:** each sail its own object, plain white or cream. The game tints them the
-  player's colour. A skull or emblem goes in a separate decal object.
+- **Sails:** each sail its own object, plain white or cream. The game draws them as plain
+  cloth in the player's colour, so any texture painted on a sail is not seen. A skull or
+  emblem goes in a separate decal object.
 - **Flag:** a plain flag on its own, at the top of the mainmast. The game flies its own
   flag in its place.
 - **Cannons:** a row along each side is welcome. The guns on the side facing the aim fire,
@@ -85,7 +86,7 @@ across and must be told apart from above at a glance, by colour and by an icon o
 | Crate | Colour | Icon on top |
 |---|---|---|
 | Repair | green | a hammer, or planks and a cross |
-| Speed | blue | a lightning bolt, or a full sail |
+| Speed | yellow (blue is lost on the sea) | a lightning bolt, or a full sail |
 | Heavy shot | red | a big cannonball, or a skull |
 
 The game makes them bob and spin.
@@ -122,7 +123,7 @@ underscores (Blender's `.001` endings are fine):
 
 | Name | What it is |
 |---|---|
-| `sail_…` | each sail, white or cream: the game tints it |
+| `sail_…` | each sail, white or cream: the game draws it in the player's colour |
 | `flag_…` | a plain flag where the colours fly: the game replaces it |
 | `muzzle_L_1`, `muzzle_R_1`, … | optional: an empty at each gun's mouth, where shots leave from. L is her left side looking forward, R her right |
 | `island_s1`, `island_m1`, `island_l1`, … | each island, by size (small, medium, large) |
