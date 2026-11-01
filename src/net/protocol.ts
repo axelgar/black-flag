@@ -301,7 +301,10 @@ export class Mirror {
     for (const r of b.p) {
       const s = w.ships[r[0]];
       if (!s) continue;
-      slide(s, prev.get(r[0]) ?? r, r, k);
+      // back from the bottom, she comes back somewhere else: she is there at once, not
+      // slid across the sea to it
+      const o = prev.get(r[0]);
+      slide(s, o && (o[10] & 1) === (r[10] & 1) ? o : r, r, k);
       s.hit = r[8]; s.invuln = r[9];
       const f = r[10];
       s.out = !!(f & 1) || s.left; s.heavy = !!(f & 4); s.boost = f & 8 ? 1 : 0;

@@ -148,4 +148,37 @@ describe('the mirror', () => {
     expect(w.crates.length).toBe(sea.world.crates.length);
     expect(m.seats.find((s) => s.id === w.focus)!.name).toBe('a');
   });
+
+  it('a ship back from the bottom is drawn where she came back, never partway across the sea', () => {
+    const sea = new Sea('BAR1', { seed: 't' });
+    sea.join(aboard('a'));
+    const m = new Mirror();
+    let now = 0, back: { x: number; y: number } | null = null, seen: { x: number; y: number } | null = null, out = false;
+    const bot = () => sea.world.ships.find((s) => s.bot && !s.retire)!;
+    const run = (seconds: number) => {
+      for (let i = 0; i < seconds / STEP; i++) {
+        now += STEP;
+        const was = bot().out;
+        for (const o of sea.step(STEP)) {
+          if (o.t === 'roster') m.roster(o, 'a');
+          else m.push({ ...o, me: sea.own('a') }, now);
+        }
+        if (was && !bot().out) back = { x: bot().x, y: bot().y };
+        // a phone paints twice for each snapshot
+        for (const f of [0, 0.5]) {
+          m.frame(now + f * STEP);
+          const s = m.world!.ships[bot().id];
+          if (s.out) out = true;
+          else if (out && !seen) seen = { x: s.x, y: s.y };
+        }
+      }
+    };
+    run(1);
+    back = seen = null; out = false;
+    sink(sea.world, bot(), null);
+    run(T.respawn + 1);
+    expect(back).not.toBeNull();
+    expect(seen).not.toBeNull();
+    expect(Math.hypot(seen!.x - back!.x, seen!.y - back!.y)).toBeLessThan(3);
+  });
 });
