@@ -1,11 +1,10 @@
-// Everything you hear, synthesised. Zero assets — a cannon is a noise burst through a
-// filter over a pitched thump. New for the open sea: every sound has a place. It is
-// quieter the further off it is, and panned to where it is relative to the camera, so a
-// broadside off your port quarter sounds like one.
+// Everything you hear, synthesised. Zero assets: a cannon is a noise burst through a
+// filter over a pitched thump. Every sound has a place. It is quieter the further off it
+// is, and panned to where it is across the screen, so a volley off to your left sounds
+// like one.
 //
-// The shanty is still the only thing here with an opinion: a D-minor arpeggio that picks
-// up tempo as notoriety climbs, so the music tells you how much trouble you are in
-// before the hunters do.
+// The shanty is a D-minor arpeggio that picks up tempo as your streak climbs, so the
+// music tells you how close you are.
 
 import { session } from '../state/session';
 import type { GameEvent } from '../sim/types';
@@ -15,9 +14,9 @@ let master: GainNode, seaGain: GainNode, musGain: GainNode;
 let noiseBuf: AudioBuffer;
 let heat = 0, playing = false, timer = 0, nextNote = 0, step = 0;
 
-/** Where the ears are: the player's ship, and which way the camera faces. */
-const ear = { x: 0, y: 0, yaw: 0 };
-export function listen(x: number, y: number, yaw: number) { ear.x = x; ear.y = y; ear.yaw = yaw; }
+/** Where the ears are: your ship. North is always up the screen, so east is to the right. */
+const ear = { x: 0, y: 0 };
+export function listen(x: number, y: number) { ear.x = x; ear.y = y; }
 
 const now = () => ac!.currentTime;
 const ready = () => !!ac && session.sound && ac.state === 'running';
@@ -83,13 +82,6 @@ export function hush(on: boolean) {
   else if (session.sound) ac.resume().catch(() => {});
 }
 
-/** Storm weather thickens the sea bed; port quietens it. */
-export function setSea(kind: string) {
-  if (!ac) return;
-  const v = kind === 'storm' ? 0.17 : kind === 'port' ? 0.04 : 0.09;
-  seaGain.gain.setTargetAtTime(v, now(), 0.6);
-}
-
 /* ----------------------------------------------------------------- place -- */
 
 interface At { gain: number; pan: number }
@@ -98,9 +90,7 @@ const HERE: At = { gain: 1, pan: 0 };
 function place(x?: number, y?: number): At {
   if (x == null || y == null) return HERE;
   const dx = x - ear.x, dy = y - ear.y, d = Math.hypot(dx, dy);
-  // the camera's right hand, on the chart
-  const rx = -Math.sin(ear.yaw), ry = Math.cos(ear.yaw);
-  return { gain: 1 / (1 + d / 90), pan: d < 1 ? 0 : Math.max(-1, Math.min(1, ((dx * rx + dy * ry) / d) * 0.85)) };
+  return { gain: 1 / (1 + d / 90), pan: d < 1 ? 0 : Math.max(-1, Math.min(1, (dx / d) * 0.85)) };
 }
 
 function out(at: At): AudioNode {
@@ -143,7 +133,6 @@ function tone(f0: number, f1: number, dur: number, gain: number, type: Oscillato
 
 // A muzzle is a crack over a thump. Two sources, always, or it sounds like a hi-hat.
 const cannon = (at: At, d = 0) => { noise(0.2, 1300, 1.1, 0.12, 'bandpass', at, d); tone(140, 40, 0.18, 0.12, 'triangle', at, d); };
-const foeGun = (at: At, d = 0) => { noise(0.24, 800, 1.0, 0.1, 'bandpass', at, d); tone(110, 36, 0.2, 0.09, 'triangle', at, d); };
 const boom = (big: boolean, at: At) => { noise(big ? 1.1 : 0.55, big ? 320 : 600, 0.7, big ? 0.3 : 0.17, 'lowpass', at); tone(big ? 85 : 125, 24, big ? 0.9 : 0.45, big ? 0.26 : 0.15, 'sine', at); };
 const splash = (at: At) => noise(0.34, 2600, 0.8, 0.06, 'highpass', at);
 const thud = (at: At) => noise(0.1, 900, 2.0, 0.07, 'bandpass', at);
@@ -151,28 +140,11 @@ const hurt = () => { noise(0.3, 420, 0.9, 0.18); tone(220, 60, 0.3, 0.09, 'sawto
 export const pickup = () => { if (ready()) tone(660, 990, 0.13, 0.08, 'triangle'); };
 export const click = () => { if (ready()) tone(900, 700, 0.05, 0.04, 'triangle'); };
 
-/** A ship striking her colours needs a sound you can hear over a fight, because it is
- *  the only cue that a target just turned into a prize. */
-function strike(at: At) {
-  const a = { gain: Math.max(0.5, at.gain), pan: at.pan };
-  tone(880, 1320, 0.1, 0.07, 'square', a);
-  tone(1320, 1760, 0.12, 0.05, 'square', a, 0.09);
-}
-
-function board() {
-  [523.25, 659.25, 783.99, 1046.5].forEach((f, i) => tone(f, f, 0.18, 0.09, 'triangle', HERE, i * 0.062));
-  noise(0.5, 1800, 0.7, 0.09, 'bandpass');
-}
-
 export function fanfare() {
   if (!ready()) return;
   [392, 523.25, 659.25, 783.99, 1046.5].forEach((f, i) => tone(f, f * 1.001, 0.4, 0.08, 'triangle', HERE, i * 0.11));
   noise(1.2, 900, 0.5, 0.05, 'bandpass', HERE, 0.5);
 }
-
-function thunder() { noise(1.8, 200, 0.5, 0.2); tone(60, 24, 1.5, 0.12, 'sine'); }
-
-function alarm(at: At) { tone(620, 520, 0.12, 0.05, 'square', { gain: Math.max(0.45, at.gain), pan: at.pan }); }
 
 /* -------------------------------------------------------------- shanty --- */
 
@@ -180,6 +152,7 @@ function alarm(at: At) { tone(620, 520, 0.12, 0.05, 'square', { gain: Math.max(0
 const ROOT = [146.83, 174.61, 220.0, 261.63, 293.66, 349.23, 440.0];
 const FIGURE = [0, 2, 4, 2, 3, 2, 0, -3, 0, 2, 4, 6, 4, 2, 0, 2];
 
+/** Your streak, 0 to 5: the shanty quickens with it. */
 export function setHeat(h: number) { heat = h; }
 
 export function startShanty() {
@@ -234,44 +207,22 @@ function note(at: number, i: number) {
   }
 }
 
-/** Sounds that are only ever your own ship's: another captain's wound is not yours to feel. */
-const PERSONAL = new Set(['hit', 'board', 'take', 'refit', 'ram', 'ground']);
-
-/** The world's events, turned into things you can hear. Mirrors the view's consume().
- *  `theirs` says which belong to another captain, to be heard only where they happen. */
-export function consume(events: GameEvent[], theirs: (e: GameEvent) => boolean = () => false) {
+/** The world's events, turned into things you can hear. `mine` says which are your own
+ *  ship's: being hit is felt only on your own. */
+export function consume(events: GameEvent[], mine: (e: GameEvent) => boolean) {
   if (!ready()) return;
   let guns = 0;
   for (const e of events) {
-    if (PERSONAL.has(e.k) && theirs(e)) continue;
     const at = place(e.x as number | undefined, e.y as number | undefined);
     switch (e.k) {
-      case 'cannon': if (guns++ < 3) cannon(at); break;
-      // your own chasers are right under you; another captain's are where she is
-      case 'bow': cannon(theirs(e) ? at : { gain: 0.6, pan: 0 }); break;
-      case 'foe-fire': {
-        const n = Math.min(4, (e.n as number) || 1);
-        for (let i = 0; i < n; i++) foeGun(at, i * 0.05);
-        break;
-      }
+      case 'volley': if (guns++ < 3) { cannon(at); if (e.heavy) cannon(at, 0.04); } break;
       case 'thud': thud(at); break;
       case 'splash': if (at.gain > 0.35) splash(at); break;
-      case 'strike': strike(at); break;
-      case 'board': board(); break;
-      case 'boom': boom(!!e.big, at); if (e.splash) splash(at); break;
-      case 'fireship': boom(true, at); break;
-      case 'hit': hurt(); break;
-      case 'ram': case 'ground': boom(false, HERE); break;
-      case 'mortar': case 'mortar-in': foeGun(at); break;
-      case 'take': pickup(); break;
-      case 'refit': boom(true, HERE); break;
-      case 'alert': alarm(at); break;
-      case 'legend-down': boom(true, at); board(); break;
-      case 'won': fanfare(); break;
-      case 'thunder': thunder(); break;
+      case 'hit': if (mine(e)) hurt(); break;
+      case 'sunk': boom(true, at); break;
+      case 'take': if (mine(e)) pickup(); break;
+      case 'won': if (mine(e)) fanfare(); break;
       default: break;
     }
   }
 }
-
-export const lightning = () => { if (ready()) thunder(); };

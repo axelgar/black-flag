@@ -7,9 +7,6 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { PGlite } from '@electric-sql/pglite';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { SHIPS } from '../src/data/ships';
-import { normCode } from '../src/data/unlocks';
-import { itemOf } from '../src/net/items';
 
 const SUPABASE = `
   create role anon nologin;
@@ -122,16 +119,5 @@ describe('what a phone can touch', () => {
     await expect(as(ANNE, `update public.players set captain = 'Blackbeard' where id = $1`, [ANNE])).rejects.toThrow(/permission denied/);
     await expect(as(ANNE, `insert into public.unlock_codes (code, item) values ('FREE', 'hull:maree')`)).rejects.toThrow(/permission denied/);
     await expect(as(ANNE, `select public.ensure_player($1)`, [BART])).rejects.toThrow(/permission denied/);
-  });
-});
-
-describe('the register', () => {
-  it('matches the game: every code a ship carries unlocks that ship on the server', async () => {
-    const rows = (await db.query<{ code: string; item: string }>('select code, item from public.unlock_codes')).rows;
-    const server = new Map(rows.map((r) => [r.code, r.item]));
-    for (const s of SHIPS) {
-      if (s.unlock === 'starter') continue;
-      expect(server.get(normCode(s.unlock.code)), s.id).toBe(itemOf(s.id));
-    }
   });
 });

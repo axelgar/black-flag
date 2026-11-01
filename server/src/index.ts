@@ -8,22 +8,21 @@
 // machine). It takes no seat, and an empty sea stays asleep under it. With no key set,
 // nobody can watch.
 //
-//   /sea/bar/<n>      the bar's n-th sea (n from 1); its mode is the venue's, BAR_MODE
-//   /sea/code/<CODE>  a private sea: four letters, opened by whoever says how it plays
+//   /sea/bar/<n>      the bar's n-th sea (n from 1). A full sea sends the phone to the next.
 
 import { DurableObject } from 'cloudflare:workers';
 import { createRemoteJWKSet, jwtVerify } from 'jose';
-import { STARTER } from '../../src/data/ships';
-import { itemOf } from '../../src/net/items';
-import { WIRE, type FromSea, type Mode, type Nope, type ToSea, type Watch } from '../../src/net/protocol';
-import { CAP, LOBBY, Sea } from '../../src/net/sea';
+import { checkName } from '../../src/data/names';
+import { lookById } from '../../src/data/ships';
+import { TUNING } from '../../src/data/tuning';
+import { WIRE, type FromSea, type Nope, type ToSea, type Watch } from '../../src/net/protocol';
+import { Sea } from '../../src/net/sea';
 
 export interface Env {
   SEA: DurableObjectNamespace<SeaRoom>;
   SUPABASE_URL: string;
   SUPABASE_KEY: string;     // the publishable key: it is sent with the player's own token
   VENUE?: string;
-  BAR_MODE?: string;
   WATCH_KEY?: string;       // a secret: what a screen says to look on
 }
 
@@ -31,20 +30,15 @@ export default {
   async fetch(req: Request, env: Env): Promise<Response> {
     const url = new URL(req.url);
     const bar = url.pathname.match(/^\/sea\/bar\/([1-9])$/);
-    const code = url.pathname.match(/^\/sea\/code\/([A-Za-z]{4})$/);
-    if (!bar && !code) return new Response('Black Flag: shared seas\n', { status: url.pathname === '/' ? 200 : 404 });
-    const name = bar ? `bar:${env.VENUE ?? 'main'}:${bar[1]}` : `code:${code![1].toUpperCase()}`;
+    if (!bar) return new Response('Black Flag: shared seas\n', { status: url.pathname === '/' ? 200 : 404 });
     const headers = new Headers(req.headers);
-    headers.set('x-sea-code', bar ? `BAR${bar[1]}` : code![1].toUpperCase());
-    if (bar) headers.set('x-sea-mode', env.BAR_MODE === 'crew' ? 'crew' : 'rivals');
-    return env.SEA.get(env.SEA.idFromName(name)).fetch(new Request(req, { headers }));
+    headers.set('x-sea-code', `BAR${bar[1]}`);
+    return env.SEA.get(env.SEA.idFromName(`bar:${env.VENUE ?? 'main'}:${bar[1]}`)).fetch(new Request(req, { headers }));
   },
 };
 
 let jwks: ReturnType<typeof createRemoteJWKSet> | null = null;
 
-/** A private sea's code is forgotten this long after it was last opened, if nobody is aboard. */
-const FORGET = 7 * 24 * 3600 * 1000;
 /** Screens looking on at one sea: the bar's TV, and one or two more. */
 const WATCHERS = 4;
 
@@ -58,58 +52,52 @@ export class SeaRoom extends DurableObject<Env> {
   async fetch(req: Request): Promise<Response> {
     if (req.headers.get('Upgrade') !== 'websocket') return new Response('A sea is sailed over a websocket.\n', { status: 426 });
     const code = req.headers.get('x-sea-code') ?? 'SEA';
-    const mode = req.headers.get('x-sea-mode') as Mode | null;
     const pair = new WebSocketPair();
     const [client, ws] = [pair[0], pair[1]];
     ws.accept();
     this.socks.set(ws, null);
-    ws.addEventListener('message', (e) => { void this.hear(ws, e.data, code, mode); });
+    ws.addEventListener('message', (e) => { void this.hear(ws, e.data, code); });
     ws.addEventListener('close', () => this.gone(ws));
     ws.addEventListener('error', () => this.gone(ws));
     return new Response(null, { status: 101, webSocket: client });
   }
 
-  private async hear(ws: WebSocket, data: string | ArrayBuffer, code: string, barMode: Mode | null) {
+  private async hear(ws: WebSocket, data: string | ArrayBuffer, code: string) {
     let m: ToSea;
     try { m = JSON.parse(typeof data === 'string' ? data : new TextDecoder().decode(data)); } catch { return; }
     if (this.watchers.has(ws)) return;
-    if (m.t === 'watch') return this.watch(ws, m, code, barMode);
+    if (m.t === 'watch') return this.watch(ws, m, code);
     if (m.t === 'in') {
       const seat = this.socks.get(ws);
       if (seat) this.sea?.helm(seat, m);
       return;
     }
+    if (m.t === 'leave') {
+      const seat = this.socks.get(ws);
+      if (seat) this.sea?.leave(seat);
+      return;
+    }
     if (m.t !== 'hello' || this.socks.get(ws)) return;
     if (m.v !== WIRE) return this.nope(ws, 'version');
+    const named = checkName(typeof m.name === 'string' ? m.name : '');
+    if (!('name' in named)) return this.nope(ws, 'name');
     const who = await this.who(m.token).catch(() => null);
     if (!who) return this.nope(ws, 'token');
-    if (m.ship !== STARTER && !who.items.includes(itemOf(m.ship))) return this.nope(ws, 'ship');
-    if (!this.sea) {
-      // A bar's sea plays the venue's way; a private one, the way whoever opened it said.
-      // That is written down, so the code still works after the server restarts.
-      const mode = barMode ?? (await this.ctx.storage.get<Mode>('mode')) ?? m.open;
-      if (!mode) return this.nope(ws, 'unknown');
-      if (!barMode) {
-        await this.ctx.storage.put('mode', mode);
-        await this.ctx.storage.setAlarm(Date.now() + FORGET);
-      }
-      this.sea ??= new Sea(code, mode);
-    }
+    this.sea ??= new Sea(code);
     // the same captain on a second socket (a reload, a second tab): the newest wins
     for (const [s, seat] of this.socks) {
       if (seat === who.seat && s !== ws) { this.socks.set(s, null); try { s.close(4000, 'aboard elsewhere'); } catch { /* already gone */ } }
     }
-    const why = this.sea.join({ seat: who.seat, captain: who.captain, ship: m.ship });
+    const why = this.sea.join({ seat: who.seat, name: named.name, look: lookById(m.look).id });
     if (why) return this.nope(ws, why);
     this.socks.set(ws, who.seat);
-    this.send(ws, { t: 'welcome', v: WIRE, code: this.sea.code, mode: this.sea.mode, cap: this.sea.cap });
+    this.send(ws, { t: 'welcome', v: WIRE, code: this.sea.code, cap: this.sea.cap });
     this.send(ws, this.sea.roster());
-    this.send(ws, this.sea.round());
     this.start();
   }
 
   /** A screen asks to look on. It is sent what every phone aboard is, but its own ship. */
-  private async watch(ws: WebSocket, m: Watch, code: string, barMode: Mode | null) {
+  private async watch(ws: WebSocket, m: Watch, code: string) {
     if (this.socks.get(ws)) return;
     if (m.v !== WIRE) return this.nope(ws, 'version');
     if (!(await this.keyed(m.key))) {
@@ -117,14 +105,11 @@ export class SeaRoom extends DurableObject<Env> {
       await new Promise((r) => setTimeout(r, 1000));
       return this.nope(ws, 'key');
     }
-    const mode = this.sea?.mode ?? barMode ?? (await this.ctx.storage.get<Mode>('mode'));
-    if (!mode) return this.nope(ws, 'unknown');
     if (this.watchers.size >= WATCHERS) return this.nope(ws, 'full');
     this.watchers.add(ws);
     const sea = this.sea;
-    this.send(ws, { t: 'welcome', v: WIRE, code: sea?.code ?? code, mode, cap: sea?.cap ?? CAP, watch: true });
-    if (sea?.world) this.send(ws, sea.roster());
-    this.send(ws, sea ? sea.round() : { t: 'round', stage: 'lobby', mode, left: LOBBY, n: 0, scores: [] });
+    this.send(ws, { t: 'welcome', v: WIRE, code: sea?.code ?? code, cap: sea?.cap ?? TUNING.maxShips, watch: true });
+    if (sea) this.send(ws, sea.roster());
   }
 
   /** Is this the watch key? Compared in constant time, both sides hashed to one length. */
@@ -136,7 +121,7 @@ export class SeaRoom extends DurableObject<Env> {
     return crypto.subtle.timingSafeEqual(a, b);
   }
 
-  /** Who this token belongs to, the name they sail under, and what they own. */
+  /** Who this token belongs to. */
   private async who(token: string) {
     const base = this.env.SUPABASE_URL;
     jwks ??= createRemoteJWKSet(new URL(`${base}/auth/v1/.well-known/jwks.json`));
@@ -146,9 +131,9 @@ export class SeaRoom extends DurableObject<Env> {
       headers: { apikey: this.env.SUPABASE_KEY, Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
     });
     if (!r.ok) return null;
-    const me = (await r.json()) as { id: string; captain: string; items: string[] };
+    const me = (await r.json()) as { id: string };
     if (me.id !== payload.sub) return null;
-    return { seat: me.id, captain: me.captain, items: me.items };
+    return { seat: me.id };
   }
 
   private start() {
@@ -175,18 +160,11 @@ export class SeaRoom extends DurableObject<Env> {
       for (const [ws, seat] of this.socks) if (seat) { try { ws.send(`${head},"me":${JSON.stringify(sea.own(seat))}}`); } catch { /* closing */ } }
     }
     if (!sea.aboard && this.timer) {
-      // nobody aboard: stop beating, and let the object sleep. A private sea keeps its
-      // mode for as long as the object stays awake, so its code works for a while yet.
+      // nobody aboard: stop beating, and let the object sleep. The bots stop with it; the
+      // next captain aboard finds them where they were.
       clearInterval(this.timer);
       this.timer = null;
     }
-  }
-
-  /** A week on: forget a private sea nobody is sailing, so its code is free again. */
-  async alarm() {
-    if (this.sea?.aboard) { await this.ctx.storage.setAlarm(Date.now() + FORGET); return; }
-    this.sea = null;
-    await this.ctx.storage.deleteAll();
   }
 
   private gone(ws: WebSocket) {

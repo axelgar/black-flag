@@ -1,389 +1,295 @@
-// The HUD. DOM rather than canvas on purpose — it is text, bars and buttons, it has to be
-// readable at a phone's smallest size, and it must never cost the sea a frame. Built once
-// on mount, then written to only when a number actually changes.
+// What sits on the glass over the fight: your streak at the top, a tag over every ship
+// (name, hull, skulls), your hull and shots over your own, arrows at the edges to the
+// nearest ships off screen, the feed of who sank whom, the sticks, and the cards for
+// being sunk and for winning.
+//
+// Written every frame by hudTick(), which only touches what changed: a tag is moved with
+// a transform, never laid out again.
 
-import { heatFlags, HUNTER_AT } from '../data/notoriety';
-import { reales } from '../state/run';
-import { BOARD_SPEED, STRIKE_WINDOW, hostile, isPrize } from '../sim/combat';
-import { EDGE, MAP_R } from '../sim/map';
-import { you, type World } from '../sim/types';
+import { markOf } from '../data/colors';
+import { TUNING as T } from '../data/tuning';
 import type { View } from '../render/view';
-import * as A from '../audio/audio';
-import { attachStick, fire, sailLevel, steering, usedTouch } from './input';
-import { buzz } from './haptics';
+import type { Seat } from '../net/protocol';
+import type { GameEvent, Ship, World } from '../sim/types';
+import { attachSticks, touchUi, used } from './input';
 
-const $ = <T extends HTMLElement = HTMLElement>(s: string, r: ParentNode = document) => r.querySelector(s) as T;
+const $ = <E extends HTMLElement = HTMLElement>(s: string, r: ParentNode = document) => r.querySelector(s) as E | null;
 const esc = (s: unknown) => String(s ?? '').replace(/[<>&"]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' }[c]!));
 
-interface Hud {
-  root: HTMLElement;
-  bar: HTMLElement; fill: HTMLElement; lives: HTMLElement; coin: HTMLElement; wave: HTMLElement;
-  flags: HTMLElement[]; flagbox: HTMLElement; buffs: HTMLElement;
-  boss: HTMLElement; bossName: HTMLElement; bossFill: HTMLElement;
-  toast: HTMLElement; dock: HTMLElement;
-  gunL: HTMLButtonElement; gunR: HTMLButtonElement; mortar: HTMLButtonElement; shells: HTMLElement;
-  sail: HTMLElement[]; sailTxt: HTMLElement;
-  map: HTMLCanvasElement; mapBase: HTMLCanvasElement | null; mapSeed: string;
-  ptrs: HTMLElement; ptrPool: HTMLElement[]; labels: HTMLElement[];
-  last: Record<string, unknown>;
-  mapT: number;
-}
+export const SKULL = '☠';
+const ARROWS = 3;
 
-let hud: Hud | null = null;
-
-/** A great gun on her truck carriage, side on, muzzle to the right. The port button's is
- *  mirrored to point left, and neither ever turns: a thumb finds the side by where the gun
- *  points, and one that swung with the camera had to be read before every shot. */
-const CANNON = `<svg class="cannon" viewBox="0 0 48 30" aria-hidden="true">
-  <path d="M5 19.5h24l-2.2 5.3H7.2z" fill="currentColor" opacity=".72"/>
-  <circle cx="10" cy="25.2" r="3.9" fill="currentColor"/><circle cx="24" cy="25.2" r="3.9" fill="currentColor"/>
-  <circle cx="10" cy="25.2" r="1.3" fill="#0b1c23"/><circle cx="24" cy="25.2" r="1.3" fill="#0b1c23"/>
-  <path d="M11 8.4 40 10.9v6.2L11 19.6z" fill="currentColor"/>
-  <circle cx="11" cy="14" r="5.9" fill="currentColor"/>
-  <rect x="39" y="9.7" width="5.6" height="8.6" rx="1.6" fill="currentColor"/>
-  <circle cx="4.2" cy="14" r="2.2" fill="currentColor"/><rect x="4.6" y="13" width="3" height="2" fill="currentColor"/>
-  <path d="M20 9.3v9.4M30.6 10.1v7.8M38.6 10.4v7.2" stroke="#0b1c23" stroke-opacity=".55" stroke-width="1.1"/>
-</svg>`;
-
-export function hudHtml(touch: boolean) {
+export function hudHtml(practice: boolean) {
+  const touch = touchUi();
+  const slots = Array.from({ length: T.win }, (_, i) => `<i data-n="${i + 1}">${SKULL}</i>`).join('');
   return `
-  <div class="hud" id="hud">
-    <div class="pointers" id="h-ptrs"></div>
-    ${touch ? `<div class="joy${usedTouch() ? ' used' : ''}" id="h-joy"><div class="base"></div><div class="knob"></div><div class="hint">DRAG TO STEER · HOW FAR SETS THE SAIL</div></div>` : ''}
-    <div class="hudtl">
-      <div class="hullbar" id="h-bar"><i style="width:100%"></i></div>
-      <div class="hudline">
-        <span class="hearts" id="h-lives"></span>
-        <span class="coin" id="h-coin">0 R</span>
-        <span style="opacity:.65" id="h-wave">WAVE 1</span>
-        <span class="flags" id="h-flags">${'<i></i>'.repeat(5)}</span>
-      </div>
-      <div class="buffs" id="h-buffs"></div>
+  <div class="hud${touch ? ' touch' : ''}">
+    <div class="tags" id="tags"></div>
+    <div class="arrows" id="arrows">${Array.from({ length: ARROWS }, () => '<div class="arrow"><b></b><span></span></div>').join('')}</div>
+    <button class="leave" data-act="leave" aria-label="Leave the sea">⚓ <span>Leave</span></button>
+    <div class="streak" id="streak" aria-live="polite">
+      <div class="skulls">${slots}</div>
+      <div class="label" id="streak-label">Sink 5 in a row</div>
     </div>
-    <div class="bossbar" id="h-boss"><div class="n" id="h-bossname"></div><div class="b"><i style="width:100%"></i></div></div>
-    <button class="chip gold dock-cta" id="h-dock">⚓ Make for Nassau</button>
-    <div class="hudtr">
-      <canvas class="minimap" id="h-map" width="224" height="224"></canvas>
-      <button class="chip icon pausebtn" id="h-pause" data-go="#/pause" aria-label="Heave to">❙❙</button>
+    ${practice ? '<div class="practice">Practice · order a <b>Black Flag</b> to play for a free shot</div>' : ''}
+    <div class="feed" id="feed"></div>
+    <div class="toast" id="toast"></div>
+    ${touch ? `
+    <div class="joy left" id="joy-l"><div class="base"></div><div class="knob"></div></div>
+    <div class="joy right" id="joy-r"><div class="base"></div><div class="knob"></div></div>
+    <div class="hint" id="hints"></div>` : `
+    <div class="keys">WASD sail · hold the mouse to aim, let go to fire · Space fires at the nearest</div>`}
+    <div class="card sunk" id="sunk" hidden>
+      <div class="big">Sunk</div>
+      <div class="by" id="sunk-by"></div>
+      <div class="lost" id="sunk-lost"></div>
+      <div class="count" id="sunk-count"></div>
     </div>
-    <div class="toast" id="h-toast"></div>
-    <div class="sailgauge" id="h-sail">
-      <i style="height:8px"></i><i style="height:13px"></i><i style="height:18px"></i><span id="h-sailtxt">HALF SAIL</span>
+    <div class="card won" id="won" hidden>
+      <div class="burst"></div>
+      <div class="big">Five in a row!</div>
+      <div class="sub" id="won-sub"></div>
+      <button class="cta" data-act="won-ok">Keep sailing</button>
     </div>
-    <div class="guns">
-      <button class="gun mortar" id="h-mortar" aria-label="Mortar"><div><b id="h-shells">3</b>MORTAR</div></button>
-      <button class="gun" id="h-gunL" aria-label="Fire to port">${CANNON}</button>
-      <button class="gun" id="h-gunR" aria-label="Fire to starboard">${CANNON}</button>
+    <div class="card state" id="state" hidden>
+      <div class="big" id="state-big"></div>
+      <div class="sub" id="state-sub"></div>
+      <button class="cta" data-act="again" hidden>Try again</button>
     </div>
-    ${touch ? '' : '<div class="keys">W/S SAIL · A/D HELM · Q/E OR MOUSE BROADSIDES · SPACE MORTAR · ESC HEAVE TO</div>'}
   </div>`;
 }
 
-export function mountHud(root: HTMLElement, onDock: () => void): () => void {
-  hud = {
-    root,
-    bar: $('#h-bar', root), fill: $('#h-bar i', root), lives: $('#h-lives', root), coin: $('#h-coin', root), wave: $('#h-wave', root),
-    flags: [...root.querySelectorAll<HTMLElement>('#h-flags i')], flagbox: $('#h-flags', root), buffs: $('#h-buffs', root),
-    boss: $('#h-boss', root), bossName: $('#h-bossname', root), bossFill: $('#h-boss .b i', root),
-    toast: $('#h-toast', root), dock: $('#h-dock', root),
-    gunL: $('#h-gunL', root), gunR: $('#h-gunR', root), mortar: $('#h-mortar', root), shells: $('#h-shells', root),
-    sail: [...root.querySelectorAll<HTMLElement>('#h-sail i')], sailTxt: $('#h-sailtxt', root),
-    map: $('#h-map', root) as HTMLCanvasElement, mapBase: null, mapSeed: '',
-    ptrs: $('#h-ptrs', root), ptrPool: [], labels: [],
-    last: {}, mapT: 0,
+interface Tag { el: HTMLElement; name: HTMLElement; bar: HTMLElement; skulls: HTMLElement; ammo: HTMLElement | null; key: string }
+
+let root: HTMLElement | null = null;
+let tags: Tag[] = [];
+let arrows: HTMLElement[] = [];
+let lastStreak = -1;
+let feed: { el: HTMLElement; t: number }[] = [];
+let toastT = 0;
+let wonOpen = false;
+let sunkBy = '';
+
+/** Put the HUD up. `act` hears its buttons. Returns the teardown. */
+export function mountHud(el: HTMLElement, act: (what: string) => void): () => void {
+  root = el;
+  tags = []; feed = []; lastStreak = -1; wonOpen = false;
+  arrows = [...el.querySelectorAll<HTMLElement>('.arrow')];
+  const onClick = (e: Event) => {
+    const b = (e.target as HTMLElement).closest<HTMLElement>('[data-act]');
+    if (!b) return;
+    e.preventDefault();
+    if (b.dataset.act === 'won-ok') { wonOpen = false; $('#won', root!)!.hidden = true; }
+    act(b.dataset.act!);
   };
-  const press = (el: HTMLElement, side: 'L' | 'R' | 'M') => el.addEventListener('pointerdown', (e) => {
-    e.preventDefault(); e.stopPropagation(); A.unlock(); buzz(side === 'M' ? 14 : 10); fire(side);
-  });
-  press(hud.gunL, 'L'); press(hud.gunR, 'R'); press(hud.mortar, 'M');
-  // On pointerdown, like the guns: a browser makes no click of a tap while another finger
-  // is down, and the other finger is on the stick.
-  hud.dock.addEventListener('pointerdown', (e) => { e.preventDefault(); buzz(10); onDock(); });
-  $('#h-pause', root).addEventListener('pointerdown', (e) => { e.preventDefault(); buzz(6); window.dispatchEvent(new Event('bf:pause')); });
-  readInsets();
-  measure();
-  addEventListener('resize', measure);
-  const joy = root.querySelector<HTMLElement>('#h-joy');
-  const off = joy ? attachStick(joy) : () => {};
-  return () => { off(); removeEventListener('resize', measure); hud = null; };
+  el.addEventListener('click', onClick);
+  const l = $('#joy-l', el), r = $('#joy-r', el);
+  const off = l && r ? attachSticks(l, r) : null;
+  return () => { el.removeEventListener('click', onClick); off?.(); root = null; };
 }
 
-/** Where the HUD's own furniture is, so an off-screen arrow is never drawn under it. */
-const keepOut: DOMRect[] = [];
-function measure() {
-  if (!hud) return;
-  readInsets();
-  keepOut.length = 0;
-  for (const sel of ['.hudtl', '.hudtr', '.guns', '.sailgauge']) {
-    const el = hud.root.querySelector(sel);
-    if (el) keepOut.push(el.getBoundingClientRect());
-  }
-}
-
-const HEARTS = (n: number, of: number) => '♥'.repeat(Math.max(0, n)) + '<span style="opacity:.25">♡</span>'.repeat(Math.max(0, of - n));
-const SAILS = ['HOVE TO', 'TOPSAILS', 'HALF SAIL', 'ALL PLAIN SAIL'];
-
-export function hudTick(w: World | null, view: View, dt: number) {
-  if (!hud || !w) return;
-  const L = hud.last, s = you(w);
-  const hp = Math.max(0, s.hull / s.hullMax);
-  if (Math.abs(((L.hp as number) ?? -1) - hp) > 0.004) {
-    hud.fill.style.width = `${(hp * 100).toFixed(1)}%`;
-    hud.bar.classList.toggle('low', hp < 0.34);
-    L.hp = hp;
-  }
-  // on a shared sea a ship that goes down comes back, so there are no lives to count
-  const lives = w.shared ? 'shared' : `${s.lives}/${s.stats.lives}`;
-  if (L.lives !== lives) { hud.lives.innerHTML = w.shared ? '' : HEARTS(s.lives, Math.max(s.lives, s.stats.lives)); L.lives = lives; }
-  if (L.coin !== s.plunder) { hud.coin.textContent = `${reales(s.plunder)} R`; L.coin = s.plunder; }
-  if (L.wave !== w.wave) { hud.wave.textContent = `WAVE ${w.wave}`; L.wave = w.wave; }
-  if (L.shells !== s.shells) {
-    hud.shells.textContent = String(s.shells);
-    hud.mortar.disabled = s.shells <= 0;
-    L.shells = s.shells;
-  }
-  const flags = heatFlags(s.heat);
-  if (L.flags !== flags) {
-    hud.flags.forEach((f, i) => f.classList.toggle('on', i < flags));
-    hud.flagbox.classList.toggle('hot', flags >= HUNTER_AT);
-    L.flags = flags;
-  }
-  A.setHeat(s.heat);
-
-  const boss = w.boss;
-  if (!!boss !== !!L.boss) { hud.boss.classList.toggle('on', !!boss); L.boss = !!boss; }
-  if (boss) {
-    hud.bossName.textContent = boss.L!.name;
-    hud.bossFill.style.width = `${Math.max(0, (boss.hull / boss.hullMax) * 100).toFixed(1)}%`;
-  }
-  const b = s.buffs;
-  const on = (Object.keys(b) as (keyof typeof b)[]).filter((k) => b[k] !== 0);
-  const bs = on.map((k) => `${k}${b[k] > 0 ? Math.ceil(b[k]) : ''}`).join(',');
-  if (L.buffs !== bs) {
-    hud.buffs.innerHTML = on.map((k) => `<span class="buff">${k}${b[k] > 0 ? ` ${Math.ceil(b[k])}` : ''}</span>`).join('');
-    L.buffs = bs;
-  }
-  // a shared sea has no Nassau to make for: the next wave comes to you
-  const clear = w.phase === 'clear' && !w.shared;
-  if (L.clear !== clear) { hud.dock.classList.toggle('on', clear); L.clear = clear; }
-
-  // guns: reload rings, and a glow on a side that bears on something
-  const bears = [false, false];
-  for (const e of w.foes) {
-    if (!hostile(e) && !isPrize(e)) continue;
-    const dx = e.x - s.x, dy = e.y - s.y, d = Math.hypot(dx, dy);
-    if (d > s.stats.range + e.len * 0.4) continue;
-    const side = -Math.sin(s.h) * dx + Math.cos(s.h) * dy;       // + starboard
-    if (Math.abs(side) / d > 0.93) bears[side > 0 ? 1 : 0] = true;
-  }
-  [hud.gunL, hud.gunR].forEach((g, i) => {
-    const load = 1 - s.cool[i] / (s.stats.reload || 1);
-    g.style.setProperty('--load', load.toFixed(3));
-    g.classList.toggle('ready', load >= 1);
-    g.classList.toggle('bears', bears[i] && load >= 1);
-  });
-
-  {
-    const lvl = Math.round(sailLevel() * 3);
-    if (L.sail !== lvl) {
-      hud.sail.forEach((el, i) => el.classList.toggle('on', i < lvl));
-      hud.sailTxt.textContent = SAILS[lvl];
-      L.sail = lvl;
-    }
-  }
-
-  pointers(w, view);
-  hud.mapT -= dt;
-  if (hud.mapT <= 0) { hud.mapT = 0.1; minimap(w, view.yaw); }
-}
-
-/** The phone's notch and rounded corners, as the CSS has them. */
-const inset = { l: 0, r: 0 };
-function readInsets() {
-  const cs = getComputedStyle(document.documentElement);
-  inset.l = parseFloat(cs.getPropertyValue('--sl')) || 0;
-  inset.r = parseFloat(cs.getPropertyValue('--sr')) || 0;
-}
-
-/** Arrows round the edge for what matters and is off screen; labels over prizes. */
-function pointers(w: World, view: View) {
-  const h = hud!, me = you(w);
-  const W = h.root.clientWidth, H = h.root.clientHeight;
-  const cx = W / 2, cy = H / 2;
-  let n = 0, nl = 0;
-  const arrow = (x: number, y: number, kind: string) => {
-    const p = view.project(x, 4, y);
-    if (p && p.on) return p;
-    // Off screen: point along the bearing, as the camera sees it — forward is up.
-    const rel = Math.atan2(y - me.y, x - me.x) - view.yaw;
-    const a = Math.atan2(-Math.cos(rel), Math.sin(rel));
-    // On a ring round the edge, inside the notch, and then out from under whatever of the
-    // HUD it landed on: along the edge it is on, to the near side of the obstacle.
-    const m = 30 + Math.max(inset.l, inset.r), mv = 30;
-    const k = Math.min((W / 2 - m) / Math.abs(Math.cos(a) || 1e-3), (H / 2 - mv) / Math.abs(Math.sin(a) || 1e-3));
-    let px = cx + Math.cos(a) * k, py = cy + Math.sin(a) * k;
-    for (const r of keepOut) {
-      if (px < r.left - 16 || px > r.right + 16 || py < r.top - 16 || py > r.bottom + 16) continue;
-      const side = Math.abs(px - cx) / (W / 2 - m) > Math.abs(py - cy) / (H / 2 - mv);
-      if (side) py = py < cy ? r.bottom + 18 : r.top - 18;
-      else px = px < cx ? r.right + 18 : r.left - 18;
-    }
-    let el = h.ptrPool[n];
-    if (!el) { el = document.createElement('div'); h.ptrs.appendChild(el); h.ptrPool.push(el); }
-    if (el.className !== `ptr ${kind}`) el.className = `ptr ${kind}`;
-    el.style.display = '';
-    el.style.transform = `translate3d(${px.toFixed(1)}px,${py.toFixed(1)}px,0)`;
-    el.style.setProperty('--a', `${(a + Math.PI / 2).toFixed(3)}rad`);
-    n++;
-    return null;
-  };
-  const label = (x: number, y: number, z: number, text: string, cls: string) => {
-    const p = view.project(x, y, z);
-    if (!p || !p.on) return;
-    let el = h.labels[nl];
-    if (!el) { el = document.createElement('div'); h.ptrs.appendChild(el); h.labels.push(el); }
-    if (el.className !== `label ${cls}`) el.className = `label ${cls}`;
-    el.style.display = '';
-    el.style.transform = `translate3d(${p.x.toFixed(1)}px,${p.y.toFixed(1)}px,0) translate(-50%,-100%)`;
-    if (el.dataset.t !== text) { el.textContent = text; el.dataset.t = text; }
-    nl++;
-  };
-
-  for (const e of w.foes) {
-    if (n >= 12) break;
-    if (isPrize(e)) {
-      const on = arrow(e.x, e.y, 'prize');
-      if (on) {
-        const s = me;
-        const boarding = s.board && s.board.id === e.id;
-        const d = Math.hypot(e.x - s.x, e.y - s.y);
-        const reach = (e.len + s.len) * 0.5 * 0.85 + 12;
-        const secs = `${Math.ceil(e.strikeT)}s`;
-        // The one rule about boarding nobody can see: you have to be alongside, not tearing past.
-        const text = boarding ? 'BOARDING…'
-          : d < reach && s.v > s.maxSpeed * BOARD_SPEED ? `${steering() ? 'LET GO' : 'EASE OFF'} TO BOARD · ${secs}`
-          : d < reach * 3 ? `COME ALONGSIDE · ${secs}` : `PRIZE · ${secs}`;
-        label(e.x, e.len * 0.6 + 8, e.y, text, 'prize');
-      }
-      continue;
-    }
-    if (e.state !== 'engage') continue;
-    arrow(e.x, e.y, e.L ? 'boss' : 'foe');
-    if (e.L) label(e.x, e.len * 0.7 + 10, e.y, e.L.name, 'prize');
-  }
-  // Nobody has found you yet: the lookout calls the nearest sail, so the start of a wave is
-  // a heading and not a minute of empty sea.
-  if (w.phase === 'fight' && !w.foes.some((e) => e.state === 'engage')) {
-    const s = me;
-    let best = null as World['foes'][number] | null, bd = 1e9;
-    for (const e of w.foes) {
-      if (e.state !== 'patrol') continue;
-      const d = Math.hypot(e.x - s.x, e.y - s.y);
-      if (d < bd) { bd = d; best = e; }
-    }
-    if (best) {
-      if (arrow(best.x, best.y, 'sail')) label(best.x, best.len + 10, best.y, 'SAIL HO', 'sail');
-    }
-  }
-  if (w.phase === 'clear' && !w.shared) {
-    const hb = w.map.harbour;
-    const on = arrow(hb.x, hb.y, 'home');
-    if (on) label(hb.x, 30, hb.y, 'NASSAU', 'prize');
-  }
-  for (let i = n; i < h.ptrPool.length; i++) h.ptrPool[i].style.display = 'none';
-  for (let i = nl; i < h.labels.length; i++) h.labels[i].style.display = 'none';
-  void STRIKE_WINDOW;
-}
-
-/** North-up chart of the sea round you: islands, Nassau, anyone who has seen you. */
-function minimap(w: World, yaw: number) {
-  const h = hud!, me = you(w);
-  const cv = h.map, c = cv.getContext('2d')!;
-  const S = cv.width, R = S / 2;
-  const scale = R / MAP_R;
-  if (!h.mapBase || h.mapSeed !== w.map.seed) {
-    const b = document.createElement('canvas');
-    b.width = b.height = S;
-    const bc = b.getContext('2d')!;
-    bc.fillStyle = 'rgba(18,58,74,.9)';
-    bc.beginPath(); bc.arc(R, R, R - 2, 0, Math.PI * 2); bc.fill();
-    // the rim current: a darker band round the edge, and a dashed line where it takes you
-    bc.fillStyle = 'rgba(4,16,22,.55)';
-    bc.beginPath(); bc.arc(R, R, R - 2, 0, Math.PI * 2); bc.arc(R, R, (MAP_R - EDGE) * scale, 0, Math.PI * 2, true); bc.fill();
-    bc.strokeStyle = 'rgba(242,231,206,.3)'; bc.lineWidth = 1.5; bc.setLineDash([4, 5]);
-    bc.beginPath(); bc.arc(R, R, (MAP_R - EDGE) * scale, 0, Math.PI * 2); bc.stroke();
-    bc.setLineDash([]);
-    const coast = (is: (typeof w.map.islands)[number], grow: number) => {
-      bc.beginPath();
-      is.radii.forEach((r, i) => {
-        const a = (i / is.radii.length) * Math.PI * 2;
-        const x = R + (is.x + Math.cos(a) * (r + grow)) * scale, y = R + (is.y + Math.sin(a) * (r + grow)) * scale;
-        if (i) bc.lineTo(x, y); else bc.moveTo(x, y);
-      });
-      bc.closePath();
-    };
-    // the shallows first, pale round every coast, then the land on them
-    bc.fillStyle = 'rgba(96,196,196,.28)';
-    for (const is of w.map.islands) { coast(is, 26); bc.fill(); }
-    for (const is of w.map.islands) {
-      bc.fillStyle = is.kind === 'nassau' ? '#E3CF9E' : is.kind === 'rock' ? '#8C8374' : is.kind === 'sand' ? '#D9C58E' : '#6E9D55';
-      coast(is, 0); bc.fill();
-    }
-    bc.fillStyle = 'rgba(242,231,206,.55)';
-    bc.font = '600 13px ui-monospace, monospace'; bc.textAlign = 'center'; bc.textBaseline = 'top';
-    bc.fillText('N', R, 5);
-    bc.fillStyle = 'rgba(220,240,240,.4)';
-    for (const k of w.map.reefs) { bc.beginPath(); bc.arc(R + k.x * scale, R + k.y * scale, 1.6, 0, Math.PI * 2); bc.fill(); }
-    h.mapBase = b; h.mapSeed = w.map.seed;
-  }
-  c.clearRect(0, 0, S, S);
-  c.drawImage(h.mapBase, 0, 0);
-  const P = (x: number, y: number) => [R + x * scale, R + y * scale] as const;
-  // harbour
-  const [hx, hy] = P(w.map.harbour.x, w.map.harbour.y);
-  c.strokeStyle = w.phase === 'clear' && !w.shared ? '#FFD36A' : 'rgba(217,164,65,.6)'; c.lineWidth = 2;
-  c.beginPath(); c.arc(hx, hy, 5, 0, Math.PI * 2); c.stroke();
-  for (const e of w.foes) {
-    if (e.state === 'spent') continue;
-    if (e.state === 'patrol' && Math.hypot(e.x - me.x, e.y - me.y) > 260) continue;
-    const [x, y] = P(e.x, e.y);
-    c.fillStyle = isPrize(e) ? '#F6F1E1' : e.L ? '#FF7A3C' : e.state === 'engage' ? '#E0533F' : 'rgba(224,83,63,.5)';
-    c.beginPath(); c.arc(x, y, e.L ? 4.5 : 3, 0, Math.PI * 2); c.fill();
-  }
-  // cargo afloat, and spouts
-  c.fillStyle = '#FFD36A';
-  for (const d of w.drops) { if (d.dead) continue; const [x, y] = P(d.x, d.y); c.beginPath(); c.arc(x, y, 2.2, 0, Math.PI * 2); c.fill(); }
-  c.strokeStyle = 'rgba(235,245,245,.85)'; c.lineWidth = 1.5;
-  for (const p of w.spouts) { const [x, y] = P(p.x, p.y); c.beginPath(); c.arc(x, y, 3.5, 0, Math.PI * 1.6); c.stroke(); }
-  // the other captains: crew in teal, rivals in amber
-  for (const o of w.players) {
-    if (o === me || o.out) continue;
-    const [ox, oy] = P(o.x, o.y);
-    c.save();
-    c.translate(ox, oy); c.rotate(o.h);
-    c.fillStyle = o.team === me.team ? '#8FD1C1' : '#F0A340';
-    c.beginPath(); c.moveTo(5.5, 0); c.lineTo(-4, 3.2); c.lineTo(-2.4, 0); c.lineTo(-4, -3.2); c.closePath(); c.fill();
-    c.restore();
-  }
-  // you, and the way the camera looks
-  const [sx, sy] = P(me.x, me.y);
-  c.save();
-  c.translate(sx, sy);
-  c.fillStyle = 'rgba(242,231,206,.12)';
-  c.beginPath(); c.moveTo(0, 0); c.arc(0, 0, 34, yaw - 0.55, yaw + 0.55); c.closePath(); c.fill();
-  c.rotate(me.h);
-  c.fillStyle = '#F2E7CE';
-  c.beginPath(); c.moveTo(7, 0); c.lineTo(-5, 4); c.lineTo(-3, 0); c.lineTo(-5, -4); c.closePath(); c.fill();
-  c.restore();
-}
-
-/** The shout in the middle of the screen. One at a time, and it never queues. */
+/** A big word in the middle of the screen, for a moment. */
 export function toast(big: string, small = '') {
-  if (!hud) return;
-  hud.toast.innerHTML = `<b>${esc(big)}</b>${small ? `<span>${esc(small)}</span>` : ''}`;
-  hud.toast.classList.remove('go');
-  void hud.toast.offsetWidth;
-  hud.toast.classList.add('go');
+  const t = root && $('#toast', root);
+  if (!t) return;
+  t.innerHTML = `<div class="big">${esc(big)}</div>${small ? `<div class="small">${esc(small)}</div>` : ''}`;
+  t.classList.remove('on');
+  void t.offsetWidth;
+  t.classList.add('on');
+  toastT = 2.2;
 }
 
-export const hudMounted = () => !!hud;
+function say(html: string) {
+  const f = root && $('#feed', root);
+  if (!f) return;
+  const el = document.createElement('div');
+  el.className = 'line';
+  el.innerHTML = html;
+  f.prepend(el);
+  feed.unshift({ el, t: 5 });
+  while (feed.length > 4) feed.pop()!.el.remove();
+}
+
+const dot = (seats: Seat[], id: number) => {
+  const s = seats.find((x) => x.id === id);
+  const c = s && s.c >= 0 ? markOf(s.c).color : '#fff';
+  return `<b style="color:${c}">${esc(s?.name || '?')}</b>`;
+};
+
+/** What happened, as the HUD tells it. */
+export function hudEvents(events: GameEvent[], w: World, seats: Seat[]) {
+  const me = w.focus;
+  for (const e of events) {
+    switch (e.k) {
+      case 'sunk': {
+        const by = typeof e.by === 'number' ? e.by : -1;
+        say(by >= 0 ? `${dot(seats, by)} <i>${SKULL}</i> ${dot(seats, e.p as number)}` : `${dot(seats, e.p as number)} went down`);
+        if (e.p === me) {
+          sunkBy = by >= 0 ? seats.find((s) => s.id === by)?.name ?? '' : '';
+          const lost = (e.lost as number) || 0;
+          const c = root && $('#sunk', root);
+          if (c) {
+            $('#sunk-by', c)!.textContent = sunkBy ? `by ${sunkBy}` : '';
+            $('#sunk-lost', c)!.textContent = lost ? `Your streak of ${lost} is gone` : '';
+            c.hidden = false;
+          }
+        }
+        break;
+      }
+      case 'streak':
+        if (e.p === me) {
+          const n = e.n as number;
+          if (n < T.win) toast(n === T.wanted ? 'Wanted!' : `${n} in a row`, n === T.wanted ? 'Everyone can see you now' : `${T.win - n} more to win`);
+        } else if ((e.n as number) === T.wanted) say(`${dot(seats, e.p as number)} is <span class="wanted">WANTED</span>`);
+        break;
+      case 'won':
+        if (e.p === me) {
+          wonOpen = true;
+          const c = root && $('#won', root);
+          if (c) { $('#won-sub', c)!.textContent = 'Five ships sunk without going down once.'; c.hidden = false; }
+        } else say(`${dot(seats, e.p as number)} sank five in a row!`);
+        break;
+      case 'take':
+        if (e.p === me) toast(e.kind === 'repair' ? 'Repaired' : e.kind === 'speed' ? 'Full speed!' : 'Heavy shot', e.kind === 'heavy' ? 'Your next volley hits twice as hard' : '');
+        break;
+      default: break;
+    }
+  }
+}
+
+/** Hailing, turned away, or line lost: said in the middle of the screen. Null clears it. */
+export function hudState(big: string | null, sub = '', again = false) {
+  const c = root && $('#state', root);
+  if (!c) return;
+  c.hidden = !big;
+  if (!big) return;
+  $('#state-big', c)!.textContent = big;
+  $('#state-sub', c)!.textContent = sub;
+  $('[data-act="again"]', c)!.hidden = !again;
+}
+
+/** Every frame. */
+export function hudTick(w: World | null, seats: Seat[], view: View, dt: number, height: (look: string) => number) {
+  if (!root) return;
+  toastT -= dt;
+  if (toastT <= 0) $('#toast', root)?.classList.remove('on');
+  for (const f of feed) { f.t -= dt; if (f.t < 1) f.el.style.opacity = String(Math.max(0, f.t)); }
+  while (feed.length && feed[feed.length - 1].t <= 0) feed.pop()!.el.remove();
+  if (!w) return;
+  const me = w.ships[w.focus];
+
+  // your streak
+  const n = me ? me.streak : 0;
+  if (n !== lastStreak) {
+    lastStreak = n;
+    const box = $('#streak', root)!;
+    box.querySelectorAll('i').forEach((i) => i.classList.toggle('on', Number(i.dataset.n) <= n));
+    box.classList.toggle('wanted', n >= T.wanted);
+    $('#streak-label', root)!.textContent = n >= T.wanted ? `WANTED · one more!` : n ? `${n} in a row · ${T.win - n} to go` : `Sink ${T.win} in a row`;
+  }
+
+  // the sunk card counts down, and goes when she is back
+  const sunk = $('#sunk', root)!;
+  if (me && me.out && !me.left) {
+    const left = Math.max(0, T.respawn - me.down);
+    $('#sunk-count', sunk)!.textContent = left > 0.05 ? `Back in ${Math.ceil(left)}` : '';
+  } else if (!sunk.hidden) sunk.hidden = true;
+
+  tagsTick(w, seats, view, height);
+  arrowsTick(w, view);
+  hintsTick(me);
+}
+
+function tagFor(i: number): Tag {
+  while (tags.length <= i) {
+    const el = document.createElement('div');
+    el.className = 'tag';
+    el.innerHTML = '<div class="name"></div><div class="bar"><i></i></div><div class="ammo"></div><div class="sk"></div>';
+    $('#tags', root!)!.append(el);
+    tags.push({ el, name: $('.name', el)!, bar: $('.bar i', el)!, skulls: $('.sk', el)!, ammo: $('.ammo', el), key: '' });
+  }
+  return tags[i];
+}
+
+function tagsTick(w: World, seats: Seat[], view: View, height: (look: string) => number) {
+  let n = 0;
+  for (const s of w.ships) {
+    if (s.out) continue;
+    const p = view.project(s.x, height(s.look) + 3, s.y);
+    if (!p || !p.on) continue;
+    const t = tagFor(n++);
+    const seat = seats.find((x) => x.id === s.id);
+    const mine = s.id === w.focus;
+    const key = `${seat?.name}|${seat?.c}|${s.streak}|${mine}|${seat?.bot}`;
+    if (key !== t.key) {
+      t.key = key;
+      t.el.className = `tag${mine ? ' me' : ''}${s.streak >= T.wanted ? ' wanted' : ''}`;
+      const c = seat && seat.c >= 0 ? markOf(seat.c).color : '#fff';
+      t.el.style.setProperty('--c', c);
+      t.name.innerHTML = mine ? '' : `${esc(seat?.name ?? '')}${seat?.bot ? ' <small>bot</small>' : ''}`;
+      t.skulls.textContent = s.streak >= T.wanted ? `WANTED ${SKULL.repeat(s.streak)}` : SKULL.repeat(s.streak);
+    }
+    t.bar.style.transform = `scaleX(${Math.max(0, s.hull / s.hullMax)})`;
+    t.bar.style.background = s.hull / s.hullMax > 0.5 ? '' : s.hull / s.hullMax > 0.25 ? '#FFC53D' : '#FF4D3D';
+    if (mine && t.ammo) ammoTick(t.ammo, s);
+    t.el.style.transform = `translate(${p.x}px,${p.y}px)`;
+    t.el.style.display = '';
+  }
+  for (let i = n; i < tags.length; i++) if (tags[i].el.style.display !== 'none') tags[i].el.style.display = 'none';
+}
+
+function ammoTick(el: HTMLElement, s: Ship) {
+  if (el.childElementCount !== T.ammo) el.innerHTML = '<i><b></b></i>'.repeat(T.ammo);
+  const pips = el.children;
+  for (let i = 0; i < T.ammo; i++) {
+    const b = pips[i].firstElementChild as HTMLElement;
+    const fill = i < s.ammo ? 1 : i === s.ammo ? 1 - s.reloadT / T.reload : 0;
+    b.style.transform = `scaleX(${Math.max(0, Math.min(1, fill))})`;
+    pips[i].classList.toggle('full', i < s.ammo);
+  }
+  el.classList.toggle('heavy', s.heavy);
+}
+
+/** Arrows round the edge to the nearest ships you can't see. */
+function arrowsTick(w: World, view: View) {
+  const me = w.ships[w.focus];
+  const W = innerWidth, H = innerHeight;
+  const off: { s: Ship; d: number; x: number; y: number }[] = [];
+  if (me && !me.out) {
+    for (const s of w.ships) {
+      if (s.out || s.id === me.id) continue;
+      const p = view.project(s.x, 0, s.y);
+      if (!p || p.on) continue;
+      off.push({ s, d: Math.hypot(s.x - me.x, s.y - me.y), x: p.x, y: p.y });
+    }
+    off.sort((a, b) => a.d - b.d);
+  }
+  const cx = W / 2, cy = H / 2, pad = 34;
+  for (let i = 0; i < arrows.length; i++) {
+    const a = arrows[i], o = off[i];
+    if (!o) { if (a.style.display !== 'none') a.style.display = 'none'; continue; }
+    const dx = o.x - cx, dy = o.y - cy;
+    const k = Math.min((W / 2 - pad) / Math.abs(dx || 1e-6), (H / 2 - pad) / Math.abs(dy || 1e-6));
+    a.style.display = '';
+    a.style.transform = `translate(${cx + dx * k}px,${cy + dy * k}px)`;
+    (a.firstElementChild as HTMLElement).style.transform = `rotate(${Math.atan2(dy, dx)}rad)`;
+    a.lastElementChild!.textContent = `${Math.round(o.d)}m${o.s.streak ? ` ${SKULL}${o.s.streak}` : ''}`;
+    a.classList.toggle('wanted', o.s.streak >= T.wanted);
+  }
+}
+
+/** The first time at sea: what each thumb does, until each has been done. */
+let hintShown = '';
+function hintsTick(me: Ship | undefined) {
+  const h = root && $('#hints', root);
+  if (!h) return;
+  const want = !me || me.out ? '' : !used.move ? 'left' : !used.aim && !used.tap ? 'right' : '';
+  if (want === hintShown) return;
+  hintShown = want;
+  h.className = `hint ${want}`;
+  h.innerHTML = want === 'left' ? '<b>Left thumb</b> · sail where you push'
+    : want === 'right' ? '<b>Right thumb</b> · drag to aim, let go to fire<br>or tap to fire at the nearest ship' : '';
+}
+
+/** The win card is up: the host keeps it there until it is dismissed. */
+export const winning = () => wonOpen;

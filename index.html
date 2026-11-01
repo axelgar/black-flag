@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover,user-scalable=no">
-<meta name="theme-color" content="#0A1C24">
+<meta name="theme-color" content="#13508F">
 <!-- Add to Home Screen → launches chromeless, the sea gets the whole display.
      iOS wants the apple- prefixed key; the unprefixed one covers Android. -->
 <meta name="mobile-web-app-capable" content="yes">
@@ -15,44 +15,28 @@
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="icon" type="image/png" href="/favicon.png">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
-<!-- Google Tag Manager. Loads GA4 (and anything else) from the container; src/analytics.ts
-     pushes screen and run events onto dataLayer for it to pick up. -->
-<script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
-new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
-j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
-'https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
-})(window,document,'script','dataLayer','GTM-W2BXPTTS');</script>
-<!-- End Google Tag Manager -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <!-- Google Fonts CDN. Self-host before anywhere with bad wifi. -->
-<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700;900&family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Lilita+One&family=Nunito:wght@600;700;800;900&display=swap" rel="stylesheet">
 </head>
 <body>
-<!-- Google Tag Manager (noscript) -->
-<noscript><iframe src="https://www.googletagmanager.com/ns.html?id=GTM-W2BXPTTS"
-height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
-<!-- End Google Tag Manager (noscript) -->
 
 <div class="app" id="app">
   <canvas id="gl" aria-hidden="true"></canvas>
   <main id="ui" class="ui"></main>
-  <div class="vig" aria-hidden="true"></div>
-  <!-- refit / lightning. Painted by the view through a CSS variable, never a reflow. -->
-  <div class="flash" id="flash" aria-hidden="true"></div>
-  <div class="boot" id="boot"><div class="mark">BLACK FLAG</div></div>
+  <div class="boot" id="boot"><div class="logo">Black <span>Flag</span></div></div>
 </div>
 
-<!-- Landscape is the design now: an open sea wants the width. On a phone held upright
-     the game says so and heaves to, the same rule as backgrounding the tab. -->
+<!-- The sea is sailed sideways: the name screen works upright, but at sea a phone held
+     upright is asked to turn. -->
 <div class="rotate" role="status">
   <svg width="46" height="46" viewBox="0 0 46 46" fill="none" aria-hidden="true">
     <rect x="15" y="6" width="16" height="34" rx="3" stroke="currentColor" stroke-width="2"/>
     <path d="M8 30a15 15 0 0 0 4 8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
     <path d="M6 24l2 7 7-2" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
   </svg>
-  <div class="disp" style="font-size:26px">Turn her sideways</div>
-  <div class="mono" style="font-size:10.5px;opacity:.6">BLACK FLAG SAILS IN LANDSCAPE</div>
+  <div class="big">Turn your phone sideways</div>
 </div>
 
 <script type="module" src="/src/main.ts"></script>

@@ -1,9 +1,8 @@
-// How a hull moves. The same helm for the Jackdaw and for every Spaniard — the AI does
-// not get to cheat on turning circles, which is what makes out-turning a frigate a
-// thing a captain can learn.
+// How a hull moves. The same helm for every ship, a captain's or a bot's: a bot does not
+// get to cheat on turning circles.
 
 import { angleTo, clamp, wrap } from '../core/vec';
-import { MAP_R, EDGE, landPush, type GameMap } from './map';
+import { EDGE, landPush, type GameMap } from './map';
 import type { Vessel } from './types';
 
 /**
@@ -58,32 +57,34 @@ export function ground(m: GameMap, s: Vessel): number {
   return hit;
 }
 
-/** The rim current: gentle at first, then a wall. The chart has an edge and it says so. */
-export function rim(s: Vessel, dt: number, k = 1.4) {
+/** The edge's current, in a sea of radius R: gentle at first, then a wall. When the sea
+ *  closes in, it is what carries the ships outside the new edge back in. */
+export function rim(s: Vessel, R: number, dt: number, k = 1.4) {
   const d = Math.hypot(s.x, s.y);
-  const inner = MAP_R - EDGE;
+  const inner = R - EDGE;
   if (d <= inner) return;
   const nx = s.x / d, ny = s.y / d;
   const over = d - inner;
-  s.x -= nx * over * k * dt;
-  s.y -= ny * over * k * dt;
-  if (d > MAP_R) { s.x = nx * MAP_R; s.y = ny * MAP_R; }
+  // never faster than she sails, so the edge closing in carries her rather than throws her
+  const push = Math.min(over * k, Math.max(8, s.maxSpeed * 0.8));
+  s.x -= nx * push * dt;
+  s.y -= ny * push * dt;
 }
 
 /**
- * The rim current takes her head. A current that only shoves reads as a helm that has
+ * The edge takes her head. A current that only shoves reads as a helm that has
  * stopped answering — she slews sideways, or sits there with her canvas full — so past
  * its edge the current swings her round instead, bow back toward the middle of the
  * chart, and gives the helm back once she is pointing in. Returns the bearing it is
  * steering her for, or null while the helm is hers.
  */
-export function rimHelm(s: Vessel & { rim: boolean }): number | null {
+export function rimHelm(s: Vessel & { rim: boolean }, R: number): number | null {
   const d = Math.hypot(s.x, s.y);
   const inward = Math.atan2(-s.y, -s.x);
   const in_ = Math.cos(angleTo(s.h, inward));
   if (s.rim) {
-    if (in_ > 0.92 || d < MAP_R - EDGE - 40) s.rim = false;
-  } else if (d > MAP_R - EDGE && in_ < 0.5) {
+    if (in_ > 0.92 || d < R - EDGE - 30) s.rim = false;
+  } else if (d > R - EDGE && in_ < 0.5) {
     s.rim = true;
   }
   return s.rim ? inward : null;

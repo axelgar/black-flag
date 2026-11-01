@@ -1,5 +1,5 @@
-// The reader for ships' model files, in a chunk of its own: GLTFLoader and its decoders are
-// fetched after the title is up, not before it, and only if some ship has a file.
+// The reader for model files, in a chunk of its own: GLTFLoader and its decoders are
+// fetched after the first screen is up, not before it.
 
 import type * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';

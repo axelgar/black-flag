@@ -1,385 +1,217 @@
-// Everything ephemeral: powder smoke, muzzle flash, spray, fire, splinters, rain. One
-// pool of points for things that are drawn over, one for things that glow, one instanced
-// mesh for wood in the water. All CPU-simulated, all a single draw call each.
+// Everything that comes and goes: the balls in the air, smoke and fire at the guns,
+// splashes, splinters, the foam behind every ship, and the rings that run out from a
+// splash or a ship coming in. Cartoon effects, so nothing fades: a puff swells and
+// shrinks away to nothing, a ring opens out and is gone. That keeps every one of them
+// opaque, and all of them together are five draws.
 
 import * as THREE from 'three';
-import { heightAt } from './waves';
+import type { Shot } from '../sim/types';
+import { toon } from './toon';
 
-const pvert = /* glsl */ `
-attribute vec4 aColor;
-attribute float aSize;
-attribute vec2 aLife;      // seed, age 0..1
-uniform float uScale;
-varying vec4 vColor;
-varying vec2 vLife;
-void main() {
-  vec4 mv = modelViewMatrix * vec4(position, 1.0);
-  gl_Position = projectionMatrix * mv;
-  gl_PointSize = min(aSize * uScale / max(-mv.z, 1.0), 900.0);
-  vColor = aColor;
-  vLife = aLife;
-}`;
+const PUFFS = 600, RINGS = 160, FOAM = 900, BALLS = 400;
+const G = 30;   // gravity on a droplet, m/s²
 
-// Smoke is a billowing puff, lit from above and ragged at its edge, turning as it rolls;
-// glow is hot at the core and cools outward — and, for fire, cools with age too.
-const pfrag = /* glsl */ `
-varying vec4 vColor;
-varying vec2 vLife;
-uniform float uLumpy;
-float h21(vec2 p) { p = fract(mod(p, 289.0) * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
-float vn(vec2 p) {
-  vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
-  return mix(mix(h21(i), h21(i + vec2(1.0, 0.0)), f.x), mix(h21(i + vec2(0.0, 1.0)), h21(i + vec2(1.0, 1.0)), f.x), f.y);
-}
-void main() {
-  vec2 c = gl_PointCoord - 0.5;
-  float d = length(c) * 2.0;
-  float seed = vLife.x, age = vLife.y;
-  if (uLumpy > 0.5) {
-    // turn the puff as it ages so it rolls rather than slides
-    float a = seed * 6.28 + age * 1.3;
-    vec2 r = mat2(cos(a), -sin(a), sin(a), cos(a)) * c;
-    float n = vn(r * 4.2 + seed * 37.0) * 0.6 + vn(r * 9.0 - seed * 19.0) * 0.4;
-    float edge = d + (n - 0.5) * 0.62;
-    float alpha = smoothstep(1.0, 0.3, edge);
-    if (alpha <= 0.01) discard;
-    // lit from above: brighter on the crown, greyer underneath and in the folds
-    float lit = clamp(0.55 - c.y * 1.3 + (n - 0.5) * 0.5, 0.0, 1.0);
-    vec3 col = vColor.rgb * mix(0.66, 1.1, lit);
-    gl_FragColor = vec4(col, alpha * clamp(vColor.a, 0.0, 1.0));
-  } else {
-    float core = 1.0 - smoothstep(0.0, 0.55, d);
-    float alpha = smoothstep(1.0, 0.15, d + (vn(c * 6.0 + seed * 11.0 + age * 3.0) - 0.5) * 0.3);
-    if (alpha <= 0.01) discard;
-    vec3 col = mix(vColor.rgb, vec3(1.0, 0.96, 0.82), core * (1.0 - age * 0.8));
-    gl_FragColor = vec4(col, alpha * clamp(vColor.a, 0.0, 1.0));
-  }
-  #include <tonemapping_fragment>
-  #include <colorspace_fragment>
-}`;
+interface Puff { x: number; y: number; z: number; vx: number; vy: number; vz: number; size: number; age: number; life: number; c: THREE.Color; fall: boolean; drag: number }
+interface Ring { x: number; z: number; r0: number; r1: number; age: number; life: number; c: THREE.Color }
+interface Foam { x: number; z: number; size: number; age: number; life: number }
 
-interface SpawnOpts {
-  x: number; y: number; z: number;
-  vx?: number; vy?: number; vz?: number;
-  life: number; size: number; grow?: number;
-  color: THREE.Color | string; alpha?: number;
-  drag?: number; grav?: number;
-}
-
-class Pool {
-  points: THREE.Points;
-  private n = 0;
-  private max: number;
-  private pos: Float32Array; private col: Float32Array; private siz: Float32Array;
-  private vel: Float32Array; private life: Float32Array; private age: Float32Array;
-  private s0: Float32Array; private s1: Float32Array; private a0: Float32Array;
-  private drag: Float32Array; private grav: Float32Array; private rgb: Float32Array;
-  private lifeAttr: Float32Array; private seed: Float32Array;
-  mat: THREE.ShaderMaterial;
-  private c = new THREE.Color();
-
-  constructor(max: number, additive: boolean, lumpy: number) {
-    this.max = max;
-    this.pos = new Float32Array(max * 3); this.col = new Float32Array(max * 4); this.siz = new Float32Array(max);
-    this.vel = new Float32Array(max * 3); this.life = new Float32Array(max); this.age = new Float32Array(max);
-    this.s0 = new Float32Array(max); this.s1 = new Float32Array(max); this.a0 = new Float32Array(max);
-    this.drag = new Float32Array(max); this.grav = new Float32Array(max); this.rgb = new Float32Array(max * 3);
-    this.lifeAttr = new Float32Array(max * 2); this.seed = new Float32Array(max);
-    const g = new THREE.BufferGeometry();
-    g.setAttribute('position', new THREE.BufferAttribute(this.pos, 3).setUsage(THREE.DynamicDrawUsage));
-    g.setAttribute('aColor', new THREE.BufferAttribute(this.col, 4).setUsage(THREE.DynamicDrawUsage));
-    g.setAttribute('aSize', new THREE.BufferAttribute(this.siz, 1).setUsage(THREE.DynamicDrawUsage));
-    g.setAttribute('aLife', new THREE.BufferAttribute(this.lifeAttr, 2).setUsage(THREE.DynamicDrawUsage));
-    g.setDrawRange(0, 0);
-    this.mat = new THREE.ShaderMaterial({
-      vertexShader: pvert, fragmentShader: pfrag,
-      uniforms: { uScale: { value: 400 }, uLumpy: { value: lumpy } },
-      transparent: true, depthWrite: false,
-      blending: additive ? THREE.AdditiveBlending : THREE.NormalBlending,
-    });
-    this.points = new THREE.Points(g, this.mat);
-    this.points.frustumCulled = false;
-    this.points.renderOrder = additive ? 3 : 2;
-  }
-
-  spawn(o: SpawnOpts) {
-    if (this.n >= this.max) return;
-    const i = this.n++;
-    this.pos[i * 3] = o.x; this.pos[i * 3 + 1] = o.y; this.pos[i * 3 + 2] = o.z;
-    this.vel[i * 3] = o.vx ?? 0; this.vel[i * 3 + 1] = o.vy ?? 0; this.vel[i * 3 + 2] = o.vz ?? 0;
-    this.life[i] = o.life; this.age[i] = 0;
-    this.s0[i] = o.size; this.s1[i] = o.size * (o.grow ?? 1);
-    this.a0[i] = o.alpha ?? 1;
-    this.drag[i] = o.drag ?? 0; this.grav[i] = o.grav ?? 0;
-    this.seed[i] = Math.random();
-    const c = typeof o.color === 'string' ? this.c.set(o.color) : o.color;
-    this.rgb[i * 3] = c.r; this.rgb[i * 3 + 1] = c.g; this.rgb[i * 3 + 2] = c.b;
-  }
-
-  update(dt: number) {
-    let n = 0;
-    for (let i = 0; i < this.n; i++) {
-      const age = this.age[i] + dt;
-      if (age >= this.life[i]) continue;
-      // compact as we go
-      if (n !== i) this.move(i, n);
-      this.age[n] = age;
-      const k = Math.max(0, 1 - this.drag[n] * dt);
-      this.vel[n * 3] *= k; this.vel[n * 3 + 1] = this.vel[n * 3 + 1] * k - this.grav[n] * dt; this.vel[n * 3 + 2] *= k;
-      this.pos[n * 3] += this.vel[n * 3] * dt; this.pos[n * 3 + 1] += this.vel[n * 3 + 1] * dt; this.pos[n * 3 + 2] += this.vel[n * 3 + 2] * dt;
-      const t = age / this.life[n];
-      this.siz[n] = this.s0[n] + (this.s1[n] - this.s0[n]) * Math.sqrt(t);
-      const fade = t < 0.1 ? t / 0.1 : 1 - (t - 0.1) / 0.9;
-      this.col[n * 4] = this.rgb[n * 3]; this.col[n * 4 + 1] = this.rgb[n * 3 + 1]; this.col[n * 4 + 2] = this.rgb[n * 3 + 2];
-      this.col[n * 4 + 3] = this.a0[n] * fade;
-      this.lifeAttr[n * 2] = this.seed[n]; this.lifeAttr[n * 2 + 1] = t;
-      n++;
-    }
-    this.n = n;
-    const g = this.points.geometry;
-    g.setDrawRange(0, n);
-    this.points.visible = n > 0;
-    // only the live particles go to the GPU, not the whole pool, every frame
-    for (const [name, size] of [['position', 3], ['aColor', 4], ['aSize', 1], ['aLife', 2]] as const) {
-      const a = g.attributes[name] as THREE.BufferAttribute;
-      a.clearUpdateRanges();
-      if (n) { a.addUpdateRange(0, n * size); a.needsUpdate = true; }
-    }
-  }
-
-  private move(from: number, to: number) {
-    for (let k = 0; k < 3; k++) {
-      this.pos[to * 3 + k] = this.pos[from * 3 + k];
-      this.vel[to * 3 + k] = this.vel[from * 3 + k];
-      this.rgb[to * 3 + k] = this.rgb[from * 3 + k];
-    }
-    this.life[to] = this.life[from]; this.s0[to] = this.s0[from]; this.s1[to] = this.s1[from];
-    this.a0[to] = this.a0[from]; this.drag[to] = this.drag[from]; this.grav[to] = this.grav[from];
-    this.seed[to] = this.seed[from];
-  }
-
-  clear() { this.n = 0; this.points.geometry.setDrawRange(0, 0); this.points.visible = false; }
-}
-
-/* ----------------------------------------------------------------- wood -- */
-
-class Debris {
-  mesh: THREE.InstancedMesh;
-  private items: { p: THREE.Vector3; v: THREE.Vector3; r: THREE.Euler; w: THREE.Vector3; s: number; life: number; age: number }[] = [];
-  private m = new THREE.Matrix4(); private q = new THREE.Quaternion(); private sc = new THREE.Vector3();
-  constructor(private max: number) {
-    const g = new THREE.BoxGeometry(1, 0.25, 0.4);
-    this.mesh = new THREE.InstancedMesh(g, new THREE.MeshStandardMaterial({ color: '#5C4128', roughness: 0.9, flatShading: true }), max);
-    this.mesh.count = 0;
-    this.mesh.frustumCulled = false;
-  }
-  spawn(x: number, y: number, z: number, n: number, force: number, size = 1) {
-    for (let i = 0; i < n && this.items.length < this.max; i++) {
-      const a = Math.random() * Math.PI * 2;
-      this.items.push({
-        p: new THREE.Vector3(x, y, z),
-        v: new THREE.Vector3(Math.cos(a) * force * Math.random(), force * (0.6 + Math.random()), Math.sin(a) * force * Math.random()),
-        r: new THREE.Euler(Math.random() * 3, Math.random() * 3, Math.random() * 3),
-        w: new THREE.Vector3((Math.random() - 0.5) * 8, (Math.random() - 0.5) * 8, (Math.random() - 0.5) * 8),
-        s: size * (0.5 + Math.random() * 1.4), life: 6 + Math.random() * 5, age: 0,
-      });
-    }
-  }
-  update(dt: number, t: number) {
-    this.items = this.items.filter((d) => (d.age += dt) < d.life);
-    this.items.forEach((d, i) => {
-      const sea = heightAt(d.p.x, d.p.z, t);
-      if (d.p.y > sea + 0.1) {
-        d.v.y -= 16 * dt;
-        d.r.x += d.w.x * dt; d.r.y += d.w.y * dt; d.r.z += d.w.z * dt;
-      } else {
-        // afloat: bob on the swell, lose way, and slowly go under at the end
-        d.v.multiplyScalar(Math.max(0, 1 - dt * 2));
-        d.v.y = 0;
-        d.p.y = sea - Math.max(0, d.age - d.life + 2) * 0.4;
-      }
-      d.p.addScaledVector(d.v, dt);
-      this.q.setFromEuler(d.r);
-      this.sc.setScalar(d.s);
-      this.m.compose(d.p, this.q, this.sc);
-      this.mesh.setMatrixAt(i, this.m);
-    });
-    this.mesh.count = this.items.length;
-    this.mesh.visible = this.items.length > 0;
-    if (this.items.length) {
-      this.mesh.instanceMatrix.clearUpdateRanges();
-      this.mesh.instanceMatrix.addUpdateRange(0, this.items.length * 16);
-      this.mesh.instanceMatrix.needsUpdate = true;
-    }
-  }
-  clear() { this.items = []; this.mesh.count = 0; this.mesh.visible = false; }
-}
-
-/* ----------------------------------------------------------------- rain -- */
-
-class Rain {
-  lines: THREE.LineSegments;
-  private n = 900;
-  private pos: Float32Array;
-  on = false;
-  constructor() {
-    this.pos = new Float32Array(this.n * 6);
-    const g = new THREE.BufferGeometry();
-    g.setAttribute('position', new THREE.BufferAttribute(this.pos, 3).setUsage(THREE.DynamicDrawUsage));
-    this.lines = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: '#B8CCD2', transparent: true, opacity: 0.35 }));
-    this.lines.frustumCulled = false;
-    this.lines.visible = false;
-    for (let i = 0; i < this.n; i++) this.reset(i, new THREE.Vector3(), true);
-  }
-  private reset(i: number, c: THREE.Vector3, anywhere: boolean) {
-    const x = c.x + (Math.random() - 0.5) * 260, z = c.z + (Math.random() - 0.5) * 260;
-    const y = anywhere ? Math.random() * 90 : 90;
-    this.pos.set([x, y, z, x - 0.6, y + 3.2, z - 0.3], i * 6);
-  }
-  update(dt: number, c: THREE.Vector3) {
-    this.lines.visible = this.on;
-    if (!this.on) return;
-    for (let i = 0; i < this.n; i++) {
-      const o = i * 6;
-      const dy = 70 * dt;
-      this.pos[o + 1] -= dy; this.pos[o + 4] -= dy;
-      this.pos[o] += 12 * dt; this.pos[o + 3] += 12 * dt;
-      if (this.pos[o + 1] < 0 || Math.abs(this.pos[o] - c.x) > 150 || Math.abs(this.pos[o + 2] - c.z) > 150) this.reset(i, c, false);
-    }
-    (this.lines.geometry.attributes.position as THREE.BufferAttribute).needsUpdate = true;
-  }
-}
-
-/* ------------------------------------------------------------------ fx ---- */
-
-const SMOKE = new THREE.Color('#D8D2C4');
-const DARK = new THREE.Color('#3A3430');
-const FIRE = new THREE.Color('#FF8A2A').multiplyScalar(2.2);
-const FLASH = new THREE.Color('#FFD08A').multiplyScalar(3);
-const SPRAY = new THREE.Color('#F2FBF8');
-const GOLD = new THREE.Color('#FFD36A').multiplyScalar(2);
+export const FX = {
+  smoke: new THREE.Color('#FFFFFF'),
+  fire: new THREE.Color('#FFB43A'),
+  spray: new THREE.Color('#E8FBFF'),
+  wood: new THREE.Color('#9A5B2E'),
+  dust: new THREE.Color('#B9B4A6'),
+  soot: new THREE.Color('#585E6B'),
+};
 
 export class Fx {
-  group = new THREE.Group();
-  smoke = new Pool(2200, false, 1);
-  glow = new Pool(1200, true, 0);
-  wood = new Debris(220);
-  rain = new Rain();
-  scale = 1;              // reduced motion / low tier cut the counts
+  readonly group = new THREE.Group();
+  private puffs: Puff[] = [];
+  private rings: Ring[] = [];
+  private foam: Foam[] = [];
+  private puffMesh: THREE.InstancedMesh;
+  private ringMesh: THREE.InstancedMesh;
+  private foamMesh: THREE.InstancedMesh;
+  private ballMesh: THREE.InstancedMesh;
+  private dotMesh: THREE.InstancedMesh;
+  private m = new THREE.Matrix4();
+  private p = new THREE.Vector3();
+  private s = new THREE.Vector3();
+  private q = new THREE.Quaternion();
+  /** Fewer, for reduced motion. */
+  scale = 1;
 
   constructor() {
-    this.group.add(this.smoke.points, this.glow.points, this.wood.mesh, this.rain.lines);
-  }
-
-  setViewport(heightPx: number, fovDeg: number) {
-    const s = heightPx / (2 * Math.tan((fovDeg * Math.PI) / 360));
-    this.smoke.mat.uniforms.uScale.value = s;
-    this.glow.mat.uniforms.uScale.value = s;
-  }
-
-  private n(k: number) { return Math.max(1, Math.round(k * this.scale)); }
-
-  /** One gun: a flash at the muzzle and a bank of powder smoke rolling out along the shot. */
-  muzzle(x: number, y: number, z: number, dx: number, dz: number, big = 1) {
-    this.glow.spawn({ x, y, z, vx: dx * 6, vz: dz * 6, life: 0.14, size: 3.2 * big, grow: 1.6, color: FLASH });
-    this.glow.spawn({ x: x + dx * 1.5, y, z: z + dz * 1.5, vx: dx * 14, vz: dz * 14, life: 0.1, size: 2.2 * big, grow: 2.4, color: FIRE });
-    // the bank of powder smoke a broadside leaves hanging over the water
-    for (let i = 0; i < this.n(6); i++) {
-      const s = 3 + Math.random() * 9;
-      this.smoke.spawn({
-        x, y, z, vx: dx * s + (Math.random() - 0.5) * 1.8, vy: 0.4 + Math.random() * 1.1, vz: dz * s + (Math.random() - 0.5) * 1.8,
-        life: 3 + Math.random() * 2.5, size: (2.2 + Math.random() * 1.4) * big, grow: 4.2, color: SMOKE, alpha: 0.6, drag: 1.2,
-      });
+    this.puffMesh = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(1, 1), toon(), PUFFS);
+    this.puffMesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(PUFFS * 3), 3);
+    this.ringMesh = new THREE.InstancedMesh(new THREE.RingGeometry(0.8, 1, 32).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ depthWrite: false }), RINGS);
+    this.ringMesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(RINGS * 3), 3);
+    this.foamMesh = new THREE.InstancedMesh(new THREE.CircleGeometry(1, 10).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: '#E9FBFF', depthWrite: false }), FOAM);
+    this.ballMesh = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(1, 1), toon(), BALLS);
+    this.ballMesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(BALLS * 3), 3);
+    this.dotMesh = new THREE.InstancedMesh(new THREE.CircleGeometry(1, 12).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: '#0B2F57', transparent: true, opacity: 0.3, depthWrite: false }), BALLS);
+    for (const im of [this.puffMesh, this.ringMesh, this.foamMesh, this.ballMesh, this.dotMesh]) {
+      im.count = 0; im.frustumCulled = false;
+      this.group.add(im);
     }
+    // the water's marks under everything that stands on it
+    this.foamMesh.renderOrder = 1; this.ringMesh.renderOrder = 2; this.dotMesh.renderOrder = 2;
   }
 
-  splash(x: number, z: number, t: number, big = false) {
-    const y = heightAt(x, z, t);
-    const n = this.n(big ? 26 : 10);
+  puff(x: number, y: number, z: number, vx: number, vy: number, vz: number, size: number, life: number, c: THREE.Color, fall = false, drag = 2.5) {
+    if (this.puffs.length >= PUFFS) this.puffs.shift();
+    this.puffs.push({ x, y, z, vx, vy, vz, size, age: 0, life, c, fall, drag });
+  }
+
+  ring(x: number, z: number, r0: number, r1: number, life: number, c: THREE.Color = FX.spray) {
+    if (this.rings.length >= RINGS) this.rings.shift();
+    this.rings.push({ x, z, r0, r1, age: 0, life, c });
+  }
+
+  wake(x: number, z: number, size: number) {
+    if (this.foam.length >= FOAM) this.foam.shift();
+    this.foam.push({ x, z, size, age: 0, life: 1.1 });
+  }
+
+  /* ------------------------------------------------------------ recipes -- */
+
+  /** A volley: smoke rolling out along the bearing from her side, and the flash of the guns. */
+  volley(x: number, y: number, h: number, side: number, bearing: number, heavy: boolean) {
+    const fx = Math.cos(h), fy = Math.sin(h);
+    const sx = -fy * side, sy = fx * side;
+    const bx = Math.cos(bearing), by = Math.sin(bearing);
+    const n = Math.max(2, Math.round(3 * this.scale));
     for (let i = 0; i < n; i++) {
-      const a = Math.random() * Math.PI * 2, r = Math.random() * (big ? 3 : 1);
-      this.smoke.spawn({
-        x: x + Math.cos(a) * r, y, z: z + Math.sin(a) * r,
-        vx: Math.cos(a) * (1 + Math.random() * 2), vy: (big ? 12 : 7) + Math.random() * (big ? 10 : 5), vz: Math.sin(a) * (1 + Math.random() * 2),
-        life: 0.9 + Math.random() * 0.5, size: big ? 2.2 : 1.2, grow: 1.8, color: SPRAY, alpha: 0.85, grav: 18,
-      });
+      const along = (i / (n - 1) - 0.5) * 12;
+      const px = x + fx * along + sx * 4.5, py = y + fy * along + sy * 4.5;
+      this.puff(px, 2.6, py, bx * 9, 1.5, by * 9, heavy ? 3.4 : 2.6, 0.9 + Math.random() * 0.3, FX.smoke);
+      this.puff(px + bx * 1.5, 2.6, py + by * 1.5, bx * 14, 0.5, by * 14, heavy ? 2.4 : 1.6, 0.22, FX.fire);
     }
   }
 
-  /** Shot into timber: splinters and a puff. */
-  thud(x: number, y: number, z: number) {
-    this.wood.spawn(x, y, z, this.n(3), 6, 0.6);
-    this.smoke.spawn({ x, y, z, vy: 1, life: 1.2, size: 2, grow: 2.2, color: DARK, alpha: 0.5, drag: 1 });
-    this.glow.spawn({ x, y, z, life: 0.12, size: 2.2, grow: 1.2, color: FLASH });
-  }
-
-  /** A ship going up, or a shell landing. */
-  explode(x: number, y: number, z: number, big: boolean, t: number) {
-    const k = big ? 2 : 1;
-    for (let i = 0; i < this.n(8 * k); i++) {
-      const a = Math.random() * Math.PI * 2, s = Math.random() * 6 * k;
-      this.glow.spawn({ x, y: y + 1, z, vx: Math.cos(a) * s, vy: 3 + Math.random() * 8, vz: Math.sin(a) * s, life: 0.5 + Math.random() * 0.4, size: 5 * k, grow: 2.2, color: FIRE, drag: 2 });
+  splash(x: number, y: number) {
+    const n = Math.max(3, Math.round(5 * this.scale));
+    for (let i = 0; i < n; i++) {
+      const a = Math.random() * Math.PI * 2, s = 2 + Math.random() * 3;
+      this.puff(x, 0.5, y, Math.cos(a) * s, 9 + Math.random() * 5, Math.sin(a) * s, 0.7 + Math.random() * 0.5, 0.7, FX.spray, true, 0.3);
     }
-    for (let i = 0; i < this.n(10 * k); i++) {
-      const a = Math.random() * Math.PI * 2, s = Math.random() * 3 * k;
-      this.smoke.spawn({ x, y: y + 2, z, vx: Math.cos(a) * s, vy: 2 + Math.random() * 5, vz: Math.sin(a) * s, life: 3 + Math.random() * 3, size: 5 * k, grow: 4, color: DARK, alpha: 0.7, drag: 0.6 });
+    this.ring(x, y, 0.5, 5, 0.6);
+  }
+
+  /** A ball home in a hull: splinters and a white flash. */
+  hit(x: number, y: number) {
+    const n = Math.max(3, Math.round(6 * this.scale));
+    for (let i = 0; i < n; i++) {
+      const a = Math.random() * Math.PI * 2, s = 4 + Math.random() * 5;
+      this.puff(x, 3, y, Math.cos(a) * s, 7 + Math.random() * 6, Math.sin(a) * s, 0.45 + Math.random() * 0.35, 0.8, FX.wood, true, 0.2);
     }
-    this.wood.spawn(x, y + 1, z, this.n(10 * k), 10 * k, big ? 1.4 : 1);
-    this.splash(x, z, t, true);
+    this.puff(x, 3, y, 0, 1, 0, 2.6, 0.25, FX.fire);
+    this.puff(x, 3.5, y, 0, 2, 0, 2.2, 0.5, FX.smoke);
   }
 
-  /** A damaged ship smoulders: call every frame she is hurt, with how badly. */
-  burn(x: number, y: number, z: number, amount: number, dt: number) {
-    if (Math.random() > amount * dt * 14 * this.scale) return;
-    const j = () => (Math.random() - 0.5) * 3;
-    this.smoke.spawn({ x: x + j(), y, z: z + j(), vy: 3 + Math.random() * 2, vx: 1.5, life: 3.5, size: 2.5, grow: 4, color: DARK, alpha: 0.55, drag: 0.4 });
-    if (amount > 0.55) this.glow.spawn({ x: x + j(), y, z: z + j(), vy: 2 + Math.random() * 3, life: 0.6, size: 1.8, grow: 0.5, color: FIRE });
-  }
-
-  /** The glowing wad behind a Spanish ball, so you can read incoming fire at a glance. */
-  ember(x: number, y: number, z: number) {
-    this.glow.spawn({ x, y, z, life: 0.22, size: 1.6, grow: 0.3, color: FIRE, alpha: 0.9 });
-  }
-
-  trail(x: number, y: number, z: number) {
-    this.smoke.spawn({ x, y, z, vy: 0.5, life: 1.2, size: 1.4, grow: 2.2, color: SMOKE, alpha: 0.4, drag: 1 });
-  }
-
-  bowSpray(x: number, y: number, z: number, speed: number) {
-    if (Math.random() > speed * 0.05 * this.scale) return;
-    this.smoke.spawn({
-      x: x + (Math.random() - 0.5) * 2, y, z: z + (Math.random() - 0.5) * 2,
-      vx: (Math.random() - 0.5) * 3, vy: 2 + Math.random() * 2, vz: (Math.random() - 0.5) * 3,
-      life: 0.6, size: 1.2, grow: 1.6, color: SPRAY, alpha: 0.6, grav: 12,
-    });
-  }
-
-  /** The foot of a waterspout: the sea torn up and flung round. */
-  spray(x: number, z: number, r: number, t: number) {
-    const y = heightAt(x, z, t);
-    for (let i = 0; i < this.n(2); i++) {
-      const a = Math.random() * Math.PI * 2, d = r * (0.8 + Math.random() * 0.9);
-      this.smoke.spawn({
-        x: x + Math.cos(a) * d, y, z: z + Math.sin(a) * d,
-        vx: -Math.sin(a) * 9 + Math.cos(a) * 2, vy: 4 + Math.random() * 7, vz: Math.cos(a) * 9 + Math.sin(a) * 2,
-        life: 1.2 + Math.random() * 0.8, size: 2 + Math.random() * 2, grow: 2.5, color: SPRAY, alpha: 0.5, drag: 0.8, grav: 3,
-      });
+  /** A ball stopped by an island. */
+  dust(x: number, y: number) {
+    for (let i = 0; i < 4; i++) {
+      const a = Math.random() * Math.PI * 2;
+      this.puff(x, 1.5, y, Math.cos(a) * 3, 3 + Math.random() * 2, Math.sin(a) * 3, 1.4 + Math.random(), 0.7, FX.dust);
     }
   }
 
-  sparkle(x: number, y: number, z: number, n = 24) {
-    for (let i = 0; i < this.n(n); i++) {
-      const a = Math.random() * Math.PI * 2, s = 2 + Math.random() * 8;
-      this.glow.spawn({ x, y: y + 2, z, vx: Math.cos(a) * s, vy: 4 + Math.random() * 8, vz: Math.sin(a) * s, life: 0.9 + Math.random() * 0.6, size: 1.4, grow: 0.4, color: GOLD, grav: 9 });
+  /** A ship goes down: smoke, fire and a ring of foam. */
+  sink(x: number, y: number) {
+    for (let i = 0; i < Math.round(10 * this.scale); i++) {
+      const a = Math.random() * Math.PI * 2, s = 2 + Math.random() * 6;
+      this.puff(x + Math.cos(a) * 4, 2 + Math.random() * 3, y + Math.sin(a) * 4, Math.cos(a) * s, 4 + Math.random() * 4, Math.sin(a) * s, 3 + Math.random() * 2.5, 1.2 + Math.random() * 0.6, i % 3 === 0 ? FX.fire : FX.soot);
+    }
+    this.ring(x, y, 4, 22, 1.1);
+    this.ring(x, y, 2, 14, 0.8);
+  }
+
+  /** A ship comes in, or a crate is taken: a ring and a burst in her colour. */
+  pop(x: number, y: number, c: THREE.Color, big = 14) {
+    this.ring(x, y, 3, big, 0.55, c);
+    for (let i = 0; i < Math.round(6 * this.scale); i++) {
+      const a = (i / 6) * Math.PI * 2;
+      this.puff(x + Math.cos(a) * 3, 2, y + Math.sin(a) * 3, Math.cos(a) * 8, 6, Math.sin(a) * 8, 1.1, 0.5, c, true, 1);
     }
   }
 
-  update(dt: number, t: number, cam: THREE.Vector3) {
-    this.smoke.update(dt);
-    this.glow.update(dt);
-    this.wood.update(dt, t);
-    this.rain.update(dt, cam);
+  /* -------------------------------------------------------------- frame -- */
+
+  /** The balls in the air: high in the middle of their flight, with a shadow under each. */
+  balls(shots: readonly Shot[]) {
+    let n = 0;
+    for (const s of shots) {
+      if (n >= BALLS) break;
+      const k = Math.min(1, s.age / s.life);
+      const z = 2.2 + Math.sin(k * Math.PI) * 5;
+      const r = s.heavy ? 1.15 : 0.8;
+      this.m.compose(this.p.set(s.x, z, s.y), this.q.identity(), this.s.setScalar(r));
+      this.ballMesh.setMatrixAt(n, this.m);
+      this.ballMesh.setColorAt(n, s.heavy ? HEAVY : IRON);
+      this.m.compose(this.p.set(s.x, 0.08, s.y), this.q, this.s.setScalar(r * 1.1));
+      this.dotMesh.setMatrixAt(n, this.m);
+      n++;
+    }
+    this.ballMesh.count = this.dotMesh.count = n;
+    this.ballMesh.instanceMatrix.needsUpdate = this.dotMesh.instanceMatrix.needsUpdate = true;
+    if (this.ballMesh.instanceColor) this.ballMesh.instanceColor.needsUpdate = true;
   }
 
-  clear() { this.smoke.clear(); this.glow.clear(); this.wood.clear(); }
+  frame(dt: number) {
+    let n = 0;
+    for (const p of this.puffs) {
+      p.age += dt;
+      const d = Math.exp(-p.drag * dt);
+      p.vx *= d; p.vz *= d;
+      if (p.fall) p.vy -= G * dt; else p.vy *= d;
+      p.x += p.vx * dt; p.y += p.vy * dt; p.z += p.vz * dt;
+    }
+    this.puffs = this.puffs.filter((p) => p.age < p.life && p.y > -1);
+    for (const p of this.puffs) {
+      const k = p.age / p.life;
+      // swell fast, then shrink away
+      const s = p.size * (k < 0.18 ? 0.4 + (k / 0.18) * 0.6 : 1 - ((k - 0.18) / 0.82) ** 1.6);
+      this.m.compose(this.p.set(p.x, p.y, p.z), this.q.identity(), this.s.setScalar(Math.max(0.01, s)));
+      this.puffMesh.setMatrixAt(n, this.m);
+      this.puffMesh.setColorAt(n, p.c);
+      n++;
+    }
+    this.puffMesh.count = n;
+    this.puffMesh.instanceMatrix.needsUpdate = true;
+    if (this.puffMesh.instanceColor) this.puffMesh.instanceColor.needsUpdate = true;
+
+    n = 0;
+    for (const r of this.rings) r.age += dt;
+    this.rings = this.rings.filter((r) => r.age < r.life);
+    for (const r of this.rings) {
+      const k = r.age / r.life;
+      const rad = r.r0 + (r.r1 - r.r0) * (1 - (1 - k) ** 2);
+      // the ring thins as it opens: drawn as a squashed copy, its width shrinks with it
+      this.m.compose(this.p.set(r.x, 0.14, r.z), this.q.identity(), this.s.set(rad, 1, rad));
+      this.ringMesh.setMatrixAt(n, this.m);
+      this.ringMesh.setColorAt(n, r.c);
+      n++;
+    }
+    this.ringMesh.count = n;
+    this.ringMesh.instanceMatrix.needsUpdate = true;
+    if (this.ringMesh.instanceColor) this.ringMesh.instanceColor.needsUpdate = true;
+
+    n = 0;
+    for (const f of this.foam) f.age += dt;
+    this.foam = this.foam.filter((f) => f.age < f.life);
+    for (const f of this.foam) {
+      const k = f.age / f.life;
+      const s = f.size * (k < 0.2 ? 0.6 + k * 2 : 1 - (k - 0.2) / 0.8);
+      this.m.compose(this.p.set(f.x, 0.04, f.z), this.q.identity(), this.s.set(Math.max(0.01, s * (1 + k)), 1, Math.max(0.01, s * (1 + k))));
+      this.foamMesh.setMatrixAt(n++, this.m);
+    }
+    this.foamMesh.count = n;
+    this.foamMesh.instanceMatrix.needsUpdate = true;
+  }
+
+  clear() { this.puffs = []; this.rings = []; this.foam = []; }
 }
+
+const IRON = new THREE.Color('#2E2A33');
+const HEAVY = new THREE.Color('#FF6A1F');

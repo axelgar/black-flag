@@ -14,9 +14,7 @@
     "SUPABASE_URL": "https://vspueoyeaorfmbmefhiv.supabase.co",
     // publishable, like the one in the page: the player's own token is what gets them in
     "SUPABASE_KEY": "sb_publishable_mbZmUcrjjPBgNHqvdgu2_g_D_Xvyamy",
-    "VENUE": "main",
-    // how the bar's seas play: "rivals" or "crew"
-    "BAR_MODE": "rivals"
+    "VENUE": "main"
   },
   "observability": { "enabled": true }
 }

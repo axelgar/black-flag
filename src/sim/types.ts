@@ -2,13 +2,7 @@
 // itself: the renderer reads it, the tests poke at it, and digest() prints it.
 
 import type { Rng } from '../core/rng';
-import type { FoeClass, LegendDef } from '../data/types';
-import type { DropId } from '../data/drops';
-import type { ShipStats } from '../data/upgrades';
-import type { WavePlan, Weather } from '../data/waves';
 import type { GameMap } from './map';
-
-export type Phase = 'fight' | 'clear' | 'docked' | 'lost';
 
 /** What a hull does on the water, whoever is sailing her. */
 export interface Vessel {
@@ -27,142 +21,85 @@ export interface Vessel {
 
 export type Side = 0 | 1;  // 0 = port (left), 1 = starboard (right)
 
-export interface Buffs { powder: number; heavy: number; chain: number; swivel: number }
-
-/**
- * A player's ship. A world holds one for a game on your own and several for a shared
- * sea; each ship has her own hull, guns, controls, takings and notoriety. Her `id` is her
- * place in `World.players`, and the Spanish are numbered after the last of them.
- */
-export interface Player extends Vessel {
-  seat: string;            // who is sailing her: the server's player id, or '' on your own
-  shipId: string;
-  stats: ShipStats;
-  team: number;            // shot hits anyone not on the firer's team. The Spanish are 0
-  plunder: number;
-  heat: number;            // her notoriety, 0..HEAT_MAX
-  lives: number;
-  boarded: number;
-  sunk: number;
-  out: boolean;            // her last life is gone: no longer hunted, hit or steered
-  left: boolean;           // her captain has gone ashore: the seat is free for the next to join
-  cool: [number, number];  // reload left on each side
-  volley: { side: Side; next: number; fired: number; t: number } | null;
-  bowCool: number;
-  shells: number; shellsMax: number;
-  invuln: number;
-  ramT: number;            // cooldown after a collision, so one touch is one wound
-  groundT: number;         // cooldown after touching bottom
-  buffs: Buffs;
-  board: { id: number; t: number } | null;
-  aim: { x: number; y: number; lock: number } | null;   // where the mortar would land now
-  rim: boolean;            // the rim current has her head, and the helm is not hers until she points back in
-  want: [boolean, boolean]; // a broadside called for while the other side's guns were still rippling
+/** What a bot is thinking. Only the sea that steps the world has one. */
+export interface Brain {
+  target: number;          // the ship it is after, or -1
+  think: number;           // seconds until it looks round again
+  orbit: 1 | -1;           // which way it circles
+  wait: number;            // seconds until it may fire again
+  flee: boolean;           // backing off to mend
 }
 
-export type FoeState = 'patrol' | 'engage' | 'struck' | 'spent';
-
-export interface Port { fwd: number; side: -1 | 1; hull: number; dead: boolean }
-
-export interface Foe extends Vessel {
-  cls: string;                 // a class id, or 'legend'
-  C: FoeClass | null;          // null for a legendary
-  L: LegendDef | null;
-  reales: number;
-  ram: number;
-  strikes: boolean;
-  state: FoeState;
-  alert: boolean;
-  squad: number;
-  wp: { x: number; y: number };
-  wpT: number;
-  seeT: number;
-  orbit: 1 | -1;               // which way she circles you
-  cool: number;                // main battery
-  coolAlt: number;             // mortar deck, or the other side
-  broad: number;               // frigate telegraph: >0 while her ports are open
-  broadSide: -1 | 1;
-  strikeT: number;
-  struckOnce: boolean;
-  by: number;                  // the captain who last hurt her: her escape is on that one's notoriety
-  spentT: number;
-  hunter: boolean;
-  chase: number;               // brulote gathering way
-  slow: number;                // chain shot in her rigging
-  ph: number;
-  ports: Port[] | null;        // a legendary's weak points
-  phase: number;               // a legendary's phase, 0..2
-  flash: number;               // gun flash, decays
-  detour: -1 | 0 | 1;          // which way she is working round the land in her way, 0 when clear
-  seen: boolean;               // host flag: the captain's log has her. Never read by the sim.
+/**
+ * A ship on the sea, a captain's or a bot's. Her `id` is her place in `World.ships`, which
+ * a ship that sinks keeps: she is back afloat in it a few seconds later.
+ */
+export interface Ship extends Vessel {
+  seat: string;            // who is sailing her: the server's player id; '' for a bot
+  bot: boolean;
+  look: string;            // which ship she looks like (data/ships.ts). They all sail alike
+  trim: number;            // the canvas her captain last asked for, held while the stick is let go
+  streak: number;          // ships sunk in a row since she was last sunk
+  sank: number;            // ships sunk since she came aboard
+  ammo: number;            // shots ready
+  reloadT: number;         // seconds until the next shot is back
+  gapT: number;            // seconds until she may fire again
+  heavy: boolean;          // her next volley is heavy shot
+  boost: number;           // seconds of a speed crate left
+  calm: number;            // seconds since she last hit or was hit
+  mendT: number;           // seconds since she was last hit: past mendAfter she mends
+  invuln: number;          // seconds she can't be hurt
+  down: number;            // seconds since she sank, while out
+  out: boolean;            // sunk, or gone: not drawn, hit or steered
+  left: boolean;           // gone for good: the seat is free for the next to join
+  retire: boolean;         // a bot that leaves the next time she sinks, for a captain who came aboard
+  rim: boolean;            // the edge of the sea has her head, until she points back in
+  brain: Brain | null;
 }
 
 export interface Shot {
   x: number; y: number; vx: number; vy: number;
-  r: number; dmg: number; foe: boolean; kind: 'ball' | 'chain';
-  pierce: number; age: number; life: number; dead: boolean;
-  from: number;                // the last ship it went through (at first, whoever fired it): not hit twice
-  by: number;                  // the captain who fired it, or -1 for the Spanish
-  team: number;                // it hits anyone not on this team
+  r: number; dmg: number; heavy: boolean;
+  age: number; life: number; dead: boolean;
+  by: number;              // the ship that fired it
 }
 
-/** A shell falling. `by` is the captain who threw it, or -1 for the Spanish; `at` is the
- *  captain it was meant for (-1 for none), whose refit clears it; `own` is any captain's,
- *  for the renderer's colours. */
-export interface Mark { x: number; y: number; r: number; t: number; max: number; own: boolean; by: number; at: number; dmg: number; done: boolean }
-export interface Drop { id: number; x: number; y: number; kind: DropId; dur: number; age: number; dead: boolean }
-export interface Spout { id: number; x: number; y: number; r: number; vx: number; vy: number; age: number; life: number }
-export interface Squad { x: number; y: number }
+export type CrateKind = 'repair' | 'speed' | 'heavy';
+export const CRATES: CrateKind[] = ['repair', 'speed', 'heavy'];
+
+export interface Crate { id: number; x: number; y: number; kind: CrateKind; age: number; dead: boolean }
 
 export interface GameEvent { k: string; [key: string]: unknown }
 
+/**
+ * A captain's hands on the phone, in the world's terms. North is up the screen and -y on
+ * the chart, so the stick is already a direction on the chart.
+ */
 export interface Input {
-  heading: number | null;      // a bearing to steer for (joystick), or null
-  rudder: number;              // -1..1 when steering by keys
-  sail: number;                // canvas to set, 0..1
-  fireL: boolean;              // edge-triggered by the caller
-  fireR: boolean;
-  mortar: boolean;
+  /** The left stick: a direction on the chart, its length how far it is pushed (0..1).
+   *  Null when let go: she holds her course and canvas. */
+  move: { x: number; y: number } | null;
+  /** A volley toward this bearing, this tick (a drag let go). */
+  fire: number | null;
+  /** A quick tap: a volley at the nearest ship, this tick. */
+  auto: boolean;
 }
 
 export interface World {
   seed: string;
-  wave: number;
   map: GameMap;
-  plan: WavePlan;
-  reduce: boolean;
-  /** Whether captains' shot hurts other captains. Off, a shared sea is a crew. */
-  pvp: boolean;
-  /** A shared sea: it is never lost and never goes home. Waves follow each other on the
-   *  same chart (nextWave), and a captain who goes down is put back afloat by the host. */
-  shared: boolean;
-  /** Seats: captains are numbered 0..cap-1 and everything else from cap up, so a captain
-   *  who joins late never takes an id a Spaniard already has. */
-  cap: number;
   r: Rng;
-  weather: Weather;
   t: number;
-  t0: number;              // when this wave put to sea; its squadrons' timetable counts from here
-  gi: number;
-  quiet: number;
-  nextId: number;
-  phase: Phase;
-  speedMul: number;
-  reloadMul: number;
-  drift: { x: number; y: number };
-  shake: number;
-  players: Player[];
+  /** The sea's radius now: it grows as ships join and closes in as they leave. */
+  R: number;
+  ships: Ship[];
   /** Host flag: whose eyes the view, the HUD and the sound are behind. Never read by the sim. */
   focus: number;
-  foes: Foe[];
   shots: Shot[];
-  drops: Drop[];
-  marks: Mark[];
-  spouts: Spout[];
-  squads: Squad[];
-  boss: Foe | null;
-  hunterT: number;
-  earlyLegend: boolean;
+  crates: Crate[];
+  /** When the next crates are due, by the world's clock. */
+  due: number[];
+  nextId: number;
   events: GameEvent[];
 }
 
@@ -170,25 +107,15 @@ export const ev = (w: World, k: string, o: Record<string, unknown> = {}) => {
   if (w.events.length < 96) w.events.push({ k, ...o });
 };
 
-/** The captain the host is looking through. */
-export const you = (w: World): Player => w.players[w.focus] ?? w.players[0];
+/** The ship the host is looking through. */
+export const you = (w: World): Ship | undefined => w.ships[w.focus];
 
-/** Is this event about one captain in particular, and is it not the one on screen? Toasts,
+/** Is this event about one ship in particular, and is it not the one on screen? Toasts,
  *  haptics and the hurt sound are for your own ship; smoke and splashes are for everyone. */
-export const theirs = (w: World, e: GameEvent) => typeof e.p === 'number' && e.p !== you(w).id;
+export const theirs = (w: World, e: GameEvent) => typeof e.p === 'number' && e.p !== w.focus;
 
-/** Every captain still in it. */
-export const afloat = (w: World) => w.players.filter((p) => !p.out);
+/** Every ship on the water. */
+export const afloat = (w: World) => w.ships.filter((s) => !s.out);
 
-/** The captain nearest a point, of those still in it. With nobody left (the last one went
- *  down this very tick) it is the nearest wreck, so the Spanish close on it as they did. */
-export function nearest(w: World, x: number, y: number): Player | null {
-  let best: Player | null = null, bd = Infinity;
-  const all = !w.players.some((p) => !p.out);
-  for (const p of w.players) {
-    if (p.out && !all) continue;
-    const d = Math.hypot(p.x - x, p.y - y);
-    if (d < bd) { best = p; bd = d; }
-  }
-  return best;
-}
+/** Ships in the sea, sunk or not: everyone the sea is sized for. */
+export const aboard = (w: World) => w.ships.filter((s) => !s.left);
