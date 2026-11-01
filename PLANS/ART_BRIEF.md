@@ -1,201 +1,169 @@
-# Black Flag: art brief, ships and land
+# Black Flag: art brief
 
 The copy to send to artists and sellers is the doc
 [Black Flag art brief](https://claude.ai/artifact/AWrrzkfdKmhNtmuFtfM8dv); this one
 also says how a file gets into the game.
 
 For anyone making or selling us models. Black Flag is a pirate game that guests at a bar
-play on their phones, in a web browser, while they have a drink. The game is written; we
-need its ships, and then the land they sail past (Nassau's buildings, and the palms, trees
-and rocks every island is planted with), to look as good as the rest of it.
+play on their phones, in a web browser, while they have a drink. Captains fight each other
+on a small sea, and a fight is over in seconds. We need three ships, a set of islands, and
+three floating crates, in a bright cartoon style like Brawl Stars.
 
 ## The look
 
-Stylized, but richly detailed: the mood of the Black Pearl and the Flying Dutchman.
-Weathered planking, heavy rigging, ornate stern galleries with lit windows, worn canvas.
-Every ship should come from one artist or one pack, so the fleet looks like one world.
+Brawl Stars at sea: chunky shapes, exaggerated proportions, bold silhouettes and saturated
+colours. Nothing realistic: no weathered planking, no fine rigging, no rust or grime.
 
-The land is the Bahamas in 1715: Nassau's plastered houses in pale colours under terracotta
-roofs, a stone fort and a whitewashed church above the harbour, white sand, leaning palms
-and jungle over the hills. Ships and land should come from the same artist or pack.
+- **Shapes:** big and simple. A ship reads at a glance by its outline and its colours.
+  Rigging is a few thick ropes at most, or none.
+- **Colour:** flat colours, or simple hand-painted gradients. Don't bake light and shadow
+  into the textures. The game shades the models itself with hard cartoon steps, and draws
+  dark outlines round them.
+- **One world:** all three ships, the islands and the crates come from one artist, or one
+  pack, so they look like they belong together.
 
-The ships are seen two ways:
+## How it's seen
 
-- **In play**, from a chase camera about 135 m behind and above. The ship is a fifth of a
-  phone screen, so her silhouette and colours matter more than fine texture.
-- **Close up**, in the shipyard and on the title screen, where she is the whole picture.
-  This is where the detail is seen.
+One camera only: fixed, high, looking down at about three-quarters from the south, as in
+Brawl Stars. North is always up and the camera never turns.
 
-The land is seen from the sea, from about 100 m to a kilometre off, so its outline and
-colour carry it. Nassau is also seen closer, from the harbour, behind the title and port
-screens.
+- **At sea:** a ship is about a tenth of the screen's width on a phone held sideways. The
+  deck, the sails seen from above and the outline seen from above matter most. The hull's
+  sides are seen at a slant.
+- **Close up:** on the screen where a player picks a ship, the three ships are shown side
+  by side, large. That's where detail is seen.
 
-## The first ship: the Jackdaw
+Up to 30 ships share a sea and 10 or so are on screen at once, on phones as old as an
+iPhone 11. Keep models light (see the budget below).
 
-The player's starting ship, so every guest sails her. A brig:
+## The ships
 
-| | |
+There are three ships. They play exactly the same, so they must be the same size: about
+24 m long and 8 m wide at the widest, bowsprit not counted. A hit then counts the same on
+each. Only their look differs. The game gives each player a colour, so their sails and
+flag are tinted to it.
+
+| Ship | Character |
 |---|---|
-| Length of hull | 30 m (a bowsprit beyond that is fine) |
-| Beam | 8 m |
-| Rail above the water, amidships | 2.5 m |
-| Masts | 2, square-rigged, three sails stacked on each, plus jibs; mainmast about 29 m above the water |
-| Guns | 5 a side on one deck, and bow chasers on the foredeck |
-| Stern | a raised castle with a stern gallery |
-| Colours | near-black hull, a red band along the gun ports, red inside the bulwarks, tarred bottom; weathered off-white canvas with a skull and crossbones on the main course |
+| The Jackdaw | the classic pirate ship: black hull, red trim, two masts, a skull on the mainsail |
+| Second ship | your pitch, as different from the Jackdaw as possible at the same size: for example a gaudy captured Spanish treasure ship in red and gold |
+| Third ship | your pitch again: for example a patched-up raider, or a ghost ship |
 
-The other three player ships come after her, in the same style:
+What each ship needs:
+- **Sails:** each sail its own object, plain white or cream. The game tints them the
+  player's colour. A skull or emblem goes in a separate decal object.
+- **Flag:** a plain flag on its own, at the top of the mainmast. The game flies its own
+  flag in its place.
+- **Cannons:** a row along each side is welcome. The guns on the side facing the aim fire,
+  so cannon ports should show on both sides.
+- **No animation.** The game rocks the ship, fills the sails, recoils and sinks her.
 
-| Ship | Type | Hull length | Masts and rig | Guns a side | Character |
-|---|---|---|---|---|---|
-| Kestrel | sloop | 22 m | 1, fore-and-aft | 3 | fast and light; cream hull, navy trim, new white canvas |
-| Marée Noire | schooner | 28 m | 2, fore-and-aft, square topsail on the fore | 4 | black hull, slate-grey canvas, long and low |
-| Revenant | galleon | 46 m | 3, square-rigged | 9, on two decks | a Spanish galleon taken as a prize; dark oak, gilded stern, dark and weathered sails, which the game tears badly |
+## The islands
 
-The Spanish navy (6 ships, 12–52 m) and four legendary ships (56–64 m) may follow.
+Islands are cover: they stop cannonballs and break line of sight. The game treats each one
+as a circle when stopping shots, so it should be roughly round seen from above.
 
-## What a ship's file must be
-
-**Format.** One GLB (binary glTF 2.0) per ship, plus the source file (.blend preferred).
-No animations or skeleton are needed: the game moves the parts itself.
-
-**Scale and direction.** Metres. Y is up. The bow points along +Z, glTF's forward. In
-Blender, that means the bow points along −Y, so the Front view looks at her bow. The
-origin should be on the waterline, amidships, on the centreline.
-
-**Separate, named parts.** The game finds parts by the first word of an object's name.
-Name them like this, with underscores (Blender's `.001` endings are fine):
-
-| Name | What it is | Why it must be separate |
+| Size | Across | How many |
 |---|---|---|
-| `sail_…` | each sail | sails ripple and flog in the wind, and tear as she's shot |
-| `rope_…` or `rigging_…` | the rigging | hidden when she's far away |
-| `flag_…` | a plain flag where each of her colours flies | the game replaces it with its own flag, so she can surrender (strike) |
-| `lid_L_1`, `lid_R_1`, … | each gun-port lid, its origin on its hinge along the top of the port | lids swing open as she clears for action. L is her left side looking forward, R her right |
-| `gun_L_1`, `gun_R_1`, … | each cannon | guns run out through the ports and recoil when fired |
-| `muzzle_L_1`, `muzzle_R_1`, … | an empty at each gun's mouth | where her shot and smoke leave from |
-| anything else | the hull, decks and fittings | |
+| Small | 20–30 m | 3 |
+| Medium | 40–60 m | 3 |
+| Large | 70–100 m | 2 |
 
-**Sails.** Model them whole and opaque. The game tears holes in them as she takes damage,
-so don't model holes in. Wear, stains and patches in the texture are welcome.
+- **Character:** bright sand, a ring of shallow water drawn by the game round it, palms,
+  rocks, a little jungle. Some sandy, some rocky. One could hold a pirate landmark: a
+  wreck, a skull rock, a hut.
+- **Keep them low.** The camera looks down from the south, so anything tall hides the
+  ships just north of it. Hills up to about 6 m and palms up to about 8 m.
+- **Loose props:** 2–3 palms and 3 rocks as separate objects, so the game can scatter
+  more.
 
-**Lanterns and stern windows.** Make them emissive. The game turns them down by day and up
-at dusk.
+## The crates
 
-**Budget**, per ship:
+Three kinds of floating barrel or crate that ships sail into to pick up. Each is about 3 m
+across and must be told apart from above at a glance, by colour and by an icon on top.
 
-| | Player ship | Navy ship |
+| Crate | Colour | Icon on top |
 |---|---|---|
-| Triangles, all in | 15,000–25,000 | 8,000–20,000 |
-| Of that, rigging | up to 4,000 | up to 3,000 |
-| Materials | 3 at most: timber, canvas, metal and gilt | same |
-| Textures | 2048 × 2048 at most, metal/roughness PBR: base colour, normal, and occlusion/roughness/metal packed in one | same |
+| Repair | green | a hammer, or planks and a cross |
+| Speed | blue | a lightning bolt, or a full sail |
+| Heavy shot | red | a big cannonball, or a skull |
 
-Up to 30 ships can be on screen at once on a phone, so draw calls and texture memory
-matter more than polygon count. Share texture atlases between parts, and don't use more
-than three materials.
+The game makes them bob and spin.
 
-**Licence.** We need the right to use the model commercially in a web game and to modify
-it. For a commission, we'd like the source files and full rights, and one quote for the
-Jackdaw on her own and one for the rest of the fleet and the land together.
+## The water
 
-## The land: Nassau's buildings
+The game draws the sea itself, as flat cartoon water with crisp foam. Give us the colours
+for it in a palette sheet:
+- deep water, open water, and the shallows round an island;
+- foam;
+- sand.
 
-Nassau is the pirates' harbour town, built up a hillside over the bay. The game lays it out
-lot by lot for each new sea (`nassauSites` in `src/render/land/nassau.ts`), so it needs a
-few variants of the common buildings rather than one fixed town.
+Each player is shown in one of about seven colours, on their sails and flag. They must
+stay clear on that water and apart from each other, to colour-blind eyes too. We'll pick
+them together with your palette.
 
-| Building | Footprint, front × depth (m) | Height | Variants | Character |
-|---|---|---|---|---|
-| House | 4.5–7 × 4.5–6 | walls 3.5–4 m, or 6.3 m on two storeys | 4–6 | plastered walls in pale colours (cream, ochre, peach, pale blue, sage), painted shutters, hipped or gabled terracotta roofs; some with a veranda or a chimney |
-| Shack | 3.6–4.8 × 3.4–4.2 | walls 2.6 m | 2 | weathered planks under a thatched or plank roof |
-| Warehouse | 9–12 × 6.5 | walls 5.4 m | 2 | stone, on the quay: a cart door, a loft door with a hoist beam |
-| Tavern | 8.5 × 5 | two storeys, 6.3 m | 1 | a hanging sign, and lanterns by the door |
-| Church | 7.5 × 15 | walls 7.5 m; bell tower 14 m, plus its spire | 1 | whitewashed; the gable end is the front, the tower at a front corner |
-| Governor's house | 13 × 9 | two storeys, 7 m | 1 | a two-storey gallery across the front, and a flagstaff in the yard |
-| Fort | about 36 × 36 | curtain walls 5 m | 1 | square, a bastion at each corner, guns on the seaward faces, sentry boxes, barracks inside, a flagstaff |
-| Lighthouse | within 11 × 11 | 20 m to the top of the lantern | 1 | a white tower with a red band, an iron gallery and a glass lantern; the keeper's cottage beside it |
+## What a file must be
 
-The front is the street or harbour side. Each building is used at the size it's made,
-scaled by at most a quarter to fit its lot. The quays, tents, market stalls, street
-lanterns, cargo and boats stay drawn by the game for now, and could be a later batch.
+**Format.** One GLB (binary glTF 2.0) per ship, one for the islands, crates and props
+together, and the source files (.blend preferred).
 
-## Trees and rocks
+**Scale and direction.** Metres. Y is up. A ship's bow points along +Z, glTF's forward. In
+Blender, that means the bow points along −Y, so the Front view looks at her bow. A ship's
+origin is on the waterline, amidships, on the centreline. An island's origin is at the
+middle of its footprint, at sea level.
 
-Every island is planted from these: palms along the beaches, jungle over the hills, scrub,
-and rocks in the surf. A jungle island holds 150 or more canopy crowns, so they must be
-light.
+**Textures.** Everything shares one small palette texture: 256 × 256 or 512 × 512, colour
+swatches with the faces mapped onto them, as low-poly packs do. Add a second texture only
+for the emblems, at 512 × 512 at most. One material for everything is best. Every extra
+material is another draw for every ship on screen.
 
-| Item | Size in the game | Variants | Character |
-|---|---|---|---|
-| Palm | 6–10 m tall | 3–4 | trunks that lean and curve, fronds that droop as they age; some with coconuts |
-| Hardwood tree | 8–10 m tall | 2–3 | a crooked trunk and a broad crown |
-| Jungle canopy | 5–14 m across | 3 | a crown of leaves with no trunk; packed together, they are the jungle seen from the sea |
-| Bush | 2–4 m across | 2 | low scrub |
-| Rock | 0.5 m to a 10 m crag | 4 | weathered limestone |
-
-The game sets the size and turn of each tree and rock, so the size they're made at doesn't
-matter. Palms, trees and leaves sway in the wind; the game does that, so no animation is
-needed.
-
-## What the land's file must be
-
-**Format.** One GLB for the whole set of buildings, trees and rocks, plus the source file
-(.blend preferred). In one file every prop shares the same textures, which a phone then
-downloads and holds once.
-
-- **Units:** metres, at real size. Y is up.
-- **Props:** each prop is its own top-level object, or an empty with its parts under it.
-  Lay them out side by side, anywhere in the scene.
-- **Direction:** a building's front faces +Z (in Blender, −Y, so the Front view looks at
-  its door). A palm leans toward +Z.
-- **Origin:** a building's is on its ground floor, in the middle of its footprint. Carry its
-  foundations about 1.5 m below that, so it can stand on a slope. A palm's or tree's is at
-  the foot of its trunk. Rocks and bushes can have it anywhere.
-- **Leaves:** cut-out (alpha clip) is fine; nothing needs alpha blending.
-- **Lit windows and lanterns:** emissive, as on the ships.
-
-**Names.** The game knows each prop by the first word of its name; the rest of the name
-tells variants apart. Use underscores.
+**Names.** The game finds parts and props by the first word of an object's name. Use
+underscores (Blender's `.001` endings are fine):
 
 | Name | What it is |
 |---|---|
-| `house_a`, `house_b`, … | each house. The same goes for `shack_…`, `warehouse_…`, `tavern`, `church`, `governor`, `fort` and `lighthouse` |
-| `palm_1`, `tree_1`, `canopy_1`, `bush_1`, `rock_1`, … | each plant and rock |
-| `flag_…` | inside a building: an empty at the top of each flagstaff. The game flies its own flag there |
-| `light` | inside the lighthouse: an empty at the middle of its lamp, where the beam turns |
-| `leaf_…` or `frond_…` | the leaves of a palm or tree, if they're separate objects. They flutter in the wind; without them, the top of the tree flutters |
+| `sail_…` | each sail, white or cream: the game tints it |
+| `flag_…` | a plain flag where the colours fly: the game replaces it |
+| `muzzle_L_1`, `muzzle_R_1`, … | optional: an empty at each gun's mouth, where shots leave from. L is her left side looking forward, R her right |
+| `island_s1`, `island_m1`, `island_l1`, … | each island, by size (small, medium, large) |
+| `crate_repair`, `crate_speed`, `crate_heavy` | the crates |
+| `palm_1`, `rock_1`, … | loose props |
 
-**Budget**, per prop:
+**Closed meshes.** The outline the game draws is a copy of the model pushed out a little
+along its normals. Single-sided planes (except sails and flags) and gaps between parts show
+through it. Keep hulls, islands and crates closed.
+
+**Budget:**
 
 | | Triangles |
 |---|---|
-| House, shack | 1,000–3,000 |
-| Warehouse, tavern | 2,000–5,000 |
-| Church, governor's house, lighthouse | 4,000–8,000 |
-| Fort | 10,000–20,000 |
-| Palm, hardwood tree | 400–1,000 |
-| Jungle canopy, bush, rock | 100–300 |
+| Ship | 2,000–6,000 |
+| Small island | up to 2,000 |
+| Medium island | up to 4,000 |
+| Large island | up to 6,000 |
+| Crate | 200–600 |
+| Palm | 200–500 |
+| Rock | 50–200 |
 
-Put the whole set on at most three shared texture atlases (buildings, plants, rock), each
-up to 2048 × 2048, PBR as for the ships. One material per prop is best: every material a
-prop uses is another draw on every island.
+**Licence.** We need the right to use the models commercially in a web game and to modify
+them. For a commission, we'd like the source files and full rights, and one quote for the
+whole set: three ships, the islands and props, the crates and the palette sheet.
 
 ## Buying a pack instead
 
-Before buying, check the listing (or ask the seller):
+Check the listing, or ask the seller:
 
-1. Are the sails separate objects? Without them, sails can't move or tear.
-2. Are gun-port lids and guns separate? Without them, she can't clear for action. That's
-   acceptable, but worth knowing.
-3. Is the triangle count within the budget above, or close enough to reduce?
-4. Does the licence cover a commercial web game?
-5. Does the pack, or the artist, have enough ships for the whole fleet in one style?
-6. Is it available as glTF, FBX or .blend?
-7. For the land: are the buildings Caribbean colonial (plaster, terracotta, timber), not
-   medieval European?
-8. Are the trees and rocks separate objects, with leaves cut out rather than blended?
-9. Do the props share a few texture atlases, rather than a texture set each?
+1. Is it cartoon or low-poly, bright and chunky, not realistic?
+2. Are there at least three different ships at about the same size?
+3. Are the sails separate objects, so they can take a player's colour?
+4. Do the models share one palette texture, or a few small atlases?
+5. Is the triangle count within the budget above?
+6. Does the licence cover a commercial web game?
+7. Is it available as glTF, FBX or .blend?
+
+The game uses Kenney's free Pirate Kit as stand-ins until the real models arrive. It is a
+good example of the format: one shared palette texture, clean low-poly shapes. Ours should
+go further in character and detail.
 
 ## How it gets into the game
 
@@ -203,18 +171,14 @@ Before buying, check the listing (or ask the seller):
 1024 px for phones, and compresses the textures and geometry into
 `public/ships/jackdaw.glb`. The ship's entry in `src/data/ships.ts` then points at it. A
 file whose parts are named some other way (a bought one) gets `--names map.json`, which
-renames and drops nodes before packing; `scripts/ships/stylized-pirate-ship.json` is one.
-Until the file has downloaded, or if it ever fails, the game draws the code-built ship
-instead.
+renames and drops nodes before packing; `scripts/props/kenney-land.json` is one.
 
-The land is the same: `npm run props:pack -- nassau.glb nassau` writes
-`public/props/nassau.glb`, and its entry in `src/data/props.ts` (a `PropSet`) dresses the
-islands from it. A pack sold as a file per prop is given whole, every file at once, and put
-into one: `scripts/props/kenney-land.json` renames Kenney's palms, rocks and beach hut that
-way. Any kind with no model in the set (a church, say, or the jungle canopy) is still built
-or grown by code, and so is all of it until the set arrives.
+The islands, crates and props are the same: `npm run props:pack -- set.glb sea` writes
+`public/props/sea.glb`, and its entry in `src/data/props.ts` (a `PropSet`) dresses the sea
+from it. A pack sold as a file per prop is given whole, every file at once, and put into
+one.
 
-The menu's Models setting draws everything from code instead, to compare the two.
-
-The rules above are tested in `tests/models.test.ts` and `tests/props.test.ts`, and read by
-`src/render/ships/gltf.ts` and `src/render/land/props.ts`.
+Ships are only drawn from model files: the game waits for the ship's file before it sails.
+How the game reads a file is tested in `tests/models.test.ts` and `tests/props.test.ts`,
+and lives in `src/render/ships/gltf.ts` and `src/render/land/props.ts`. Both are reworked
+for this brief in the MVP (`PLANS/MVP.md`).
