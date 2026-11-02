@@ -1,4 +1,4 @@
-// The four powers, headless: what each does, its wait, and a press over the wire.
+// The four powers, headless: what each does, once a life, and a press over the wire.
 
 import { describe, expect, it } from 'vitest';
 import { TUNING as T } from '../src/data/tuning';
@@ -34,16 +34,21 @@ function duel(gap = 40): { w: World; a: Ship; b: Ship } {
 }
 
 describe('the powers', () => {
-  it('broadside: a fan of balls at the nearest ship, without a shot, then a wait', () => {
+  it('broadside: a fan of balls at the nearest ship, without a shot', () => {
     const { w, a } = duel();
     expect(usePower(w, a, P('broadside'))).toBe(true);
     expect(w.shots).toHaveLength(T.broadsideBalls);
     for (const s of w.shots) expect(s.vy).toBeGreaterThan(0);     // toward her, to the south
     expect(a.ammo).toBe(T.ammo);
-    expect(a.cool[P('broadside')]).toBe(T.broadsideWait);
+  });
+
+  it('each goes off once a life: used, it stays used however long she sails', () => {
+    const { w, a } = duel();
+    expect(usePower(w, a, P('broadside'))).toBe(true);
+    run(w, 60);
     expect(usePower(w, a, P('broadside'))).toBe(false);
-    run(w, T.broadsideWait + 0.1);
-    expect(a.cool[P('broadside')]).toBe(0);
+    expect(usePower(w, a, P('shield'))).toBe(true);
+    expect(a.spent).toEqual([true, false, false, true]);
   });
 
   it('smoke: nobody can pick her or aim at her, until it clears or she fires', () => {
@@ -54,7 +59,7 @@ describe('the powers', () => {
     fire(w, b, -Math.PI / 2);
     expect(b.smoke).toBe(0);
     expect(foe(a, b)).toBe(true);
-    b.cool[P('smoke')] = 0;
+    b.spent[P('smoke')] = false;
     usePower(w, b, P('smoke'));
     run(w, T.smokeFor + 0.1);
     expect(foe(a, b)).toBe(true);
@@ -89,19 +94,19 @@ describe('the powers', () => {
     expect(sung.far).toBeCloseTo(not.far, 3);
   });
 
-  it('comes back ready after she sinks', () => {
+  it('has every one again when she comes back from sinking', () => {
     const { w, b } = duel();
-    usePower(w, b, P('shield'));
-    b.shield = 0;
+    for (let i = 0; i < POWERS.length; i++) usePower(w, b, i);
     b.hull = 1; b.out = true; b.down = 0;
     run(w, T.respawn + 0.1);
     expect(b.out).toBe(false);
-    expect(b.cool.every((c) => c === 0)).toBe(true);
+    expect(b.spent.every((used) => !used)).toBe(true);
+    expect(b.smoke + b.song + b.shield).toBe(0);
   });
 });
 
 describe('a power over the wire', () => {
-  it('goes off once a press, and the phone hears the wait and the smoke', () => {
+  it('goes off once a press, and the phone hears it is used, and the smoke', () => {
     const sea = new Sea('BAR1', { seed: 't' });
     sea.join({ seat: 'me', name: 'Me', look: 'jackdaw' });
     let roster: Roster | null = null;
@@ -112,10 +117,11 @@ describe('a power over the wire', () => {
     sea.step(1 / 30);
     const me = sea.world.ships[id];
     expect(me.smoke).toBeGreaterThan(0);
-    const cool = me.cool[P('smoke')];
-    expect(cool).toBeGreaterThan(T.smokeWait - 0.1);
+    expect(me.spent[P('smoke')]).toBe(true);
+    me.spent[P('smoke')] = false;
     sea.step(1 / 30);
-    expect(me.cool[P('smoke')]).toBeLessThan(cool);     // not set off again by the same press
+    expect(me.spent[P('smoke')]).toBe(false);     // not set off again by the same press
+    me.spent[P('smoke')] = true;
 
     // a phone that sends no powers at all still sails
     sea.helm('me', { t: 'in', n: 2, m: [1, 0], f: 0, fa: 0, a: 0 });
@@ -128,6 +134,6 @@ describe('a power over the wire', () => {
     mirror.frame(1);
     const seen = mirror.world!.ships[id];
     expect(seen.smoke).toBe(1);
-    expect(seen.cool[P('smoke')]).toBeCloseTo(me.cool[P('smoke')], 1);
+    expect(seen.spent).toEqual([false, true, false, false]);
   });
 });

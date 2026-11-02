@@ -99,26 +99,22 @@ export const TUNING = {
   heavy: 2,
 
   /* ---------------------------------------------------------------- powers -- */
-  // Four to try out, each on a button of its own with its own wait. Captains only, for now.
+  // Four to try out, each on a button of its own, each once a life: she has all of them
+  // again when she comes back from sinking. Captains only, for now.
 
   /** Full broadside: this many balls in one fan at the nearest ship, without using a shot. */
   broadsideBalls: 8,
   /** Radians between them. */
   broadsideSpread: 0.05,
-  /** Seconds before it can be used again. */
-  broadsideWait: 12,
   /** Smoke: seconds she can't be seen, aimed at or picked by a bot. Firing ends it. */
   smokeFor: 4,
-  smokeWait: 15,
   /** Mermaid song: seconds that every ship within songRange is pulled toward her... */
   songFor: 4,
   songRange: 90,
   /** ...at this many metres a second, whatever she is sailing. */
   songPull: 12,
-  songWait: 15,
   /** Shield: seconds she takes no damage. Balls stop at it. */
   shieldFor: 3,
-  shieldWait: 15,
 
   /* ------------------------------------------------------------------- bots -- */
 

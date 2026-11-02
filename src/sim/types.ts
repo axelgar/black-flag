@@ -54,7 +54,7 @@ export interface Ship extends Vessel {
   left: boolean;           // gone for good: the seat is free for the next to join
   retire: boolean;         // a bot that leaves the next time she sinks, for a captain who came aboard
   rim: boolean;            // the edge of the sea has her head, until she points back in
-  cool: number[];          // seconds until each power (POWERS order) is ready again
+  spent: boolean[];        // each power (POWERS order) she has used this life
   smoke: number;           // seconds of smoke left: nobody else sees her
   song: number;            // seconds of song left: ships near her are pulled in
   shield: number;          // seconds of shield left: balls stop at it

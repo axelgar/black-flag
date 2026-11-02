@@ -10,7 +10,6 @@ import { markOf } from '../data/colors';
 import { TUNING as T } from '../data/tuning';
 import type { View } from '../render/view';
 import type { Seat } from '../net/protocol';
-import { waitOf } from '../sim/powers';
 import { POWERS, type GameEvent, type Power, type Ship, type World } from '../sim/types';
 import { buzz } from './haptics';
 import { attachSticks, press, touchUi, used } from './input';
@@ -45,7 +44,7 @@ export function hudHtml(practice: boolean) {
     <div class="practice" id="practice"${practice ? '' : ' hidden'}>Practice · order a <b>Black Flag</b> to play for a free shot</div>
     <div class="feed" id="feed"></div>
     <div class="toast" id="toast"></div>
-    <div class="powers" id="powers">${POWERS.map((p, i) => `<button class="power" data-power="${i}" aria-label="${POWER_UI[p].name}"><b>${POWER_UI[p].icon}</b><span>${touch ? POWER_UI[p].name : `${i + 1} ${POWER_UI[p].name}`}</span><i></i></button>`).join('')}</div>
+    <div class="powers" id="powers">${POWERS.map((p, i) => `<button class="power" data-power="${i}" aria-label="${POWER_UI[p].name}"><b>${POWER_UI[p].icon}</b><span>${touch ? POWER_UI[p].name : `${i + 1} ${POWER_UI[p].name}`}</span></button>`).join('')}</div>
     ${touch ? `
     <div class="joy left" id="joy-l"><div class="base"></div><div class="knob"></div></div>
     <div class="joy right" id="joy-r"><div class="base"></div><div class="knob"></div></div>
@@ -235,20 +234,18 @@ export function hudTick(w: World | null, seats: Seat[], view: View, dt: number, 
   hintsTick(me);
 }
 
-/** Each power's button: dark while it waits, with the seconds left; lit while it is on. */
+/** Each power's button: lit while it is on, dark once used, until she is back from sinking. */
 function powersTick(me: Ship | undefined) {
   const up = !!me && !me.out;
   for (let i = 0; i < powerEls.length; i++) {
     const b = powerEls[i], kind = POWERS[i];
-    const left = up ? me!.cool[i] ?? 0 : 0;
     const on = up && ((kind === 'smoke' && me!.smoke > 0) || (kind === 'song' && me!.song > 0) || (kind === 'shield' && me!.shield > 0));
-    const key = `${up}|${on}|${Math.ceil(left)}|${Math.round((left / waitOf(kind)) * 60)}`;
+    const used = !up || !!me!.spent[i];
+    const key = `${on}|${used}`;
     if (b.dataset.key === key) continue;
     b.dataset.key = key;
-    b.classList.toggle('wait', !up || left > 0);
+    b.classList.toggle('used', used && !on);
     b.classList.toggle('on', on);
-    b.style.setProperty('--k', String(up ? left / waitOf(kind) : 1));
-    b.lastElementChild!.textContent = up && left > 0 ? String(Math.ceil(left)) : '';
   }
 }
 

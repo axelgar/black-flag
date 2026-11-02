@@ -1,4 +1,4 @@
-// Powers: four to try out, each on a button of its own with its own wait.
+// Powers: four to try out, each on a button of its own, each once a life.
 //   broadside  a fan of balls at the nearest ship, without using a shot
 //   smoke      nobody else sees her, aims at her or picks her, until it clears or she fires
 //   song       every ship near her is pulled toward her
@@ -9,19 +9,14 @@ import { TUNING as T } from '../data/tuning';
 import { autoBearing, volley } from './combat';
 import { POWERS, ev, type Ship, type World } from './types';
 
-const WAIT = { broadside: 'broadsideWait', smoke: 'smokeWait', song: 'songWait', shield: 'shieldWait' } as const;
-
-/** How long power `kind` takes to be ready again. */
-export const waitOf = (kind: keyof typeof WAIT) => T[WAIT[kind]];
-
-/** All four ready. */
-export const ready = () => POWERS.map(() => 0);
+/** None used yet: a new life. */
+export const fresh = () => POWERS.map(() => false);
 
 /** A press on power `i`. Returns whether it went off. */
 export function usePower(w: World, s: Ship, i: number): boolean {
   const kind = POWERS[i];
-  if (!kind || s.out || s.cool[i] > 0) return false;
-  s.cool[i] = T[WAIT[kind]];
+  if (!kind || s.out || s.spent[i]) return false;
+  s.spent[i] = true;
   ev(w, 'power', { p: s.id, kind, x: s.x, y: s.y });
   if (kind === 'broadside') volley(w, s, autoBearing(w, s), T.broadsideBalls, T.broadsideSpread, false);
   else if (kind === 'smoke') s.smoke = T.smokeFor;
@@ -30,9 +25,8 @@ export function usePower(w: World, s: Ship, i: number): boolean {
   return true;
 }
 
-/** The waits run down, and so does whatever she has on. */
+/** Whatever she has on runs down. */
 export function powers(s: Ship, dt: number) {
-  for (let i = 0; i < s.cool.length; i++) s.cool[i] = Math.max(0, s.cool[i] - dt);
   s.smoke = Math.max(0, s.smoke - dt);
   s.song = Math.max(0, s.song - dt);
   s.shield = Math.max(0, s.shield - dt);

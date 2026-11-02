@@ -204,12 +204,8 @@ a.chip{color:inherit;text-decoration:none}
   box-shadow:0 4px 0 var(--ink);touch-action:none;-webkit-user-select:none;user-select:none;overflow:hidden}
 .power b{font-size:24px;line-height:1}
 .power span{font:400 10px/1 'Lilita One',system-ui,sans-serif;letter-spacing:.02em}
-.power i{position:absolute;inset:0;border-radius:50%;display:grid;place-items:center;font:400 22px/1 'Lilita One',system-ui,sans-serif;
-  font-style:normal;color:var(--paper);text-shadow:0 2px 0 var(--ink);pointer-events:none;
-  background:conic-gradient(rgba(16,35,63,.72) calc(var(--k,0) * 360deg),transparent 0)}
-.power.wait{background:var(--ink-2);color:var(--paper)}
+.power.used{background:var(--ink-2);color:var(--paper);opacity:.45}
 .power.on{background:#7FE3FF;color:var(--ink);animation:throb .8s ease-in-out infinite}
-.power.on i{background:none;color:var(--ink);text-shadow:none}
 .power:active{transform:translateY(3px);box-shadow:0 1px 0 var(--ink)}
 .keys{position:absolute;left:50%;bottom:calc(var(--sb) + 12px);transform:translateX(-50%);font-size:13px;opacity:.85;
   text-shadow:0 2px 0 var(--ink);white-space:nowrap}
