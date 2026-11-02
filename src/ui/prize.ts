@@ -6,6 +6,7 @@
 
 import { me, pour, savePrizes, sendCode, verifyCode, type Prize, type Route } from '../net/cloud';
 import * as A from '../audio/audio';
+import { session } from '../state/session';
 import { buzz } from './haptics';
 import type { Screen } from './screens';
 
@@ -173,7 +174,7 @@ export function redeem(id: number): Screen {
       <div class="burst"></div>
       <div class="glass">🥃</div>
       <div class="big">Redeemed · ${clock(at)}</div>
-      <div class="who">${esc(me?.captain ?? '')}</div>
+      <div class="who">${esc(session.name || me?.captain || '')}</div>
       <div class="now" id="now">${clock(new Date(), true)}</div>
       <div class="what">One free shot · Black Flag · 18+</div>
       <a class="chip" href="#/">Done</a>
@@ -200,7 +201,8 @@ export function redeem(id: number): Screen {
         try {
           const at = await pour(id);
           buzz(80); A.click();
-          root.querySelector('.screen')!.innerHTML = done(at);
+          // root is the screen itself (main.ts mounts on it)
+          root.innerHTML = done(at);
           tick(root);
         } catch (err) {
           console.warn('[pour]', err);
@@ -241,7 +243,7 @@ export function privacy(): Screen {
         </ul>
         <p><b>Why.</b> To run the game and give you the free shot you won. We send you news only if you tick the box, and you can ask us to stop at any time.</p>
         <p><b>No cookies, no ads, no trackers.</b> Your phone remembers your sign-in, your name and your settings in its own storage, and nothing else.</p>
-        <p><b>Who helps us.</b> Supabase keeps our database and sends the code emails. Cloudflare runs the sea. Vercel serves this page.</p>
+        <p><b>Who helps us.</b> Supabase keeps our database, in the EU (Ireland), and sends the code emails. Cloudflare runs the sea. Vercel serves this page.</p>
         <p><b>How long.</b> For as long as the game runs at the bar, or until you ask us to delete it. A free shot runs out 30 days after it is won.</p>
         <p><b>Your rights.</b> You can ask to see, correct or delete your data, or object to how we use it, by writing to <a href="mailto:${CONTACT}">${CONTACT}</a>. You can also complain to the Spanish data protection authority (AEPD, aepd.es).</p>
         <a class="cta" href="#/">Back</a>
