@@ -195,19 +195,28 @@ a.chip{color:inherit;text-decoration:none}
   background:var(--panel);border-radius:14px;padding:10px 14px;display:none;animation:fade .3s}
 .hint b{color:var(--sun)}
 .hint.left{display:block;left:calc(var(--gut) + 8px)}
-.hint.right{display:block;right:calc(var(--gutr) + 84px);text-align:right}
-.hint.powers{display:block;right:calc(var(--gutr) + 84px);bottom:calc(var(--sb) + 76px);text-align:right}
+.hint.right{display:block;right:calc(var(--gutr) + 82px);text-align:right}
+.hint.powers{display:block;right:calc(var(--gutr) + 82px);bottom:calc(var(--sb) + 84px);text-align:right}
 
-/* a button for each power, down the right edge at the bottom */
-.powers{position:absolute;right:var(--gutr);bottom:calc(var(--sb) + 12px);display:flex;flex-direction:column;gap:8px;z-index:2}
-.power{position:relative;appearance:none;width:62px;height:62px;border-radius:50%;border:3px solid var(--ink);background:var(--sun);
-  color:var(--ink);padding:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;cursor:pointer;
-  box-shadow:0 4px 0 var(--ink);touch-action:none;-webkit-user-select:none;user-select:none;overflow:hidden}
-.power b{font-size:24px;line-height:1}
-.power span{font:400 10px/1 'Lilita One',system-ui,sans-serif;letter-spacing:.02em}
-.power.used{background:var(--ink-2);color:var(--paper);opacity:.45}
-.power.on{background:#7FE3FF;color:var(--ink);animation:throb .8s ease-in-out infinite}
-.power:active{transform:translateY(3px);box-shadow:0 1px 0 var(--ink)}
+/* a button for each power, down the right edge at the bottom: a dark well with a ring in
+   the power's colour, its icon drawn (ui/icons.ts), its name on a tab across the foot */
+.powers{position:absolute;right:var(--gutr);bottom:calc(var(--sb) + 16px);display:flex;flex-direction:column;gap:15px;z-index:2}
+.power{--c:#FFD43B;position:relative;appearance:none;width:60px;height:60px;border-radius:50%;border:3px solid var(--ink);padding:0;
+  background:radial-gradient(circle at 50% 30%,#3D6FA8,#1B3A63 62%,#132C4E);display:grid;place-items:center;cursor:pointer;
+  box-shadow:0 5px 0 var(--ink),inset 0 0 0 3px var(--c),inset 0 -7px 0 rgba(8,18,34,.35),inset 0 5px 0 rgba(255,255,255,.12);
+  touch-action:none;-webkit-user-select:none;user-select:none;transition:filter .2s,opacity .2s}
+.power svg{width:47px;height:47px;margin-top:-3px;filter:drop-shadow(0 3px 0 rgba(8,18,34,.45))}
+.power span{position:absolute;left:50%;bottom:-10px;transform:translateX(-50%);background:var(--c);color:var(--ink);border:2px solid var(--ink);
+  border-radius:999px;padding:2px 7px 1px;font:400 11px/1 'Lilita One',system-ui,sans-serif;letter-spacing:.02em;white-space:nowrap}
+.power.broadside{--c:#FF9A3D}
+.power.song{--c:#FF7AD9}
+.power.shield{--c:#7FE3FF}
+.power.used{filter:grayscale(1) brightness(.6);opacity:.75}
+.power.on{animation:glow .6s ease-in-out infinite alternate}
+@keyframes glow{
+  from{box-shadow:0 5px 0 var(--ink),inset 0 0 0 3px var(--c),0 0 0 3px var(--c),0 0 10px 4px var(--c)}
+  to{box-shadow:0 5px 0 var(--ink),inset 0 0 0 3px var(--c),0 0 0 5px var(--c),0 0 22px 10px var(--c)}}
+.power:active{transform:translateY(3px);box-shadow:0 2px 0 var(--ink),inset 0 0 0 3px var(--c),inset 0 -7px 0 rgba(8,18,34,.35)}
 .keys{position:absolute;left:50%;bottom:calc(var(--sb) + 12px);transform:translateX(-50%);font-size:13px;opacity:.85;
   text-shadow:0 2px 0 var(--ink);white-space:nowrap}
 

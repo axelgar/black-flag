@@ -12,6 +12,7 @@ import type { View } from '../render/view';
 import type { Seat } from '../net/protocol';
 import { POWERS, type GameEvent, type Power, type Ship, type World } from '../sim/types';
 import { buzz } from './haptics';
+import { POWER_ICON } from './icons';
 import { attachSticks, press, touchUi, used } from './input';
 
 const $ = <E extends HTMLElement = HTMLElement>(s: string, r: ParentNode = document) => r.querySelector(s) as E | null;
@@ -19,11 +20,7 @@ const esc = (s: unknown) => String(s ?? '').replace(/[<>&"]/g, (c) => ({ '<': '&
 
 export const SKULL = '☠';
 const ARROWS = 3;
-const POWER_UI: Record<Power, { icon: string; name: string }> = {
-  broadside: { icon: '💥', name: 'Broadside' },
-  song: { icon: '🧜‍♀️', name: 'Song' },
-  shield: { icon: '🛡️', name: 'Shield' },
-};
+const POWER_NAME: Record<Power, string> = { broadside: 'Broadside', song: 'Song', shield: 'Shield' };
 
 
 export function hudHtml(practice: boolean) {
@@ -41,7 +38,7 @@ export function hudHtml(practice: boolean) {
     <div class="practice" id="practice"${practice ? '' : ' hidden'}>Practice · order a <b>Black Flag</b> to play for a free shot</div>
     <div class="feed" id="feed"></div>
     <div class="toast" id="toast"></div>
-    <div class="powers" id="powers">${POWERS.map((p, i) => `<button class="power" data-power="${i}" aria-label="${POWER_UI[p].name}"><b>${POWER_UI[p].icon}</b><span>${touch ? POWER_UI[p].name : `${i + 1} ${POWER_UI[p].name}`}</span></button>`).join('')}</div>
+    <div class="powers" id="powers">${POWERS.map((p, i) => `<button class="power ${p}" data-power="${i}" aria-label="${POWER_NAME[p]}">${POWER_ICON[p]}<span>${touch ? POWER_NAME[p] : `${i + 1} ${POWER_NAME[p]}`}</span></button>`).join('')}</div>
     ${touch ? `
     <div class="joy left" id="joy-l"><div class="base"></div><div class="knob"></div></div>
     <div class="joy right" id="joy-r"><div class="base"></div><div class="knob"></div></div>

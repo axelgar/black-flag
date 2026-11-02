@@ -55,7 +55,7 @@ Supabase (Postgres and sign-in) behind both.
 |---|---|---|
 | Sail | left thumb: push the way to go (north is always up), as far as you want to go fast; let go and she holds her course | WASD or the arrows |
 | Fire | right thumb: drag to aim, let go to fire; a quick tap fires at the nearest ship | hold the left button to aim at the pointer, let go to fire; Space or the right button fires at the nearest ship |
-| Powers, once a life | three buttons, bottom right: 💥 broadside, 🧜‍♀️ song, 🛡️ shield | 1 to 3 |
+| Powers, once a life | three buttons, bottom right: broadside, song, shield | 1 to 3 |
 | Leave | ⚓ Leave | Esc |
 
 Three powers, each once a life, and all three back when you come back from sinking. Bots
