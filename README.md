@@ -222,11 +222,14 @@ websockets: it answers `permessage-deflate` with the context kept between messag
 
 ## The bar's screen
 
-`/watch` puts the bar's sea up on a TV: the whole chart from high in the south, live, every
-captain ringed on the water in her own mark with her name over her, and down the right the
-round, its clock, the standings (plunder live, as the phones only show at the end) and a QR
-code to come aboard. Who sank whom runs along the bottom left. Nothing in the game links
-to it.
+`/watch` puts the bar's sea up on a TV as a flat chart (`watch.html`, `src/watch/`): the sea
+as a disc that opens out and closes in with the ships on it, the islands, every ship in
+her captain's colour with her name and skulls over her, a WANTED ship pulsing red, shots as
+short streaks and a sinking as a splash. Down the right: the rule, the captains on a
+streak, what just happened, and "Order a Black Flag" with a QR code to the game (practice:
+a scan of the TV is not a ticket). A free shot won is said across the top of the chart.
+Nothing in the game links to it, and it loads none of the 3D game: a 2D canvas, about
+25 kB.
 
 - **The watch key.** A secret on the sea's server: `npx wrangler secret put WATCH_KEY -c
   server/wrangler.jsonc` for the live seas, `WATCH_KEY=…` in `server/.dev.vars` (not
@@ -236,27 +239,19 @@ to it.
   a URL. Put a new secret to change it, and every screen asks again.
 - **A screen takes no seat.** It is sent what every phone aboard is, but nobody's own guns,
   does not count toward the thirty, and does not wake an empty sea. Four to a sea.
-- **Marks.** Each captain gets one of seven colors (`src/data/colors.ts`), solid or a turning
-  dash: fourteen marks, handed out by the sea as captains come aboard and kept all night,
-  so a guest finds her ship on the TV by the dot beside her name in the lobby on her phone.
-  Seven because that is as many as stay apart on the water, to every eye: the file says
-  how they were chosen and checked.
-- **Names** are placed leader first, above her ring if it is free, else below or beside it,
-  and as her initials when the fleet is bunched up.
-- **The rest of the night.** An empty sea shows the harbour and a large QR code. A lobby
-  counts down; the results name the winner. On a busy night with a second sea open, the
-  screen turns between them every minute; it only looks at the next sea while this one
-  is full.
+- **Captains, not bots.** The streaks and the feed are about the people in the room: a
+  bot's five in a row, and bots sinking each other, are left out (`src/watch/board.ts`).
+- **The rest of the night.** A sea with no captains on it shows a large QR code and how it
+  works. On a busy night with a second sea open, the screen turns between them every
+  minute; it only looks at the next sea while this one is full.
 - **Left alone.** It keeps the screen awake, hides the pointer, tries a dropped line again
   for ever, reloads itself after a deploy (at most once in ten minutes) and once at 6am,
   and never signs in, so the TV makes no player.
-- **Keys.** F full screen (or click), S sound (off to start: a quiet sea and distant guns),
-  1–9 hold the screen on that sea, 0 lets it turn again.
+- **Keys.** F full screen (or click), 1–9 hold the screen on that sea, 0 lets it turn again.
 
-The page frames the sea in what the standings leave free and paints at 30 a second; a
-laptop running Chrome into the TV is what it is built for. To try it against bots on this
-machine: `npm run sea:load -- 12 --for 600 --key <a key>` and
-`VITE_SEA_URL=ws://127.0.0.1:8788 npm run dev`, then `/watch`.
+A laptop running Chrome into the TV is what it is built for. To try it on this machine, put
+a `WATCH_KEY` in `server/.dev.vars`, run `npm run sea:dev` and `npm run dev`, open
+`/watch` and say the key; then sail from a phone, or a second browser, on the same sea.
 
 ## The server
 
@@ -385,13 +380,14 @@ src/
     ships/       the shipwright: procedural.ts (a ship on the water), form.ts (her lines),
                  hull.ts, rig.ts, crew.ts, paint.ts (timber and canvas textures),
                  materials.ts (her shaders), mesh.ts, flags.ts, ShipModel.ts
-  ui/          screens, HUD (minimap, pointers, reload rings), input, silhouettes, css,
-               watch.ts (the bar's screen)
+  ui/          screens, HUD (minimap, pointers, reload rings), input, silhouettes, css
+  watch/       the bar's TV: main.ts, chart.ts (the 2D chart), board.ts (streaks, feed),
+               line.ts (its line to a sea)
   audio/       synthesised, stereo-placed cannons, sea and shanty
   state/       session (localStorage v2, migrates the v1 record book), run banking
   net/         cloud.ts (the one door to the server), items.ts (inventory ids, reconcile),
                protocol.ts (the wire, and the Mirror a phone draws), sea.ts (a shared sea's
-               room), link.ts (the phone's line to one), watch.ts (the bar's screen's)
+               room), link.ts (the phone's line to one)
 server/        the shared seas on Cloudflare: a worker and a Durable Object per sea
 supabase/      config.toml and migrations/: the server's tables, rules and functions
 tests/         vitest, a headless bot captain, and the server's rules in PGlite
