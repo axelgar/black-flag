@@ -82,8 +82,8 @@ Black Flag and this would have been a free shot."
 - **Starting numbers:**
   - 3 good volleys sink an equal ship (3–4 s of hitting). Changed 2026-11-02 to 5 volleys
     (hull 160) with bot skill 0.9, after a simulation showed a win took under a minute.
-    Changed back the same day to 3 volleys (hull 100), with bot skill 0.2, after the first
-    try-out on a phone couldn't get five in a row: easy until real guests say otherwise.
+    Eased to 3 volleys (hull 100) and bot skill 0.2 the same day, only so a phone could
+    win and test saving the free shot, then put back to hull 160 and bot skill 0.9.
   - The hull mends slowly after 3 s without being hit.
   - Respawn takes 3 s.
   - A clean run of 5 takes 3–5 minutes, and most players win within 15–30 minutes of
