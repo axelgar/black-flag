@@ -11,6 +11,8 @@
     "typecheck": "tsc --noEmit && tsc --noEmit -p server",
     "icons": "tsx scripts/icons.ts",
     "qr": "tsx scripts/qr.ts",
+    "captain": "tsx scripts/captain.ts",
+    "odds": "tsx scripts/odds.ts",
     "ships:pack": "tsx scripts/pack-models.ts",
     "props:pack": "tsx scripts/pack-models.ts --to props",
     "sea:dev": "wrangler dev -c server/wrangler.jsonc --ip 0.0.0.0",

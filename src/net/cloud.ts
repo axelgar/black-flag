@@ -8,11 +8,10 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { AUTH_KEY } from '../state/session';
+import { SUPABASE_KEY, SUPABASE_URL } from './project';
 
-const URL = import.meta.env.VITE_SUPABASE_URL || 'https://vspueoyeaorfmbmefhiv.supabase.co';
-// Publishable: it is meant to ship in the page. What a phone may do is decided by the
-// database's own rules (supabase/migrations), not by keeping this secret.
-const KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || 'sb_publishable_mbZmUcrjjPBgNHqvdgu2_g_D_Xvyamy';
+const URL = import.meta.env.VITE_SUPABASE_URL || SUPABASE_URL;
+const KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || SUPABASE_KEY;
 
 export type Status = 'off' | 'connecting' | 'online' | 'offline';
 export const cloud = { status: 'off' as Status };
