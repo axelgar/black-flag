@@ -107,17 +107,18 @@ function ashore(to = '/') {
 function act(what: string) {
   buzz(6); A.click();
   if (what === 'leave') ashore();
-  else if (what === 'again') link?.again();
+  // a sign-in that failed is started over with a fresh line; a sea not reached, hailed again
+  else if (what === 'again') { if (link?.why === 'token') { aboard(); linkChanged(link!); } else link?.again(); }
   else if (what === 'prize') ashore('/prize');
 }
 
 const WHY: Record<string, [string, string]> = {
   full: ['Every sea is full', 'Try again in a minute.'],
-  token: ['Can\'t sign in', 'The server didn\'t answer. Check the wifi and try again.'],
+  token: ['Can\'t reach the server', 'Check the wifi, or switch to mobile data, and try again.'],
   version: ['A new version is out', 'Reload the page to sail.'],
   name: ['Pick another name', 'That one can\'t go up on the TV.'],
-  server: ['Lost the sea', 'The line kept dropping. Check the wifi and try again.'],
-  reach: ['Can\'t reach the sea', 'This wifi may be blocking it. Try mobile data.'],
+  server: ['The sea isn\'t answering', 'Check the wifi and try again.'],
+  reach: ['Can\'t reach the sea', 'This connection may be blocking it. Switch between wifi and mobile data, and try again.'],
 };
 
 /** The lines the bar has heard say they were aboard, or turned away. */

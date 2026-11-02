@@ -24,6 +24,21 @@ export interface Me { id: string; captain: string; ticket: boolean; email: strin
 /** The newest word on who this phone is. Null until signed in. Screens redraw on `bf:me`. */
 export let me: Me | null = null;
 
+/** Seconds a request to the server may take before it counts as failed. One that can't
+ *  get through (a wifi that blocks the server) would otherwise hang for minutes, and the
+ *  guest with it, looking at "Finding the sea…". */
+const PATIENCE = 8;
+
+/** fetch, given up on after PATIENCE seconds. */
+function patient(input: RequestInfo | URL, init: RequestInit = {}): Promise<Response> {
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(new DOMException('the server took too long', 'TimeoutError')), PATIENCE * 1000);
+  const theirs = init.signal;
+  if (theirs?.aborted) ctl.abort(theirs.reason);
+  else theirs?.addEventListener('abort', () => ctl.abort(theirs.reason), { once: true });
+  return fetch(input, { ...init, signal: ctl.signal }).finally(() => clearTimeout(timer));
+}
+
 let client: SupabaseClient | null = null;
 let nobody = false;
 let joining: Promise<boolean> | null = null;
@@ -43,6 +58,7 @@ async function open(): Promise<SupabaseClient> {
       flowType: 'pkce',
       detectSessionInUrl: true,
     },
+    global: { fetch: patient },
   });
   return client;
 }

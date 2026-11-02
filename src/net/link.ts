@@ -20,6 +20,8 @@ const KEEPALIVE = 0.25;       // the hands are sent at least this often, changed
 const HELM_EVERY = 0.05;      // a moving stick goes up at most this often; a press on the guns, at once
 const RETRIES = 6;            // a dropped line is tried again this many times, backing off
 const ECHO = 1.5;             // seconds a volley shown at once waits for the sea's word of it
+const HAIL_FOR = 10;          // seconds to get aboard, sign-in and all, before the guest is told why not
+const OPEN_FOR = 5;           // seconds a line may take to open before it is dropped and tried again
 
 export class Link {
   state: LinkState = 'hailing';
@@ -52,30 +54,51 @@ export class Link {
   private lastShot = -1e9;
   private local: GameEvent[] = [];
   private token = '';
+  private giveUp: ReturnType<typeof setTimeout> | undefined;
   /** The Supabase user this phone is signed in as: the seat it sails in. */
   seat = '';
 
   /** Hail the sea as soon as the sign-in comes back; `creds` null is a phone the server
    *  could not sign in, turned away at the gangway. */
   constructor(creds: Promise<{ token: string; seat: string } | null>, private name: string, private look: string, private changed: () => void) {
+    this.wait();
     creds.then((c) => {
-      if (this.closed) return;
+      if (this.closed || this.state !== 'hailing') return;
       if (!c || !SEA_URL) { this.state = 'refused'; this.why = c ? 'server' : 'token'; this.changed(); return; }
       this.token = c.token; this.seat = c.seat;
       this.hail();
     }, () => { this.state = 'refused'; this.why = 'token'; this.changed(); });
   }
 
+  /** Coming aboard has HAIL_FOR seconds. Past that the guest is told why not, rather than
+   *  left looking at "Finding the sea…": a sign-in that never came back, a sea never
+   *  reached, or a sea that never answered. */
+  private wait() {
+    clearTimeout(this.giveUp);
+    this.giveUp = setTimeout(() => {
+      if (this.closed || this.state !== 'hailing') return;
+      this.why = !this.token ? 'token' : this.opened ? 'server' : 'reach';
+      this.state = 'refused';
+      try { this.ws?.close(); } catch { /* already gone */ }
+      this.changed();
+    }, HAIL_FOR * 1000);
+  }
+
   private hail() {
     if (this.closed) return;
     const ws = new WebSocket(`${SEA_URL}/sea/bar/${this.bar}`);
     this.ws = ws;
+    // a line that hangs opening (a wifi that drops the sea's packets) is let go and tried
+    // again, rather than waited on for as long as the browser cares to
+    const slow = setTimeout(() => { if (ws.readyState === WebSocket.CONNECTING) ws.close(); }, OPEN_FOR * 1000);
     ws.onopen = () => {
+      clearTimeout(slow);
       this.opened = true;
       ws.send(JSON.stringify({ t: 'hello', v: WIRE, token: this.token, name: this.name, look: this.look }));
     };
     ws.onmessage = (e) => this.hear(JSON.parse(String(e.data)) as FromSea);
     ws.onclose = () => {
+      clearTimeout(slow);
       if (this.ws !== ws || this.closed || this.state === 'refused') return;
       // wifi comes and goes; the sea keeps the ship for a while, so come back for her
       this.state = this.state === 'aboard' ? 'lost' : this.state;
@@ -89,6 +112,7 @@ export class Link {
     const now = performance.now() / 1000;
     switch (m.t) {
       case 'welcome':
+        clearTimeout(this.giveUp);
         this.welcome = m; this.state = 'aboard'; this.tries = 0;
         this.changed();
         break;
@@ -192,6 +216,7 @@ export class Link {
   again() {
     if (this.state !== 'refused' || (this.why !== 'server' && this.why !== 'reach') || !this.token) return;
     this.state = 'hailing'; this.why = null; this.tries = 0;
+    this.wait();
     this.changed();
     this.hail();
   }
@@ -200,6 +225,7 @@ export class Link {
    *  on the water a while in one. */
   close() {
     this.closed = true;
+    clearTimeout(this.giveUp);
     try {
       if (this.ws?.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify({ t: 'leave' }));
       this.ws?.close(1000, 'ashore');
