@@ -21,12 +21,14 @@ go-ahead.
 
 ## Before the day
 
-1. **Email (you).** In Supabase → Authentication → SMTP, set up a custom sender (Resend or
-   similar). Then, under Emails, make the "Change email address" and "Magic link" templates
-   show the code, `{{ .Token }}`. Without this, nobody can save a free shot.
-2. **Try saving a free shot end to end** on the preview, from a real phone: open
-   `/u/BLACKFLAG`, win, save with a real email, type the code, see the voucher, and pour
-   it. This has never been tried.
+1. **The email sender (you).** Resend and the code templates are set up, but the sender
+   is still Resend's test address, `onboarding@resend.dev`, which only delivers to the
+   Resend account's own email. Verify a domain in Resend (a subdomain such as
+   `mail.glitchbars.com` keeps the main one's mail apart), then change the sender in
+   Supabase → Authentication → SMTP. Check the emails-an-hour limit under Rate Limits.
+2. **Saving a free shot end to end:** done on 2 Nov from a phone on the preview (win, save
+   with an email, type the code, the voucher, pour). Once the sender changes, save one
+   more with an address outside the Resend account.
 3. **The privacy notice (you).** Read `#/privacy` on the preview. It names Glitch Bars,
    info@glitchbars.com, and the database in the EU (Ireland).
 4. **The secret key on the production sea (you):**

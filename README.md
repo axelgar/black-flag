@@ -147,9 +147,14 @@ migration only ever adds.
   - Authentication → Sign In / Providers: allow anonymous sign-ins, and manual linking.
   - Authentication → Rate Limits: raise anonymous sign-ins well above 30 an hour per IP. A
     whole bar shares one wifi address.
-  - Authentication → SMTP and Emails: a custom SMTP sender, then the "Change email
-    address" and "Magic link" templates showing the code (`{{ .Token }}`). Without these
-    nobody can save a free shot.
+  - Authentication → SMTP: a custom sender (Resend). Its address must be on a domain
+    verified in Resend: Resend's test sender, `onboarding@resend.dev`, only delivers to
+    the Resend account's own email.
+  - Authentication → Emails: the "Change email address" and "Magic link" templates, from
+    `supabase/templates/`, with the subject `{{ .Token }} is your Black Flag code`. They
+    show the code. Without them nobody can save a free shot.
+  - Authentication → Rate Limits: emails an hour (30 to start with a custom sender). Each
+    save and each sign-in sends one.
 
 ## Test tools
 
@@ -222,8 +227,9 @@ watch.html       the TV's page; index.html the game's
   Cloudflare addresses, which both the sea server and Supabase sit behind: a phone on
   them gets "Can't reach the sea". The fix (a sea server with its own address, Supabase
   through the site) is on hold.
-- **Saving a free shot by email** waits on SMTP (see **Supabase**), and has not been tried
-  end to end.
+- **The email sender** is Resend's test address, which only delivers to the Resend
+  account's own email. Saving a free shot worked end to end with it from a phone (2 Nov).
+  Guests need a sender on a verified domain (see **Supabase**).
 - **Tuning wants a real night.** `npm run odds` measures a script, not a guest.
 - **Frame time on a real phone** is unmeasured. `?fps` shows a meter, and `?fps&plain`
   turns the outlines off to see what they cost.
