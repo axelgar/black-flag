@@ -80,7 +80,8 @@ Black Flag and this would have been a free shot."
     ship. The guns on the side facing the aim fire, so it still looks like a broadside.
   - 3 shots that reload, like Brawl Stars' ammo bar.
 - **Starting numbers:**
-  - 3 good volleys sink an equal ship (3–4 s of hitting).
+  - 3 good volleys sink an equal ship (3–4 s of hitting). Changed 2026-11-02 to 5 volleys
+    (hull 160) with bot skill 0.9, after a simulation showed a win took under a minute.
   - The hull mends slowly after 3 s without being hit.
   - Respawn takes 3 s.
   - A clean run of 5 takes 3–5 minutes, and most players win within 15–30 minutes of

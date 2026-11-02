@@ -73,7 +73,7 @@ describe('the guns', () => {
     expect(a.ammo).toBe(1);
   });
 
-  it('sinks a ship in three volleys that all hit', () => {
+  it('sinks a ship in as many volleys as the tuning says, all hitting', () => {
     const { w, a, b } = duel();
     let volleys = 0;
     while (!b.out && volleys < 10) {
@@ -167,10 +167,11 @@ describe('the hull', () => {
   it('mends after a while without being hit', () => {
     const { w, b } = duel();
     wound(w, b, 50, null);
+    const left = b.hullMax - 50;
     run(w, T.mendAfter - 0.2);
-    expect(b.hull).toBe(50);
+    expect(b.hull).toBe(left);
     run(w, 2.2);
-    expect(b.hull).toBeGreaterThan(50);
+    expect(b.hull).toBeGreaterThan(left);
   });
 });
 

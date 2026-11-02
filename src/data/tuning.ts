@@ -6,8 +6,9 @@
 export const TUNING = {
   /* ------------------------------------------------------------------ ships -- */
 
-  /** How much hull a ship has. Every ship has the same. */
-  hull: 100,
+  /** How much hull a ship has. Every ship has the same. With bots at 0.45 and a hull of
+   *  100, a scripted captain won in under a minute; at 160 a win takes a few minutes. */
+  hull: 160,
   /** Top speed under full sail. */
   speed: 24,
   /** How quickly a ship gathers way. */
@@ -31,7 +32,7 @@ export const TUNING = {
   balls: 3,
   /** Radians between the balls of a volley: the volley covers a patch of sea. */
   spread: 0.06,
-  /** Damage of one ball. Three volleys of three balls, all hitting, sink a ship. */
+  /** Damage of one ball. Five volleys of three balls, all hitting, sink a ship. */
   damage: 12,
   /** How fast a ball flies. */
   ballSpeed: 130,
@@ -100,8 +101,10 @@ export const TUNING = {
   /* ------------------------------------------------------------------- bots -- */
 
   /** How good the bots are, 0 to 1. At 0 they mostly miss and fire slowly; at 1 they lead
-   *  their shots well and fire as fast as they can. Keep it below an average player. */
-  botSkill: 0.45,
+   *  their shots well and fire as fast as they can. At 0.9 with a hull of 160 a scripted
+   *  captain took 3–6 minutes to win, and about half won inside five: set for the first
+   *  play-test at the bar, to be moved by what real guests do. */
+  botSkill: 0.9,
   /** Bots on the same target at the most. */
   botCrowd: 2,
 };
