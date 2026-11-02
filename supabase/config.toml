@@ -245,6 +245,18 @@ otp_expiry = 3600
 # admin_email = "admin@email.com"
 # sender_name = "Admin"
 
+# The two emails the game sends, both a code to type (src/net/cloud.ts): saving a free shot
+# to an email new to the game, and signing in to one that has an account. The live project
+# has them pasted in under Authentication → Emails, and sends through Resend
+# (smtp.resend.com), set in Authentication → SMTP.
+[auth.email.template.email_change]
+subject = "{{ .Token }} is your Black Flag code"
+content_path = "./supabase/templates/email_change.html"
+
+[auth.email.template.magic_link]
+subject = "{{ .Token }} is your Black Flag code"
+content_path = "./supabase/templates/magic_link.html"
+
 # Uncomment to customize email template
 # [auth.email.template.invite]
 # subject = "You have been invited"
