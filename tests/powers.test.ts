@@ -1,10 +1,13 @@
-// The four powers, headless: what each does, once a life, and a press over the wire.
+// The three powers, headless: what each does, once a life, the bots reaching for them, a
+// phone stepping its own ship through a song, and a press over the wire.
 
 import { describe, expect, it } from 'vitest';
 import { TUNING as T } from '../src/data/tuning';
+import { Lead } from '../src/net/lead';
 import { Mirror, pack, ShotLog, type Helm, type Roster } from '../src/net/protocol';
 import { Sea } from '../src/net/sea';
-import { fire, foe, nearestFoe } from '../src/sim/combat';
+import { botInput } from '../src/sim/bots';
+import { fire } from '../src/sim/combat';
 import { onLand } from '../src/sim/map';
 import { usePower } from '../src/sim/powers';
 import * as Wo from '../src/sim/world';
@@ -18,7 +21,7 @@ function run(w: World, seconds: number) {
   return w;
 }
 
-/** Two captains side by side in open water, nobody else. */
+/** Two captains `gap` apart, north and south, in open water, nobody else. */
 function duel(gap = 40): { w: World; a: Ship; b: Ship } {
   const w = Wo.create({ seed: 'duel' });
   const a = Wo.join(w, { seat: 'a' }), b = Wo.join(w, { seat: 'b' });
@@ -40,6 +43,14 @@ describe('the powers', () => {
     expect(w.shots).toHaveLength(T.broadsideBalls);
     for (const s of w.shots) expect(s.vy).toBeGreaterThan(0);     // toward her, to the south
     expect(a.ammo).toBe(T.ammo);
+    expect(w.events.find((e) => e.k === 'volley')?.n).toBe(T.broadsideBalls);
+  });
+
+  it('broadside: most of it hits a ship alongside, and hurts more than a volley', () => {
+    const { w, a, b } = duel();
+    usePower(w, a, P('broadside'));
+    run(w, 1);
+    expect(b.hullMax - b.hull).toBeGreaterThan(T.balls * T.damage);
   });
 
   it('each goes off once a life: used, it stays used however long she sails', () => {
@@ -48,24 +59,10 @@ describe('the powers', () => {
     run(w, 60);
     expect(usePower(w, a, P('broadside'))).toBe(false);
     expect(usePower(w, a, P('shield'))).toBe(true);
-    expect(a.spent).toEqual([true, false, false, true]);
+    expect(a.spent).toEqual(POWERS.map((k) => k === 'broadside' || k === 'shield'));
   });
 
-  it('smoke: nobody can pick her or aim at her, until it clears or she fires', () => {
-    const { w, a, b } = duel();
-    usePower(w, b, P('smoke'));
-    expect(foe(a, b)).toBe(false);
-    expect(nearestFoe(w, a, 500)).toBeNull();
-    fire(w, b, -Math.PI / 2);
-    expect(b.smoke).toBe(0);
-    expect(foe(a, b)).toBe(true);
-    b.spent[P('smoke')] = false;
-    usePower(w, b, P('smoke'));
-    run(w, T.smokeFor + 0.1);
-    expect(foe(a, b)).toBe(true);
-  });
-
-  it('shield: balls stop at it and do no harm', () => {
+  it('shield: balls stop at it and do no harm, until it is down', () => {
     const { w, a, b } = duel();
     usePower(w, b, P('shield'));
     fire(w, a, Math.PI / 2);
@@ -101,27 +98,71 @@ describe('the powers', () => {
     run(w, T.respawn + 0.1);
     expect(b.out).toBe(false);
     expect(b.spent.every((used) => !used)).toBe(true);
-    expect(b.smoke + b.song + b.shield).toBe(0);
+    expect(b.song + b.shield).toBe(0);
+  });
+});
+
+describe('a bot and its powers', () => {
+  /** What a bot asks for over a few seconds, thinking as often as it does. */
+  function asks(w: World, s: Ship, seconds = 4, each = () => {}) {
+    const got = new Set<number>();
+    for (let i = 0; i < seconds / DT; i++) { each(); const p = botInput(w, s, DT).power; if (p != null) got.add(p); }
+    return got;
+  }
+
+  it('puts the shield up when it is being hit and losing', () => {
+    const { w, a } = duel();
+    a.bot = true; a.hull = a.hullMax * 0.3;
+    expect(asks(w, a, 4, () => { a.mendT = 0; }).has(P('shield'))).toBe(true);
+  });
+
+  it('sings to a ship getting away, and not to one standing still', () => {
+    const { w, a, b } = duel(T.songRange * 0.8);
+    a.bot = true;
+    Object.assign(b, { h: Math.PI / 2, v: T.speed });          // heading south, away from her
+    expect(asks(w, a).has(P('song'))).toBe(true);
+    const still = duel(T.songRange * 0.8);
+    still.a.bot = true;
+    expect(asks(still.w, still.a).has(P('song'))).toBe(false);
+  });
+
+  it('lets go a broadside at a hurt ship close by', () => {
+    const { w, a, b } = duel();
+    a.bot = true; b.hull = b.hullMax * 0.4;
+    expect(asks(w, a).has(P('broadside'))).toBe(true);
+  });
+});
+
+describe('a phone in a song', () => {
+  it('pulls its own ship toward the singer as it steps her, as the sea does', () => {
+    const { w, a, b } = duel(70);
+    const lead = new Lead();
+    const R = 5000;                       // a sea wide enough that its edge leaves her be
+    // the phone has her where the sea has her, lying still
+    lead.hear({ map: w.map, R, focus: b.id }, [3, 0, 0, 0, 0, 0, 0, 0, b.x, b.y, b.h, 0, 0, 0, 0, 0, 0], false);
+    const before = Math.hypot(lead.ship!.x - a.x, lead.ship!.y - a.y);
+    for (let i = 0; i < 60; i++) lead.advance({ map: w.map, R }, 1 / 60, 0, null, [[a.x, a.y]]);
+    expect(Math.hypot(lead.ship!.x - a.x, lead.ship!.y - a.y)).toBeCloseTo(before - T.songPull, 0);
   });
 });
 
 describe('a power over the wire', () => {
-  it('goes off once a press, and the phone hears it is used, and the smoke', () => {
+  it('goes off once a press, and the phone hears it is used, and the song', () => {
     const sea = new Sea('BAR1', { seed: 't' });
     sea.join({ seat: 'me', name: 'Me', look: 'jackdaw' });
     let roster: Roster | null = null;
     for (const o of sea.step(1 / 30)) if (o.t === 'roster') roster = o;
     const id = roster!.seats.find((s) => s.seat === 'me')!.id;
     const helm = (u: number[]): Helm => ({ t: 'in', n: 1, m: null, f: 0, fa: 0, a: 0, u });
-    sea.helm('me', helm([0, 1, 0, 0]));
+    sea.helm('me', helm(POWERS.map((k) => (k === 'song' ? 1 : 0))));
     sea.step(1 / 30);
     const me = sea.world.ships[id];
-    expect(me.smoke).toBeGreaterThan(0);
-    expect(me.spent[P('smoke')]).toBe(true);
-    me.spent[P('smoke')] = false;
+    expect(me.song).toBeGreaterThan(0);
+    expect(me.spent[P('song')]).toBe(true);
+    me.spent[P('song')] = false;
     sea.step(1 / 30);
-    expect(me.spent[P('smoke')]).toBe(false);     // not set off again by the same press
-    me.spent[P('smoke')] = true;
+    expect(me.spent[P('song')]).toBe(false);     // not set off again by the same press
+    me.spent[P('song')] = true;
 
     // a phone that sends no powers at all still sails
     sea.helm('me', { t: 'in', n: 2, m: [1, 0], f: 0, fa: 0, a: 0 });
@@ -133,7 +174,7 @@ describe('a power over the wire', () => {
     mirror.push(snap, 0);
     mirror.frame(1);
     const seen = mirror.world!.ships[id];
-    expect(seen.smoke).toBe(1);
-    expect(seen.spent).toEqual([false, true, false, false]);
+    expect(seen.song).toBe(1);
+    expect(seen.spent).toEqual(POWERS.map((k) => k === 'song'));
   });
 });

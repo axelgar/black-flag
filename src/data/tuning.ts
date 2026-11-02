@@ -99,15 +99,13 @@ export const TUNING = {
   heavy: 2,
 
   /* ---------------------------------------------------------------- powers -- */
-  // Four to try out, each on a button of its own, each once a life: she has all of them
-  // again when she comes back from sinking. Captains only, for now.
+  // Three, each on a button of its own and each once a life: she has all of them again
+  // when she comes back from sinking. Bots use them too (sim/bots.ts).
 
   /** Full broadside: this many balls in one fan at the nearest ship, without using a shot. */
   broadsideBalls: 8,
   /** Radians between them. */
   broadsideSpread: 0.05,
-  /** Smoke: seconds she can't be seen, aimed at or picked by a bot. Firing ends it. */
-  smokeFor: 4,
   /** Mermaid song: seconds that every ship within songRange is pulled toward her... */
   songFor: 4,
   songRange: 90,
@@ -118,11 +116,13 @@ export const TUNING = {
 
   /* ------------------------------------------------------------------- bots -- */
 
-  /** How good the bots are, 0 to 1. At 0 they mostly miss and fire slowly; at 1 they lead
-   *  their shots well and fire as fast as they can. At 0.9 with a hull of 160 a scripted
-   *  captain took 3–6 minutes to win, and about half won inside five: set for the first
-   *  play-test at the bar, to be moved by what real guests do. */
-  botSkill: 0.9,
+  /** How good the bots are, 0 to 1. At 0 they mostly miss, fire slowly and seldom think of
+   *  a power; at 1 they lead their shots well, fire as fast as they can and use every power
+   *  when it counts. Before the powers, 0.9 with a hull of 160 had a scripted captain winning
+   *  in 4–5 minutes. Bots with shields and broadsides made 0.9 far harder (a casual captain
+   *  mostly never won), so it is 0.5, where a casual one wins in about 3½ minutes as before
+   *  and a good one in about 2. To be moved by what real guests do. */
+  botSkill: 0.5,
   /** Bots on the same target at the most. */
   botCrowd: 2,
 };

@@ -21,13 +21,10 @@ export const SKULL = '☠';
 const ARROWS = 3;
 const POWER_UI: Record<Power, { icon: string; name: string }> = {
   broadside: { icon: '💥', name: 'Broadside' },
-  smoke: { icon: '💨', name: 'Smoke' },
   song: { icon: '🧜‍♀️', name: 'Song' },
   shield: { icon: '🛡️', name: 'Shield' },
 };
 
-/** A ship in smoke is not drawn, tagged or pointed at, but on her own phone. */
-export const hidden = (w: World, s: Ship) => s.smoke > 0 && s.id !== w.focus;
 
 export function hudHtml(practice: boolean) {
   const touch = touchUi();
@@ -49,7 +46,7 @@ export function hudHtml(practice: boolean) {
     <div class="joy left" id="joy-l"><div class="base"></div><div class="knob"></div></div>
     <div class="joy right" id="joy-r"><div class="base"></div><div class="knob"></div></div>
     <div class="hint" id="hints"></div>` : `
-    <div class="keys">WASD sail · hold the mouse to aim, let go to fire · Space fires at the nearest · 1–4 powers</div>`}
+    <div class="keys">WASD sail · hold the mouse to aim, let go to fire · Space fires at the nearest · 1–3 powers</div>`}
     <div class="card sunk" id="sunk" hidden>
       <div class="big">Sunk</div>
       <div class="by" id="sunk-by"></div>
@@ -239,7 +236,7 @@ function powersTick(me: Ship | undefined) {
   const up = !!me && !me.out;
   for (let i = 0; i < powerEls.length; i++) {
     const b = powerEls[i], kind = POWERS[i];
-    const on = up && ((kind === 'smoke' && me!.smoke > 0) || (kind === 'song' && me!.song > 0) || (kind === 'shield' && me!.shield > 0));
+    const on = up && ((kind === 'song' && me!.song > 0) || (kind === 'shield' && me!.shield > 0));
     const used = !up || !!me!.spent[i];
     const key = `${on}|${used}`;
     if (b.dataset.key === key) continue;
@@ -263,7 +260,7 @@ function tagFor(i: number): Tag {
 function tagsTick(w: World, seats: Seat[], view: View, height: (look: string) => number) {
   let n = 0;
   for (const s of w.ships) {
-    if (s.out || hidden(w, s)) continue;
+    if (s.out) continue;
     const p = view.project(s.x, height(s.look) + 3, s.y);
     if (!p || !p.on) continue;
     const t = tagFor(n++);
@@ -306,7 +303,7 @@ function arrowsTick(w: World, view: View) {
   const off: { s: Ship; d: number; x: number; y: number }[] = [];
   if (me && !me.out) {
     for (const s of w.ships) {
-      if (s.out || s.id === me.id || hidden(w, s)) continue;
+      if (s.out || s.id === me.id) continue;
       const p = view.project(s.x, 0, s.y);
       if (!p || p.on) continue;
       off.push({ s, d: Math.hypot(s.x - me.x, s.y - me.y), x: p.x, y: p.y });
@@ -327,17 +324,19 @@ function arrowsTick(w: World, view: View) {
   }
 }
 
-/** The first time at sea: what each thumb does, until each has been done. */
+/** The first time at sea: what each thumb does, until each has been done; then the powers,
+ *  until one has been used. */
 let hintShown = '';
 function hintsTick(me: Ship | undefined) {
   const h = root && $('#hints', root);
   if (!h) return;
-  const want = !me || me.out ? '' : !used.move ? 'left' : !used.aim && !used.tap ? 'right' : '';
+  const want = !me || me.out ? '' : !used.move ? 'left' : !used.aim && !used.tap ? 'right' : !used.power && powerEls.length ? 'powers' : '';
   if (want === hintShown) return;
   hintShown = want;
   h.className = `hint ${want}`;
   h.innerHTML = want === 'left' ? '<b>Left thumb</b> · sail where you push'
-    : want === 'right' ? '<b>Right thumb</b> · drag to aim, let go to fire<br>or tap to fire at the nearest ship' : '';
+    : want === 'right' ? '<b>Right thumb</b> · drag to aim, let go to fire<br>or tap to fire at the nearest ship'
+    : want === 'powers' ? '<b>Powers</b> · one go each, every life<br>they come back when you do' : '';
 }
 
 /** The win card is up: the host keeps it there until it is dismissed. */

@@ -195,10 +195,11 @@ a.chip{color:inherit;text-decoration:none}
   background:var(--panel);border-radius:14px;padding:10px 14px;display:none;animation:fade .3s}
 .hint b{color:var(--sun)}
 .hint.left{display:block;left:calc(var(--gut) + 8px)}
-.hint.right{display:block;right:calc(var(--gutr) + 8px);text-align:right;bottom:calc(var(--sb) + 150px)}
+.hint.right{display:block;right:calc(var(--gutr) + 84px);text-align:right}
+.hint.powers{display:block;right:calc(var(--gutr) + 84px);bottom:calc(var(--sb) + 76px);text-align:right}
 
-/* a button for each power, bottom right */
-.powers{position:absolute;right:var(--gutr);bottom:calc(var(--sb) + 12px);display:grid;grid-template-columns:repeat(2,62px);gap:8px;z-index:2}
+/* a button for each power, down the right edge at the bottom */
+.powers{position:absolute;right:var(--gutr);bottom:calc(var(--sb) + 12px);display:flex;flex-direction:column;gap:8px;z-index:2}
 .power{position:relative;appearance:none;width:62px;height:62px;border-radius:50%;border:3px solid var(--ink);background:var(--sun);
   color:var(--ink);padding:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;cursor:pointer;
   box-shadow:0 4px 0 var(--ink);touch-action:none;-webkit-user-select:none;user-select:none;overflow:hidden}

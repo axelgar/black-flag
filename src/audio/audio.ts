@@ -137,6 +137,15 @@ const boom = (big: boolean, at: At) => { noise(big ? 1.1 : 0.55, big ? 320 : 600
 const splash = (at: At) => noise(0.34, 2600, 0.8, 0.06, 'highpass', at);
 const thud = (at: At) => noise(0.1, 900, 2.0, 0.07, 'bandpass', at);
 const hurt = () => { noise(0.3, 420, 0.9, 0.18); tone(220, 60, 0.3, 0.09, 'sawtooth'); };
+// the powers: every gun at once, rolling down her side; a siren's four notes and a sigh; a
+// shield going up with a shimmer, and the ting of a ball off it
+const broadside = (at: At) => { for (let i = 0; i < 5; i++) cannon(at, i * 0.05); boom(false, at); };
+const siren = (at: At) => {
+  [587.33, 698.46, 880, 1174.66].forEach((f, i) => tone(f, f * 1.002, 0.35, 0.06, 'sine', at, i * 0.09));
+  tone(1050, 700, 0.6, 0.035, 'sine', at, 0.38);
+};
+const shieldUp = (at: At) => { tone(320, 1280, 0.3, 0.08, 'triangle', at); noise(0.25, 5000, 0.7, 0.03, 'highpass', at); };
+const ting = (at: At) => tone(1600, 1250, 0.14, 0.06, 'triangle', at);
 export const pickup = () => { if (ready()) tone(660, 990, 0.13, 0.08, 'triangle'); };
 export const click = () => { if (ready()) tone(900, 700, 0.05, 0.04, 'triangle'); };
 
@@ -215,13 +224,19 @@ export function consume(events: GameEvent[], mine: (e: GameEvent) => boolean) {
   for (const e of events) {
     const at = place(e.x as number | undefined, e.y as number | undefined);
     switch (e.k) {
-      case 'volley': if (guns++ < 3) { cannon(at); if (e.heavy) cannon(at, 0.04); } break;
-      case 'thud': thud(at); break;
+      case 'volley':
+        if (typeof e.n === 'number') broadside(at);
+        else if (guns++ < 3) { cannon(at); if (e.heavy) cannon(at, 0.04); }
+        break;
+      case 'thud': if (e.shield) ting(at); else thud(at); break;
       case 'splash': if (at.gain > 0.35) splash(at); break;
       case 'hit': if (mine(e)) hurt(); break;
       case 'sunk': boom(true, at); break;
       case 'take': if (mine(e)) pickup(); break;
-      case 'power': if (mine(e)) pickup(); break;
+      case 'power':
+        if (e.kind === 'song') siren(at);
+        else if (e.kind === 'shield') shieldUp(at);
+        break;
       case 'won': if (mine(e)) fanfare(); break;
       default: break;
     }

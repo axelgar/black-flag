@@ -9,10 +9,15 @@
 // drawn, the difference is eased away over a fraction of a second rather than jumped,
 // unless it is large or she has just come back into the sea.
 //
-// What it can't know (a bump from another ship, the sea closing in a moment early) comes
-// back as a small correction. PLANS/PREDICTION.md has the reasoning.
+// A ship singing nearby pulls her too (sim/powers.ts): the phone pulls her toward every
+// singer it can see, as the sea does, rather than be told a moment late and corrected.
+//
+// What it can't know (a bump from another ship, the sea closing in a moment early, a song
+// that began a moment ago) comes back as a small correction. PLANS/PREDICTION.md has the
+// reasoning.
 
 import { angleTo, wrap } from '../core/vec';
+import { pull } from '../sim/powers';
 import * as Wo from '../sim/world';
 import type { Input, Ship, World } from '../sim/types';
 import { wayOf } from './protocol';
@@ -27,6 +32,14 @@ const SETTLE = 0.1;
 
 type Move = Input['move'];
 interface Tick { n: number; k: number; move: Move }
+/** Where every other ship singing is: [x, y]. */
+export type Singers = readonly (readonly [number, number])[];
+
+/** One tick of her own: her helm, then any song pulling her. */
+function sail(w: Pick<World, 'map' | 'R'>, s: Ship, move: Move, singers: Singers) {
+  Wo.move(w, s, FIXED, { move, fire: null, auto: false });
+  for (const [x, y] of singers) pull(s, x, y, FIXED);
+}
 
 export class Lead {
   /** Her as the phone has stepped her, without the eased correction. Null while she is out. */
@@ -40,14 +53,14 @@ export class Lead {
   private off = { x: 0, y: 0, h: 0 };
 
   /** Step her on by `dt`, sailing by helm `n`, the hands most lately sent. */
-  advance(w: Pick<World, 'map' | 'R'>, dt: number, n: number, move: Move) {
+  advance(w: Pick<World, 'map' | 'R'>, dt: number, n: number, move: Move, singers: Singers = []) {
     this.acc += dt;
     let steps = 0;
     while (this.acc >= FIXED && steps < 24) {
       if (n !== this.n) { this.n = n; this.k = 0; }
       this.log.push({ n, k: this.k++, move });
       if (this.log.length > KEEP) this.log.shift();
-      if (this.ship) Wo.move(w, this.ship, FIXED, { move, fire: null, auto: false });
+      if (this.ship) sail(w, this.ship, move, singers);
       this.acc -= FIXED; steps++;
     }
     if (steps === 24) this.acc = 0;
@@ -60,7 +73,7 @@ export class Lead {
    * and radius). She is put where the sea says and sailed on through the ticks it has not
    * sailed yet.
    */
-  hear(w: Pick<World, 'map' | 'R' | 'focus'>, me: number[], out: boolean) {
+  hear(w: Pick<World, 'map' | 'R' | 'focus'>, me: number[], out: boolean, singers: Singers = []) {
     if (out) { this.ship = null; return; }
     const was = this.ship ? { x: this.ship.x + this.off.x, y: this.ship.y + this.off.y, h: this.ship.h + this.off.h } : null;
     const s = this.ship ?? Wo.launch({}, w.focus);
@@ -71,7 +84,7 @@ export class Lead {
     const rest = from < 0 ? [] : this.log.slice(from);
     if (from > 0) this.log.splice(0, from);
     else if (from < 0) this.log.length = 0;
-    for (const t of rest) Wo.move(w, s, FIXED, { move: t.move, fire: null, auto: false });
+    for (const t of rest) sail(w, s, t.move, singers);
     this.ship = s;
     if (!was) { this.off = { x: 0, y: 0, h: 0 }; return; }
     const ox = was.x - s.x, oy = was.y - s.y, d = Math.hypot(ox, oy);

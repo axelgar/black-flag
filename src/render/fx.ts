@@ -22,7 +22,6 @@ export const FX = {
   wood: new THREE.Color('#9A5B2E'),
   dust: new THREE.Color('#B9B4A6'),
   soot: new THREE.Color('#585E6B'),
-  mist: new THREE.Color('#D5DCE6'),
   song: new THREE.Color('#FF7AD9'),
   shield: new THREE.Color('#7FE3FF'),
 };
@@ -78,18 +77,20 @@ export class Fx {
 
   /* ------------------------------------------------------------ recipes -- */
 
-  /** A volley: smoke rolling out along the bearing from her side, and the flash of the guns. */
-  volley(x: number, y: number, h: number, side: number, bearing: number, heavy: boolean) {
+  /** A volley: smoke rolling out along the bearing from her side, and the flash of the guns.
+   *  A broadside (`big`) is every gun down her side at once. */
+  volley(x: number, y: number, h: number, side: number, bearing: number, heavy: boolean, big = false) {
     const fx = Math.cos(h), fy = Math.sin(h);
     const sx = -fy * side, sy = fx * side;
     const bx = Math.cos(bearing), by = Math.sin(bearing);
-    const n = Math.max(2, Math.round(3 * this.scale));
+    const n = Math.max(2, Math.round((big ? 7 : 3) * this.scale)), len = big ? 18 : 12, size = heavy || big ? 3.4 : 2.6;
     for (let i = 0; i < n; i++) {
-      const along = (i / (n - 1) - 0.5) * 12;
+      const along = (i / (n - 1) - 0.5) * len;
       const px = x + fx * along + sx * 4.5, py = y + fy * along + sy * 4.5;
-      this.puff(px, 2.6, py, bx * 9, 1.5, by * 9, heavy ? 3.4 : 2.6, 0.9 + Math.random() * 0.3, FX.smoke);
-      this.puff(px + bx * 1.5, 2.6, py + by * 1.5, bx * 14, 0.5, by * 14, heavy ? 2.4 : 1.6, 0.22, FX.fire);
+      this.puff(px, 2.6, py, bx * 9, 1.5, by * 9, size, (big ? 1.4 : 0.9) + Math.random() * 0.3, FX.smoke);
+      this.puff(px + bx * 1.5, 2.6, py + by * 1.5, bx * 14, 0.5, by * 14, heavy || big ? 2.4 : 1.6, 0.22, FX.fire);
     }
+    if (big) this.ring(x + sx * 6, y + sy * 6, 4, 26, 0.5, FX.fire);
   }
 
   splash(x: number, y: number) {
@@ -139,11 +140,11 @@ export class Fx {
     }
   }
 
-  /** Smoke laid round a ship: a bank of grey puffs that hangs a while. */
-  smokeBank(x: number, y: number, n = 16, reach = 14) {
-    for (let i = 0; i < Math.max(2, Math.round(n * this.scale)); i++) {
-      const a = Math.random() * Math.PI * 2, r = Math.random() * reach;
-      this.puff(x + Math.cos(a) * r, 2 + Math.random() * 4, y + Math.sin(a) * r, Math.cos(a) * 2, 0.6, Math.sin(a) * 2, 5 + Math.random() * 3, 2.4 + Math.random(), FX.mist);
+  /** A singer's notes: pink bubbles that float up off her and away. */
+  notes(x: number, y: number, n = 2) {
+    for (let i = 0; i < Math.max(1, Math.round(n * this.scale)); i++) {
+      const a = Math.random() * Math.PI * 2;
+      this.puff(x + Math.cos(a) * 5, 9 + Math.random() * 5, y + Math.sin(a) * 5, Math.cos(a) * 4, 6 + Math.random() * 3, Math.sin(a) * 4, 0.9 + Math.random() * 0.5, 1.1, FX.song, false, 1.2);
     }
   }
 

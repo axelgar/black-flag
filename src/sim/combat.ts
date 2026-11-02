@@ -22,8 +22,8 @@ export function lead(x: number, y: number, t: Vessel, speed: number, k = 1): [nu
   return [t.x + Math.cos(t.h) * t.v * tt, t.y + Math.sin(t.h) * t.v * tt];
 }
 
-/** Can she go after that ship? Every other ship on the water, unless it is in smoke. */
-export const foe = (s: Ship, o: Ship) => o !== s && !o.out && !(o.smoke > 0);
+/** Can she hurt that ship? Every other ship on the water. */
+export const foe = (s: Ship, o: Ship) => o !== s && !o.out;
 
 /** The nearest ship she can see within reach, or null. */
 export function nearestFoe(w: World, s: Ship, reach: number): Ship | null {
@@ -73,7 +73,6 @@ export function fire(w: World, s: Ship, bearing: number): boolean {
  *  broadside (powers.ts). */
 export function volley(w: World, s: Ship, bearing: number, n: number, spread: number, heavy: boolean) {
   s.invuln = 0;                      // firing ends a newcomer's grace
-  s.smoke = 0;                       // and gives her away in smoke
   const side = sideFacing(s.h, bearing);
   const [sx, sy] = sideVec(s.h, side);
   const fx = Math.cos(s.h), fy = Math.sin(s.h);
@@ -89,7 +88,7 @@ export function volley(w: World, s: Ship, bearing: number, n: number, spread: nu
       age: 0, life: T.range / T.ballSpeed, dead: false, by: s.id,
     });
   }
-  ev(w, 'volley', { p: s.id, side, a: bearing, heavy, x: s.x, y: s.y });
+  ev(w, 'volley', { p: s.id, side, a: bearing, heavy, x: s.x, y: s.y, ...(n === T.balls ? {} : { n }) });
 }
 
 /* ------------------------------------------------------------ shot in air -- */

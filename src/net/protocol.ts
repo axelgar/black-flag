@@ -15,7 +15,7 @@ import { angleTo, clamp } from '../core/vec';
 import { CRATES, POWERS, type CrateKind, type GameEvent, type Ship, type World } from '../sim/types';
 import * as Wo from '../sim/world';
 
-export const WIRE = 3;
+export const WIRE = 4;
 
 /* ------------------------------------------------------------ phone → sea -- */
 
@@ -53,7 +53,7 @@ export interface Snap {
   R: number;               // the sea's radius
   p: number[][];           // every ship, as anyone looking on sees her: [id, x, y, h, v, rot,
                            // sail, hull, hit, invuln, flags, streak]; flags: out 1, left 2,
-                           // heavy 4, boost 8, smoke 16, song 32, shield 64
+                           // heavy 4, boost 8, song 16, shield 32
   me?: number[] | null;    // the phone's own ship's own (see mine()). Put on by the host, phone
                            // by phone: nobody else's phone needs to know her guns
   s: number[][];           // balls fired since the last: [id, x, y, vx, vy, fired at, life, heavy, by]
@@ -114,7 +114,7 @@ export function pack(w: World, ck: number, events: GameEvent[], log: ShotLog): S
     p: w.ships.map((c) => [
       c.id, q(c.x, 10), q(c.y, 10), q(c.h, 1000), q(c.v, 10), q(c.rot, 1000), q(c.sail), q(c.hull, 10), q(c.hit, 10),
       q(c.invuln, 10),
-      (c.out ? 1 : 0) | (c.left ? 2 : 0) | (c.heavy ? 4 : 0) | (c.boost > 0 ? 8 : 0) | (c.smoke > 0 ? 16 : 0) | (c.song > 0 ? 32 : 0) | (c.shield > 0 ? 64 : 0),
+      (c.out ? 1 : 0) | (c.left ? 2 : 0) | (c.heavy ? 4 : 0) | (c.boost > 0 ? 8 : 0) | (c.song > 0 ? 16 : 0) | (c.shield > 0 ? 32 : 0),
       c.streak,
     ]),
     s, sx,
@@ -313,7 +313,7 @@ export class Mirror {
       s.hit = r[8]; s.invuln = r[9];
       const f = r[10];
       s.out = !!(f & 1) || s.left; s.heavy = !!(f & 4); s.boost = f & 8 ? 1 : 0;
-      s.smoke = f & 16 ? 1 : 0; s.song = f & 32 ? 1 : 0; s.shield = f & 64 ? 1 : 0;
+      s.song = f & 16 ? 1 : 0; s.shield = f & 32 ? 1 : 0;
       s.streak = r[11];
     }
     // her own: the guns the HUD shows

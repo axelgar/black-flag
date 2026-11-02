@@ -6,7 +6,7 @@
 //             canvas. The right half aims: drag to aim, let go to fire that way; drag
 //             back to the middle to think better of it. A quick tap fires at the
 //             nearest ship.
-//   keyboard  WASD or the arrows sail her; Space fires at the nearest ship; 1 to 4 are
+//   keyboard  WASD or the arrows sail her; Space fires at the nearest ship; 1 to 3 are
 //             the powers.
 //   buttons   one for each power, on the right (ui/hud.ts).
 //   mouse     hold the left button to aim at the pointer and let go to fire; the right
@@ -41,8 +41,8 @@ addEventListener('pointerdown', (e) => {
 /** The bearing being aimed along this moment, for the wedge on the water. */
 export const aiming = () => state.aim;
 
-/** Has the left stick been touched yet? For the hints. */
-export const used = { move: false, aim: false, tap: false };
+/** Has each been used yet? For the hints. */
+export const used = { move: false, aim: false, tap: false, power: false };
 
 export function reset() {
   state.stick = null; state.aim = null; state.fire = []; state.auto = 0; state.powers = [];
@@ -53,7 +53,7 @@ export function reset() {
 export function drop() { state.fire = []; state.auto = 0; state.powers = []; }
 
 /** A press on power `i` (POWERS order), from its button or its key. */
-export function press(i: number) { state.powers.push(i); }
+export function press(i: number) { state.powers.push(i); used.power = true; }
 
 /** The hands, for this tick. One press is handed over a call, so none is lost. */
 export function read(): Input {
@@ -75,7 +75,7 @@ export function attachKeys(onLeave: () => void, onAny: () => void) {
     const k = e.key.toLowerCase();
     if (k === 'escape') { e.preventDefault(); onLeave(); return; }
     if ((k === ' ' || k === 'spacebar') && !e.repeat) { e.preventDefault(); state.auto++; }
-    if (/^[1-4]$/.test(k) && !e.repeat) press(Number(k) - 1);
+    if (/^[1-3]$/.test(k) && !e.repeat) press(Number(k) - 1);
     if (k.startsWith('arrow')) e.preventDefault();
     keys.add(k);
     onAny();

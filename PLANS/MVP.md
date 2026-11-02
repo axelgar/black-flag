@@ -70,6 +70,13 @@ Black Flag and this would have been a free shot."
   - Repair: restores 50% of the hull.
   - Speed: +40% for 5 s.
   - Heavy shot: the next volley does double damage.
+- **Powers** (added 2026-11-02, after four were tried and smoke was dropped): three
+  buttons, bottom right, each **once a life**. A ship that sinks has all three again when
+  she comes back. Bots use them too.
+  - Broadside: 8 balls in one fan at the nearest ship, without using a shot. The finisher.
+  - Mermaid song: for 4 s, every ship within 90 m is pulled toward you at 12 m/s, however
+    it is sailing. It catches a ship running away, which a ship of the same speed can't.
+  - Shield: for 3 s, balls stop at a bubble round you. The way out of a fight going wrong.
 
 ## The fight
 
@@ -84,6 +91,8 @@ Black Flag and this would have been a free shot."
     (hull 160) with bot skill 0.9, after a simulation showed a win took under a minute.
     Eased to 3 volleys (hull 100) and bot skill 0.2 the same day, only so a phone could
     win and test saving the free shot, then put back to hull 160 and bot skill 0.9.
+    With the powers (bots use them too), bot skill 0.5 gives the same odds 0.9 gave
+    without them.
   - The hull mends slowly after 3 s without being hit.
   - Respawn takes 3 s.
   - A clean run of 5 takes 3–5 minutes, and most players win within 15–30 minutes of

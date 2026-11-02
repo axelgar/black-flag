@@ -13,6 +13,7 @@
 import { parseArgs } from 'node:util';
 import { TUNING } from '../src/data/tuning';
 import { Sea } from '../src/net/sea';
+import { POWERS } from '../src/sim/types';
 import { steer, taps, type Style } from './brain';
 
 const { values: o } = parseArgs({
@@ -44,12 +45,14 @@ function sail(seed: string, style: Style) {
   sea.step(STEP);
   const id = sea.roster().seats.find((s) => s.seat === 'me')!.id;
   let n = 0, a = 0, t = 0, lastTap = -1e9, sunk = 0, wasOut = false, lifeFrom = 0;
+  const u = POWERS.map(() => 0);
   while (t < LIMIT) {
     const w = sea.world, me = w.ships[id];
     if (!me.out) {
       if (taps(w, me, t - lastTap, style)) { a++; lastTap = t; }
-      const m = steer(w, me, STEP, style);
-      sea.helm('me', { t: 'in', n: ++n, m: m ? [m.x, m.y] : null, f: 0, fa: 0, a });
+      const { move: m, power } = steer(w, me, STEP, style);
+      if (power != null) u[power]++;
+      sea.helm('me', { t: 'in', n: ++n, m: m ? [m.x, m.y] : null, f: 0, fa: 0, a, u: [...u] });
     }
     sea.step(STEP);
     t += STEP;

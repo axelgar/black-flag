@@ -131,7 +131,7 @@ export class Link {
         const w = this.mirror.world;
         if (!m.me || !w) break;
         const row = m.p.find((r) => r[0] === w.focus);
-        this.lead.hear({ map: w.map, R: m.R, focus: w.focus }, m.me, !row || !!(row[10] & 1));
+        this.lead.hear({ map: w.map, R: m.R, focus: w.focus }, m.me, !row || !!(row[10] & 1), this.singers());
         this.fired = this.fired.filter((n) => n > m.me![6]);
         break;
       }
@@ -176,7 +176,7 @@ export class Link {
     const sent = this.send(m, now);
     if (sent && (i.fire != null || i.auto)) this.volley(i.fire, now);
     const w = this.mirror.world;
-    if (w) this.lead.advance({ map: w.map, R: w.R }, dt, this.n, this.sentMove);
+    if (w) this.lead.advance({ map: w.map, R: w.R }, dt, this.n, this.sentMove, this.singers());
   }
 
   /** Was it sent? */
@@ -211,6 +211,14 @@ export class Link {
     this.fired.push(this.n);
     this.shown.push(now);
     this.lastShot = now;
+  }
+
+  /** Every other ship singing, where she is drawn: the phone's own ship is pulled toward
+   *  each as it steps her (net/lead.ts). */
+  private singers(): [number, number][] {
+    const w = this.mirror.world;
+    if (!w) return [];
+    return w.ships.filter((s) => s.song > 0 && !s.out && s.id !== w.focus).map((s) => [s.x, s.y]);
   }
 
   /** Try again, from the start, after the line gave up: a guest's wifi may have come back. */

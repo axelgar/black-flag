@@ -2,7 +2,8 @@
 // sea is a disc in the game's blues, closing in and opening out with the ships on it; the
 // islands are cartoon shapes; every ship is an outlined icon in her captain's colour with
 // her name and skulls over her, and a WANTED ship pulses red. Shots are short streaks and
-// a sinking is a splash.
+// a sinking is a splash. A shield is a bubble over her; a song, a pink ring as wide as its
+// reach with rings closing in on her.
 //
 // A 2D canvas, so the TV needs no WebGL and none of the 3D game. Ships, names and splashes
 // are drawn bigger than life where the sea is big: a 24 m ship on a 1 km sea would be a
@@ -20,7 +21,7 @@ const C = {
   sand: '#F6DD94', sand2: '#E6C677', grass: '#79C850', grass2: '#5DB043', leaf: '#3E9A3A',
   rock: '#A6A3B4', rock2: '#8C899C', trunk: '#8A5A33',
   ink: '#10233F', wood: '#9A5B2E', deck: '#C98A4B', sail: '#FFF6E0', red: '#FF4D3D', sun: '#FFD43B',
-  foam: '#E9FBFF', heavy: '#FF6A1F',
+  foam: '#E9FBFF', heavy: '#FF6A1F', shield: '#7FE3FF', song: '#FF7AD9',
 };
 const CRATE: Record<CrateKind, string> = { repair: '#3FD46A', speed: '#FFD23F', heavy: '#FF5A3C' };
 
@@ -28,7 +29,7 @@ const TAU = Math.PI * 2;
 const MARGIN = 14;            // metres of sea kept round the edge of the frame
 const WAVES = 160;            // wave marks scattered on the water
 
-interface Fx { k: string; x: number; y: number; t: number; dur: number; p?: number; c?: string; a?: number; bits?: number[][] }
+interface Fx { k: string; x: number; y: number; t: number; dur: number; p?: number; c?: string; a?: number; big?: boolean; bits?: number[][] }
 
 interface Placed { x: number; y: number; w: number; h: number }
 
@@ -71,8 +72,19 @@ export class Chart {
       switch (e.k) {
         case 'splash': this.fx.push({ k: 'splash', x, y, t: now, dur: 0.6 }); break;
         case 'hit': this.fx.push({ k: 'hit', x, y, t: now, dur: 0.4 }); break;
-        case 'thud': if (e.rock) this.fx.push({ k: 'dust', x, y, t: now, dur: 0.5 }); break;
-        case 'volley': this.fx.push({ k: 'smoke', x, y, t: now, dur: 0.7, a: e.a as number }); break;
+        case 'thud':
+          if (e.rock) this.fx.push({ k: 'dust', x, y, t: now, dur: 0.5 });
+          else if (e.shield) this.fx.push({ k: 'pop', x, y, t: now, dur: 0.35, c: C.shield });
+          break;
+        case 'volley': {
+          const big = typeof e.n === 'number';
+          this.fx.push({ k: 'smoke', x, y, t: now, dur: big ? 1.1 : 0.7, a: e.a as number, big });
+          if (big) this.fx.push({ k: 'pop', x, y, t: now, dur: 0.5, c: C.heavy });
+          break;
+        }
+        case 'power':
+          if (e.kind === 'shield') this.fx.push({ k: 'pop', x: 0, y: 0, p: e.p as number, t: now, dur: 0.5, c: C.shield });
+          break;
         case 'sunk': {
           const r = rng(`${x}:${y}`);
           const bits = Array.from({ length: 14 }, (_, i) => [r() * TAU, 0.4 + r() * 0.6, r() * TAU, i < 6 ? 1 : 0]);
@@ -160,6 +172,7 @@ export class Chart {
       for (const c of w.crates) this.crate(...at(c.x, c.y), c.kind, c.age, c.id, t);
       this.shots(w, at, k);
       const afloat = w.ships.filter((s) => !s.out && !s.left);
+      for (const s of afloat) if (s.song > 0) this.song(...at(s.x, s.y), L, k, t);
       for (const s of afloat) this.under(s, ...at(s.x, s.y), L, seats, t);
       for (const s of afloat) this.ship(s, ...at(s.x, s.y), L, seats, t);
     }
@@ -236,12 +249,36 @@ export class Chart {
     ctx.lineWidth = Math.max(2, L * 0.045); ctx.strokeStyle = m.color;
     if (m.dashed) { ctx.setLineDash([L * 0.2, L * 0.13]); ctx.lineDashOffset = -t * L * 0.6; }
     ctx.stroke(); ctx.setLineDash([]);
+    if (s.shield > 0) {
+      // a bubble over her, its edge bright
+      ctx.beginPath(); ctx.arc(x, y, L * 0.82, 0, TAU);
+      ctx.fillStyle = hexA(C.shield, 0.28 + 0.06 * Math.sin(t * 9)); ctx.fill();
+      ctx.lineWidth = Math.max(4, L * 0.08); ctx.strokeStyle = C.ink; ctx.stroke();
+      ctx.lineWidth = Math.max(2.5, L * 0.05); ctx.strokeStyle = C.shield; ctx.stroke();
+    }
     if (s.streak >= T.wanted) {
       const f = (t * 1.2) % 1;
       ctx.beginPath(); ctx.arc(x, y, r + 6 + f * L * 0.5, 0, TAU);
       ctx.strokeStyle = hexA(C.red, 1 - f); ctx.lineWidth = 5; ctx.stroke();
       ctx.beginPath(); ctx.arc(x, y, r + 5, 0, TAU);
       ctx.strokeStyle = C.red; ctx.lineWidth = 4; ctx.stroke();
+    }
+  }
+
+  /** A song: a pink ring as wide as its reach, and rings closing in on her from it, which is
+   *  the way everything inside is being pulled. Never drawn smaller than her own ring. */
+  private song(x: number, y: number, L: number, k: number, t: number) {
+    const { ctx } = this;
+    const R = Math.max(T.songRange * k, L * 1.6), r = L * 0.62;
+    ctx.beginPath(); ctx.arc(x, y, R, 0, TAU);
+    ctx.fillStyle = hexA(C.song, 0.08); ctx.fill();
+    ctx.setLineDash([L * 0.25, L * 0.15]); ctx.lineDashOffset = t * L * 0.5;
+    ctx.lineWidth = Math.max(3, L * 0.06); ctx.strokeStyle = C.song; ctx.stroke();
+    ctx.setLineDash([]);
+    for (let i = 0; i < 2; i++) {
+      const f = (t * 1.1 + i * 0.5) % 1;
+      ctx.beginPath(); ctx.arc(x, y, R - (R - r) * f, 0, TAU);
+      ctx.strokeStyle = hexA(C.song, 0.9 * (1 - f)); ctx.lineWidth = 4; ctx.stroke();
     }
   }
 
@@ -466,10 +503,11 @@ export class Chart {
           break;
         }
         case 'smoke': {
-          const a = f.a ?? 0;
-          for (let i = 0; i < 3; i++) {
-            const d = L * (0.35 + i * 0.18 + u * 0.2);
-            ctx.beginPath(); ctx.arc(x + Math.cos(a) * d, y + Math.sin(a) * d, L * (0.08 + u * 0.1), 0, TAU);
+          // a broadside's smoke fans out wider and further
+          const a = f.a ?? 0, n = f.big ? 5 : 3;
+          for (let i = 0; i < n; i++) {
+            const d = L * (0.35 + i * 0.18 + u * 0.2), off = f.big ? (i / (n - 1) - 0.5) * 0.5 : 0;
+            ctx.beginPath(); ctx.arc(x + Math.cos(a + off) * d, y + Math.sin(a + off) * d, L * ((f.big ? 0.12 : 0.08) + u * 0.1), 0, TAU);
             ctx.fillStyle = `rgba(255,255,255,${0.75 * (1 - u)})`; ctx.fill();
           }
           break;

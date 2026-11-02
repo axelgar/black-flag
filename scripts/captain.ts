@@ -23,6 +23,7 @@ import { LOOKS } from '../src/data/ships';
 import type { Me, Prize } from '../src/net/cloud';
 import { SUPABASE_KEY, SUPABASE_URL } from '../src/net/project';
 import { Mirror, WIRE, type FromSea } from '../src/net/protocol';
+import { POWERS } from '../src/sim/types';
 import { steer, taps, type Style } from './brain';
 
 const { values: o } = parseArgs({
@@ -97,6 +98,7 @@ async function captain(i: number): Promise<Done> {
     const ws = new WebSocket(SEA);
     const start = performance.now() / 1000;
     let last = start, n = 0, a = 0, lastTap = -1e9, streak = -1, sunk = 0, wasOut = true, over = false;
+    const u = POWERS.map(() => 0);
     const send = (m: object) => { if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(m)); };
     const finish = (how: 'won' | 'time' | Error) => {
       if (over) return;
@@ -137,8 +139,9 @@ async function captain(i: number): Promise<Done> {
       wasOut = false;
       if (me.streak !== streak) { streak = me.streak; if (streak) say(`${'💀'.repeat(streak)} streak ${streak}`); }
       if (taps(w, me, now - lastTap, STYLE)) { a++; lastTap = now; }
-      const m = steer(w, me, dt, STYLE);
-      send({ t: 'in', n: ++n, m: m ? [Math.round(m.x * 100) / 100, Math.round(m.y * 100) / 100] : null, f: 0, fa: 0, a });
+      const { move: m, power } = steer(w, me, dt, STYLE);
+      if (power != null) u[power]++;
+      send({ t: 'in', n: ++n, m: m ? [Math.round(m.x * 100) / 100, Math.round(m.y * 100) / 100] : null, f: 0, fa: 0, a, u });
     }, 1000 / 15);
   });
 

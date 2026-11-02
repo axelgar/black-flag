@@ -4,14 +4,17 @@
 //
 // It picks a ship, circles it at cannon range and fires with an aim that is off by more
 // the less skilled it is. When it is low it backs off to mend, and it takes a crate near
-// it. It never crowds a ship more than botCrowd bots deep, and a WANTED ship is no more
+// it. It uses its powers as a captain would, each once a life: the shield when it is
+// losing a fight, the broadside to finish a ship close by, the song on one getting away;
+// the less skilled, the slower it is to think of them. It never crowds a ship more than botCrowd bots deep, and a WANTED ship is no more
 // interesting to it than any other: humans hunt the near-winners, bots don't gang up.
 
 import { clamp } from '../core/vec';
 import { TUNING as T } from '../data/tuning';
-import { lead, foe } from './combat';
+import { lead, foe, nearestFoe } from './combat';
 import { lineOfSight, shoreDist } from './map';
-import type { Brain, Input, Ship, World } from './types';
+import { can } from './powers';
+import { POWERS, type Brain, type Input, type Ship, type World } from './types';
 
 const NAMES = [
   'Calico Jack', 'Anne Bonny', 'Mary Read', 'Blackbeard', 'Black Bart', 'Stede Bonnet',
@@ -21,13 +24,15 @@ const NAMES = [
 /** A bot's name, by the order it came aboard. */
 export const botName = (n: number) => NAMES[n % NAMES.length];
 
-export const newBrain = (w: World): Brain => ({ target: -1, think: 0, orbit: w.r() < 0.5 ? 1 : -1, wait: 1 + w.r(), flee: false });
+export const newBrain = (w: World): Brain => ({ target: -1, think: 0, orbit: w.r() < 0.5 ? 1 : -1, wait: 1 + w.r(), flee: false, power: 1 + w.r() });
 
 /** What a bot does this tick. */
 export function botInput(w: World, s: Ship, dt: number): Input {
   const b = (s.brain ??= newBrain(w));
+  const skill = clamp(T.botSkill, 0, 1);
   b.think -= dt;
   b.wait -= dt;
+  b.power -= dt;
 
   // low: back off and mend; mended enough: back in
   if (s.hull < s.hullMax * 0.35) b.flee = true;
@@ -64,7 +69,6 @@ export function botInput(w: World, s: Ship, dt: number): Input {
   if (tgt && b.wait <= 0 && s.ammo > 0 && s.gapT <= 0) {
     const dist = Math.hypot(tgt.x - s.x, tgt.y - s.y);
     if (dist < T.range * 0.95 && lineOfSight(w.map, s.x, s.y, tgt.x, tgt.y)) {
-      const skill = clamp(T.botSkill, 0, 1);
       // a good bot leads its shot; a poor one aims where the ship is, and wide
       const [ax, ay] = lead(s.x, s.y, tgt, T.ballSpeed, skill);
       const err = (0.04 + (1 - skill) * 0.3) * gauss(w);
@@ -72,7 +76,29 @@ export function botInput(w: World, s: Ship, dt: number): Input {
       b.wait = 0.4 + (1 - skill) * 1.4 + w.r() * 0.5;
     }
   }
-  return { move: { x: Math.cos(heading) * sail, y: Math.sin(heading) * sail }, fire, auto: false };
+  let power: number | null = null;
+  if (b.power <= 0) {
+    b.power = 0.4 + (1 - skill) * 1.2 + w.r() * 0.4;
+    if (w.r() < 0.35 + 0.65 * skill) power = reach(w, s, tgt);
+  }
+  return { move: { x: Math.cos(heading) * sail, y: Math.sin(heading) * sail }, fire, auto: false, power };
+}
+
+const SHIELD = POWERS.indexOf('shield'), BROADSIDE = POWERS.indexOf('broadside'), SONG = POWERS.indexOf('song');
+
+/** The power it reaches for now, if any. */
+function reach(w: World, s: Ship, tgt: Ship | undefined): number | null {
+  // being hit, and losing
+  if (can(s, SHIELD) && s.hull < s.hullMax * 0.45 && s.mendT < 0.5) return SHIELD;
+  if (!tgt) return null;
+  // a ship close by and hurt, or nothing to lose
+  const near = nearestFoe(w, s, T.range * 0.6);
+  if (can(s, BROADSIDE) && near && (near.hull < near.hullMax * 0.6 || s.hull < s.hullMax * 0.35)) return BROADSIDE;
+  // hers getting away: under way, heading off from her, and still in the song's reach
+  const dx = tgt.x - s.x, dy = tgt.y - s.y, d = Math.hypot(dx, dy);
+  const off = (Math.cos(tgt.h) * dx + Math.sin(tgt.h) * dy) / Math.max(d, 1);
+  if (can(s, SONG) && d > T.range * 0.55 && d < T.songRange && off > 0.5 && tgt.v > T.speed * 0.5) return SONG;
+  return null;
 }
 
 /** Which ship to go after: usually the nearest, sometimes another in reach, never one that

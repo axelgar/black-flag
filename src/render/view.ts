@@ -14,6 +14,7 @@ import type { GameEvent, Ship, World } from '../sim/types';
 import type { GameMap } from '../sim/map';
 import { Fleet, type ShipDraw } from './ships';
 import { CRATE_COLOR, Crates } from './crates';
+import { Auras, BUBBLE, type AuraDraw } from './auras';
 import { FX, Fx } from './fx';
 import { inkWidth } from './ink';
 import { Land, propsFrom } from './land';
@@ -46,6 +47,7 @@ export class View {
   readonly fleet = new Fleet();
   readonly fx = new Fx();
   private crates = new Crates(PITCH);
+  private auras = new Auras();
   private aimMesh: THREE.Mesh;
   private mode: Mode = 'show';
   private world: World | null = null;
@@ -84,7 +86,7 @@ export class View {
     this.aimMesh.visible = false;
     this.aimMesh.renderOrder = 3;
 
-    this.scene.add(this.sea.mesh, this.land.group, this.fleet.group, this.fx.group, this.crates.group, this.aimMesh);
+    this.scene.add(this.sea.mesh, this.land.group, this.fleet.group, this.fx.group, this.crates.group, this.auras.group, this.aimMesh);
     this.resize();
   }
 
@@ -225,21 +227,23 @@ export class View {
       const s = p >= 0 ? w.ships[p] : undefined;
       const mine = p === w.focus;
       switch (e.k) {
-        case 'volley':
-          if (s) this.fx.volley(e.x as number, e.y as number, s.h, e.side === 1 ? 1 : -1, e.a as number, !!e.heavy);
-          if (mine) this.shake = Math.max(this.shake, 0.35);
+        case 'volley': {
+          const big = typeof e.n === 'number';
+          if (s) this.fx.volley(e.x as number, e.y as number, s.h, e.side === 1 ? 1 : -1, e.a as number, !!e.heavy, big);
+          if (mine) this.shake = Math.max(this.shake, big ? 0.9 : 0.35);
           break;
+        }
         case 'splash': this.fx.splash(e.x as number, e.y as number); break;
         case 'thud':
           if (e.rock) this.fx.dust(e.x as number, e.y as number);
-          else if (e.shield) this.fx.ring(e.x as number, e.y as number, 1, 6, 0.3, FX.shield);
+          else if (e.shield) { this.fx.ring(e.x as number, e.y as number, 1, 7, 0.3, FX.shield); this.fx.puff(e.x as number, 3, e.y as number, 0, 1, 0, 2.2, 0.2, FX.shield); }
           else this.fx.hit(e.x as number, e.y as number);
           break;
         case 'power':
-          if (e.kind === 'smoke') this.fx.smokeBank(e.x as number, e.y as number);
-          else if (e.kind === 'song') this.fx.ring(e.x as number, e.y as number, 4, TUNING.songRange, 0.8, FX.song);
-          else if (e.kind === 'shield') this.fx.pop(e.x as number, e.y as number, FX.shield, 18);
-          if (mine) this.shake = Math.max(this.shake, 0.3);
+          // the song goes out to its reach; a shield pops up round her
+          if (e.kind === 'song') { this.fx.ring(e.x as number, e.y as number, 4, TUNING.songRange, 0.7, FX.song); this.fx.notes(e.x as number, e.y as number, 6); }
+          else if (e.kind === 'shield') this.fx.pop(e.x as number, e.y as number, FX.shield, BUBBLE * 1.3);
+          if (mine && e.kind !== 'broadside') this.shake = Math.max(this.shake, 0.25);
           break;
         case 'hit': {
           const v = this.seen.get(p);
@@ -281,12 +285,14 @@ export class View {
       scale: 1, color: S.color, hit: 0, ring: 2, shine: false,
     });
     this.fx.balls([]);
+    this.auras.draw([], this.t);
     this.crates.hide();
     this.aimMesh.visible = false;
   }
 
   private drawSea(w: World, dt: number, out: ShipDraw[]) {
     const t = this.t;
+    const auras: AuraDraw[] = [];
     for (const s of w.ships) {
       let v = this.seen.get(s.id);
       if (!v) {
@@ -313,9 +319,8 @@ export class View {
       }
       v.popT = Math.min(POP, v.popT + dt);
       v.x = s.x; v.y = s.y; v.h = s.h;
-      // in smoke she is gone from every screen but her own, where the smoke hangs round her
-      if (s.smoke > 0 && s.id !== w.focus) continue;
-      this.aura(s, v, dt, s.id === w.focus);
+      this.aura(s, v, dt);
+      if (s.shield > 0 || s.song > 0) auras.push({ x: s.x, y: s.y, shield: s.shield > 0, song: s.song > 0 });
       // she leans out of a turn, the way a cartoon ship would, and bobs on the swell
       v.heel += (Math.max(-0.32, Math.min(0.32, -s.rot * 0.13)) - v.heel) * Math.min(1, dt * 6);
       const scale = v.popT < POP ? Math.max(0.01, easeBack(v.popT / POP)) : 1;
@@ -326,7 +331,7 @@ export class View {
         lift: Math.sin(t * 1.6 + s.id * 2.1) * 0.18,
         scale, color, hit: v.hit,
         ring: s.id === w.focus ? 2 : 1,
-        shine: s.shield > 0 || (s.invuln > 0 && Math.floor(t * 8) % 2 === 0),
+        shine: s.invuln > 0 && Math.floor(t * 8) % 2 === 0,
       });
       // foam: a trail from her stern, and a little off her bow
       v.foam -= dt;
@@ -339,6 +344,7 @@ export class View {
       }
     }
     this.fx.balls(w.shots);
+    this.auras.draw(auras, t);
 
     this.crates.draw(w.crates, t, easeBack);
 
@@ -352,15 +358,15 @@ export class View {
     } else this.aimMesh.visible = false;
   }
 
-  /** What a power she has on looks like round her, a few times a second. */
-  private aura(s: Ship, v: Seen, dt: number, mine: boolean) {
+  /** While she sings, rings close in on her from the song's reach (what is inside is being
+   *  pulled in) and notes float up off her, a few times a second. The bubble and the reach
+   *  are drawn steady (auras.ts). */
+  private aura(s: Ship, v: Seen, dt: number) {
     v.aura -= dt;
-    if (v.aura > 0 || !(s.smoke > 0 || s.song > 0 || s.shield > 0)) return;
-    v.aura = 0.3;
-    if (s.shield > 0) this.fx.ring(s.x, s.y, 15, 17, 0.32, FX.shield);
-    // the song's ring closes in on her: what is inside it is being pulled in
-    if (s.song > 0) this.fx.ring(s.x, s.y, TUNING.songRange, 10, 0.9, FX.song);
-    if (s.smoke > 0 && mine) this.fx.smokeBank(s.x, s.y, 3, 10);
+    if (v.aura > 0 || !(s.song > 0)) return;
+    v.aura = 0.35;
+    this.fx.ring(s.x, s.y, TUNING.songRange, 10, 0.9, FX.song);
+    this.fx.notes(s.x, s.y);
   }
 
   /* --------------------------------------------------------------- camera -- */

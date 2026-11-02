@@ -55,8 +55,14 @@ Supabase (Postgres and sign-in) behind both.
 |---|---|---|
 | Sail | left thumb: push the way to go (north is always up), as far as you want to go fast; let go and she holds her course | WASD or the arrows |
 | Fire | right thumb: drag to aim, let go to fire; a quick tap fires at the nearest ship | hold the left button to aim at the pointer, let go to fire; Space or the right button fires at the nearest ship |
-| Powers (on trial) | four buttons, bottom right: 💥 broadside, 💨 smoke, 🧜‍♀️ song, 🛡️ shield | 1 to 4 |
+| Powers, once a life | three buttons, bottom right: 💥 broadside, 🧜‍♀️ song, 🛡️ shield | 1 to 3 |
 | Leave | ⚓ Leave | Esc |
+
+Three powers, each once a life, and all three back when you come back from sinking. Bots
+use them too:
+- **Broadside:** 8 balls at the nearest ship, without using a shot.
+- **Mermaid song:** pulls every ship within 90 m toward you for 4 s.
+- **Shield:** stops balls for 3 s.
 
 Three shots, which reload. Every number the fight is tuned by is in `src/data/tuning.ts`,
 explained in plain words; the sea server and the phones both read it. After changing it,
