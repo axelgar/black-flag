@@ -54,6 +54,10 @@ export interface Ship extends Vessel {
   left: boolean;           // gone for good: the seat is free for the next to join
   retire: boolean;         // a bot that leaves the next time she sinks, for a captain who came aboard
   rim: boolean;            // the edge of the sea has her head, until she points back in
+  cool: number[];          // seconds until each power (POWERS order) is ready again
+  smoke: number;           // seconds of smoke left: nobody else sees her
+  song: number;            // seconds of song left: ships near her are pulled in
+  shield: number;          // seconds of shield left: balls stop at it
   brain: Brain | null;
 }
 
@@ -66,6 +70,10 @@ export interface Shot {
 
 export type CrateKind = 'repair' | 'speed' | 'heavy';
 export const CRATES: CrateKind[] = ['repair', 'speed', 'heavy'];
+
+/** Powers, each on a button of its own. A press names one by its place here. */
+export type Power = 'broadside' | 'smoke' | 'song' | 'shield';
+export const POWERS: Power[] = ['broadside', 'smoke', 'song', 'shield'];
 
 export interface Crate { id: number; x: number; y: number; kind: CrateKind; age: number; dead: boolean }
 
@@ -83,6 +91,8 @@ export interface Input {
   fire: number | null;
   /** A quick tap: a volley at the nearest ship, this tick. */
   auto: boolean;
+  /** A power, by its place in POWERS, this tick. */
+  power?: number | null;
 }
 
 export interface World {

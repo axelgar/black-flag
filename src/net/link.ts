@@ -4,7 +4,7 @@
 
 import { TUNING as T } from '../data/tuning';
 import { autoBearing, sideFacing } from '../sim/combat';
-import type { GameEvent, Input } from '../sim/types';
+import { POWERS, type GameEvent, type Input } from '../sim/types';
 import { FIXED, Lead } from './lead';
 import { Mirror, WIRE, type FromSea, type Helm, type Nope, type Roster, type Welcome } from './protocol';
 
@@ -38,11 +38,11 @@ export class Link {
   private tries = 0;
   private closed = false;
   private opened = false;
-  private presses = { f: 0, fa: 0, a: 0 };
+  private presses = { f: 0, fa: 0, a: 0, u: POWERS.map(() => 0) };
   private sent = '';
   private sentAt = 0;
   private changedAt = -1;
-  private sentPresses = { f: 0, a: 0 };
+  private sentPresses = { f: 0, a: 0, u: '' };
   /** The hands' number, one more each time they change, and the stick as last sent. */
   private n = 0;
   private sentMove: Input['move'] = null;
@@ -167,10 +167,11 @@ export class Link {
     this.last = now;
     if (i.fire != null) { this.presses.f++; this.presses.fa = Math.round(i.fire * 1000) / 1000; }
     else if (i.auto) this.presses.a++;
+    if (i.power != null) this.presses.u[i.power]++;
     const m: Omit<Helm, 'n'> = {
       t: 'in',
       m: i.move ? [Math.round(i.move.x * 100) / 100, Math.round(i.move.y * 100) / 100] : null,
-      ...this.presses,
+      ...this.presses, u: [...this.presses.u],
     };
     const sent = this.send(m, now);
     if (sent && (i.fire != null || i.auto)) this.volley(i.fire, now);
@@ -188,12 +189,12 @@ export class Link {
     // The first change after a still spell goes at once: your own ship turns when it is
     // sent (net/lead.ts), so a change kept waiting is a helm that answers late.
     const p = this.sentPresses;
-    const pressed = m.f !== p.f || m.a !== p.a;
+    const pressed = m.f !== p.f || m.a !== p.a || String(m.u) !== p.u;
     if (!pressed && (s === this.sent ? now - this.sentAt < KEEPALIVE : now - this.changedAt < HELM_EVERY)) return false;
     if (this.ws?.readyState !== WebSocket.OPEN || this.state !== 'aboard') return false;
     if (s !== this.sent) { this.n++; this.changedAt = now; }
     this.ws.send(JSON.stringify({ ...m, n: this.n }));
-    this.sent = s; this.sentAt = now; this.sentPresses = { f: m.f, a: m.a };
+    this.sent = s; this.sentAt = now; this.sentPresses = { f: m.f, a: m.a, u: String(m.u) };
     this.sentMove = m.m ? { x: m.m[0], y: m.m[1] } : null;
     return true;
   }

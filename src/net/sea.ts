@@ -18,7 +18,7 @@ import { TUNING as T } from '../data/tuning';
 import { botName } from '../sim/bots';
 import * as Wo from '../sim/world';
 import { NO_INPUT } from '../sim/world';
-import type { GameEvent, Input, World } from '../sim/types';
+import { POWERS, type GameEvent, type Input, type World } from '../sim/types';
 import { ShotLog, mine, pack, type Helm, type Nope, type Ran, type Roster, type Snap } from './protocol';
 
 export const HUES = MARKS;        // colours, each solid and dashed on the bar's screen (data/colors.ts)
@@ -39,7 +39,7 @@ interface Hand extends Aboard {
   online: boolean;
   gone: number;           // when the phone dropped off, by the sea's clock
   helm: Helm;
-  seen: { f: number; a: number };   // the presses already fired
+  seen: { f: number; a: number; u: number[] };   // the presses already fired
   ran: Ran;               // which of their hands she is sailing by, and for how many ticks
   c: number;              // their colour
   ticket: boolean;        // sailing for a free shot: spent by a win
@@ -49,7 +49,8 @@ interface Bot { id: number; name: string; c: number }
 
 export type Out = Roster | Snap;
 
-const idle = (): Helm => ({ t: 'in', n: 0, m: null, f: 0, fa: 0, a: 0 });
+const idle = (): Helm => ({ t: 'in', n: 0, m: null, f: 0, fa: 0, a: 0, u: POWERS.map(() => 0) });
+const unseen = () => ({ f: 0, a: 0, u: POWERS.map(() => 0) });
 
 export class Sea {
   readonly code: string;
@@ -84,7 +85,7 @@ export class Sea {
     if (had) {
       // a new line is a new phone's count of hands, from nothing
       had.online = true;
-      had.helm = idle(); had.seen = { f: 0, a: 0 }; had.ran = { n: 0, ticks: 0 };
+      had.helm = idle(); had.seen = unseen(); had.ran = { n: 0, ticks: 0 };
       had.ticket = !!a.ticket;
       if (had.name !== a.name) { had.name = a.name; this.dirty = true; }
       return null;
@@ -93,7 +94,7 @@ export class Sea {
     const streak = this.kept.get(a.seat) ?? 0;
     this.kept.delete(a.seat);
     const p = Wo.join(this.world, { seat: a.seat, look: a.look, streak });
-    this.hands.set(a.seat, { ...a, id: p.id, online: true, gone: 0, helm: idle(), seen: { f: 0, a: 0 }, ran: { n: 0, ticks: 0 }, c: this.color(a.seat), ticket: !!a.ticket });
+    this.hands.set(a.seat, { ...a, id: p.id, online: true, gone: 0, helm: idle(), seen: unseen(), ran: { n: 0, ticks: 0 }, c: this.color(a.seat), ticket: !!a.ticket });
     this.drain();
     this.crew();
     this.dirty = true;
@@ -105,7 +106,7 @@ export class Sea {
     const h = this.hands.get(seat);
     if (!h || !h.online) return;
     h.online = false; h.gone = this.clock;
-    h.helm = idle(); h.seen = { f: 0, a: 0 }; h.ran = { n: 0, ticks: 0 };
+    h.helm = idle(); h.seen = unseen(); h.ran = { n: 0, ticks: 0 };
   }
 
   /** The hands, as the phone last sent them. */
@@ -231,8 +232,12 @@ export class Sea {
         // a press fires on the first tick after it arrives, once
         const fire = first && m.f > h.seen.f ? m.fa : null;
         const auto = first && m.a > h.seen.a;
-        inputs[h.id] = { move: m.m ? { x: m.m[0], y: m.m[1] } : null, fire, auto: fire == null && auto };
-        if (first) h.seen = { f: m.f, a: m.a };
+        // one power a step: a second pressed with it goes off the step after
+        const u = Array.isArray(m.u) ? m.u : [];
+        const power = first ? POWERS.findIndex((_, k) => (u[k] ?? 0) > h.seen.u[k]) : -1;
+        inputs[h.id] = { move: m.m ? { x: m.m[0], y: m.m[1] } : null, fire, auto: fire == null && auto, power: power >= 0 ? power : null };
+        if (first) { h.seen.f = m.f; h.seen.a = m.a; }
+        if (power >= 0) h.seen.u[power] = u[power];
         if (m.n !== h.ran.n) h.ran = { n: m.n, ticks: 0 };
         h.ran.ticks++;
       }

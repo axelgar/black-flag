@@ -221,6 +221,7 @@ export function consume(events: GameEvent[], mine: (e: GameEvent) => boolean) {
       case 'hit': if (mine(e)) hurt(); break;
       case 'sunk': boom(true, at); break;
       case 'take': if (mine(e)) pickup(); break;
+      case 'power': if (mine(e)) pickup(); break;
       case 'won': if (mine(e)) fanfare(); break;
       default: break;
     }

@@ -1,7 +1,7 @@
 // What sits on the glass over the fight: your streak at the top, a tag over every ship
 // (name, hull, skulls), your hull and shots over your own, arrows at the edges to the
-// nearest ships off screen, the feed of who sank whom, the sticks, and the cards for
-// being sunk and for winning.
+// nearest ships off screen, the feed of who sank whom, the sticks, a button for each
+// power, and the cards for being sunk and for winning.
 //
 // Written every frame by hudTick(), which only touches what changed: a tag is moved with
 // a transform, never laid out again.
@@ -10,14 +10,25 @@ import { markOf } from '../data/colors';
 import { TUNING as T } from '../data/tuning';
 import type { View } from '../render/view';
 import type { Seat } from '../net/protocol';
-import type { GameEvent, Ship, World } from '../sim/types';
-import { attachSticks, touchUi, used } from './input';
+import { waitOf } from '../sim/powers';
+import { POWERS, type GameEvent, type Power, type Ship, type World } from '../sim/types';
+import { buzz } from './haptics';
+import { attachSticks, press, touchUi, used } from './input';
 
 const $ = <E extends HTMLElement = HTMLElement>(s: string, r: ParentNode = document) => r.querySelector(s) as E | null;
 const esc = (s: unknown) => String(s ?? '').replace(/[<>&"]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' }[c]!));
 
 export const SKULL = '☠';
 const ARROWS = 3;
+const POWER_UI: Record<Power, { icon: string; name: string }> = {
+  broadside: { icon: '💥', name: 'Broadside' },
+  smoke: { icon: '💨', name: 'Smoke' },
+  song: { icon: '🧜‍♀️', name: 'Song' },
+  shield: { icon: '🛡️', name: 'Shield' },
+};
+
+/** A ship in smoke is not drawn, tagged or pointed at, but on her own phone. */
+export const hidden = (w: World, s: Ship) => s.smoke > 0 && s.id !== w.focus;
 
 export function hudHtml(practice: boolean) {
   const touch = touchUi();
@@ -34,11 +45,12 @@ export function hudHtml(practice: boolean) {
     <div class="practice" id="practice"${practice ? '' : ' hidden'}>Practice · order a <b>Black Flag</b> to play for a free shot</div>
     <div class="feed" id="feed"></div>
     <div class="toast" id="toast"></div>
+    <div class="powers" id="powers">${POWERS.map((p, i) => `<button class="power" data-power="${i}" aria-label="${POWER_UI[p].name}"><b>${POWER_UI[p].icon}</b><span>${touch ? POWER_UI[p].name : `${i + 1} ${POWER_UI[p].name}`}</span><i></i></button>`).join('')}</div>
     ${touch ? `
     <div class="joy left" id="joy-l"><div class="base"></div><div class="knob"></div></div>
     <div class="joy right" id="joy-r"><div class="base"></div><div class="knob"></div></div>
     <div class="hint" id="hints"></div>` : `
-    <div class="keys">WASD sail · hold the mouse to aim, let go to fire · Space fires at the nearest</div>`}
+    <div class="keys">WASD sail · hold the mouse to aim, let go to fire · Space fires at the nearest · 1–4 powers</div>`}
     <div class="card sunk" id="sunk" hidden>
       <div class="big">Sunk</div>
       <div class="by" id="sunk-by"></div>
@@ -65,6 +77,7 @@ interface Tag { el: HTMLElement; name: HTMLElement; bar: HTMLElement; skulls: HT
 let root: HTMLElement | null = null;
 let tags: Tag[] = [];
 let arrows: HTMLElement[] = [];
+let powerEls: HTMLElement[] = [];
 let lastStreak = -1;
 let feed: { el: HTMLElement; t: number }[] = [];
 let toastT = 0;
@@ -76,6 +89,17 @@ export function mountHud(el: HTMLElement, act: (what: string) => void): () => vo
   root = el;
   tags = []; feed = []; lastStreak = -1; wonOpen = false;
   arrows = [...el.querySelectorAll<HTMLElement>('.arrow')];
+  powerEls = [...el.querySelectorAll<HTMLElement>('[data-power]')];
+  // a power goes off as the thumb lands, not when it lifts
+  const onPower = (e: PointerEvent) => {
+    const b = (e.target as HTMLElement).closest<HTMLElement>('[data-power]');
+    if (!b) return;
+    e.preventDefault();
+    e.stopPropagation();
+    press(Number(b.dataset.power));
+    buzz(10);
+  };
+  el.addEventListener('pointerdown', onPower);
   const onClick = (e: Event) => {
     const b = (e.target as HTMLElement).closest<HTMLElement>('[data-act]');
     if (!b) return;
@@ -86,7 +110,7 @@ export function mountHud(el: HTMLElement, act: (what: string) => void): () => vo
   el.addEventListener('click', onClick);
   const l = $('#joy-l', el), r = $('#joy-r', el);
   const off = l && r ? attachSticks(l, r) : null;
-  return () => { el.removeEventListener('click', onClick); off?.(); root = null; };
+  return () => { el.removeEventListener('click', onClick); el.removeEventListener('pointerdown', onPower); off?.(); root = null; };
 }
 
 /** A big word in the middle of the screen, for a moment. */
@@ -207,7 +231,25 @@ export function hudTick(w: World | null, seats: Seat[], view: View, dt: number, 
 
   tagsTick(w, seats, view, height);
   arrowsTick(w, view);
+  powersTick(me);
   hintsTick(me);
+}
+
+/** Each power's button: dark while it waits, with the seconds left; lit while it is on. */
+function powersTick(me: Ship | undefined) {
+  const up = !!me && !me.out;
+  for (let i = 0; i < powerEls.length; i++) {
+    const b = powerEls[i], kind = POWERS[i];
+    const left = up ? me!.cool[i] ?? 0 : 0;
+    const on = up && ((kind === 'smoke' && me!.smoke > 0) || (kind === 'song' && me!.song > 0) || (kind === 'shield' && me!.shield > 0));
+    const key = `${up}|${on}|${Math.ceil(left)}|${Math.round((left / waitOf(kind)) * 60)}`;
+    if (b.dataset.key === key) continue;
+    b.dataset.key = key;
+    b.classList.toggle('wait', !up || left > 0);
+    b.classList.toggle('on', on);
+    b.style.setProperty('--k', String(up ? left / waitOf(kind) : 1));
+    b.lastElementChild!.textContent = up && left > 0 ? String(Math.ceil(left)) : '';
+  }
 }
 
 function tagFor(i: number): Tag {
@@ -224,7 +266,7 @@ function tagFor(i: number): Tag {
 function tagsTick(w: World, seats: Seat[], view: View, height: (look: string) => number) {
   let n = 0;
   for (const s of w.ships) {
-    if (s.out) continue;
+    if (s.out || hidden(w, s)) continue;
     const p = view.project(s.x, height(s.look) + 3, s.y);
     if (!p || !p.on) continue;
     const t = tagFor(n++);
@@ -267,7 +309,7 @@ function arrowsTick(w: World, view: View) {
   const off: { s: Ship; d: number; x: number; y: number }[] = [];
   if (me && !me.out) {
     for (const s of w.ships) {
-      if (s.out || s.id === me.id) continue;
+      if (s.out || s.id === me.id || hidden(w, s)) continue;
       const p = view.project(s.x, 0, s.y);
       if (!p || p.on) continue;
       off.push({ s, d: Math.hypot(s.x - me.x, s.y - me.y), x: p.x, y: p.y });

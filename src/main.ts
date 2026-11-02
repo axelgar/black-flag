@@ -268,7 +268,9 @@ function tick(dt: number) {
   if (L) {
     // the hands first, so your own ship is stepped on before the sea is drawn
     const w0 = L.mirror.world, me0 = w0?.ships[w0.focus];
-    if (w0) L.helm(me0 && !me0.out && !upright.matches ? Input.read() : { move: null, fire: null, auto: false }, now);
+    const hands = !!me0 && !me0.out && !upright.matches;
+    if (!hands) Input.drop();
+    if (w0) L.helm(hands ? Input.read() : { move: null, fire: null, auto: false }, now);
     L.frame(now);
     const w = L.mirror.world;
     if (w !== world) { world = w; view.setWorld(w); if (L.roster) view.setColors(colorsOf(L)); }

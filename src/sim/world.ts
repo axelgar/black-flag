@@ -17,6 +17,7 @@ import { TUNING as T, seaRadius } from '../data/tuning';
 import { botInput } from './bots';
 import { autoBearing, fire, flyShots, reload } from './combat';
 import { EDGE, makeMap, openWater, type GameMap } from './map';
+import { powers, ready, sing, usePower } from './powers';
 import { ground, helm, hullGap, rim, rimHelm, separate } from './sailing';
 import { CRATES, aboard, ev, type Input, type Ship, type World } from './types';
 
@@ -61,7 +62,8 @@ export function launch(seat: Seat, i: number): Ship {
     streak: seat.streak ?? 0, sank: 0,
     ammo: T.ammo, reloadT: T.reload, gapT: 0, heavy: false, boost: 0,
     calm: T.calm, mendT: 0, invuln: T.grace, down: 0,
-    out: false, left: false, retire: false, rim: false, brain: null,
+    out: false, left: false, retire: false, rim: false,
+    cool: ready(), smoke: 0, song: 0, shield: 0, brain: null,
   };
 }
 
@@ -109,6 +111,7 @@ export function place(w: World, s: Ship) {
     x: best.x, y: best.y, h: Math.atan2(-best.y, -best.x), v: s.maxSpeed * 0.5, rot: 0, sail: 1, trim: 1,
     hull: s.hullMax, hit: 0, out: false, down: 0, invuln: T.grace, calm: T.calm, mendT: 0,
     ammo: T.ammo, reloadT: T.reload, gapT: 0, heavy: false, boost: 0, rim: false,
+    cool: ready(), smoke: 0, song: 0, shield: 0,
   });
 }
 
@@ -125,9 +128,12 @@ export function step(w: World, dt: number, inputs: readonly (Input | undefined)[
     const input = s.bot ? botInput(w, s, dt) : inputs[s.id] ?? NO_INPUT;
     sail(w, s, dt, input);
     reload(s, dt);
+    powers(s, dt);
+    if (input.power != null) usePower(w, s, input.power);
     if (input.fire != null) fire(w, s, input.fire);
     else if (input.auto) fire(w, s, autoBearing(w, s));
   }
+  sing(w, dt);
   flyShots(w, dt);
   hulls(w);
   crates(w, dt);

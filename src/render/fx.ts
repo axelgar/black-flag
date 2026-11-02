@@ -22,6 +22,9 @@ export const FX = {
   wood: new THREE.Color('#9A5B2E'),
   dust: new THREE.Color('#B9B4A6'),
   soot: new THREE.Color('#585E6B'),
+  mist: new THREE.Color('#D5DCE6'),
+  song: new THREE.Color('#FF7AD9'),
+  shield: new THREE.Color('#7FE3FF'),
 };
 
 export class Fx {
@@ -133,6 +136,14 @@ export class Fx {
     for (let i = 0; i < Math.round(6 * this.scale); i++) {
       const a = (i / 6) * Math.PI * 2;
       this.puff(x + Math.cos(a) * 3, 2, y + Math.sin(a) * 3, Math.cos(a) * 8, 6, Math.sin(a) * 8, 1.1, 0.5, c, true, 1);
+    }
+  }
+
+  /** Smoke laid round a ship: a bank of grey puffs that hangs a while. */
+  smokeBank(x: number, y: number, n = 16, reach = 14) {
+    for (let i = 0; i < Math.max(2, Math.round(n * this.scale)); i++) {
+      const a = Math.random() * Math.PI * 2, r = Math.random() * reach;
+      this.puff(x + Math.cos(a) * r, 2 + Math.random() * 4, y + Math.sin(a) * r, Math.cos(a) * 2, 0.6, Math.sin(a) * 2, 5 + Math.random() * 3, 2.4 + Math.random(), FX.mist);
     }
   }
 

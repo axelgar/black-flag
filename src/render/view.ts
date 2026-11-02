@@ -10,11 +10,11 @@ import * as THREE from 'three';
 import { markOf } from '../data/colors';
 import { LOOKS } from '../data/ships';
 import { TUNING } from '../data/tuning';
-import type { GameEvent, World } from '../sim/types';
+import type { GameEvent, Ship, World } from '../sim/types';
 import type { GameMap } from '../sim/map';
 import { Fleet, type ShipDraw } from './ships';
 import { CRATE_COLOR, Crates } from './crates';
-import { Fx } from './fx';
+import { FX, Fx } from './fx';
 import { inkWidth } from './ink';
 import { Land, propsFrom } from './land';
 import { SEA, Sea } from './sea';
@@ -33,7 +33,7 @@ const SINK = 1.8;   // seconds a sinking ship is drawn going down
 const POP = 0.35;   // seconds a ship coming in takes to swell to her size
 
 /** What the view remembers of each ship between frames. */
-interface Seen { out: boolean; sinkT: number; popT: number; hit: number; foam: number; x: number; y: number; h: number; heel: number }
+interface Seen { out: boolean; sinkT: number; popT: number; hit: number; foam: number; x: number; y: number; h: number; heel: number; aura: number }
 
 const easeBack = (k: number) => { const c = 1.9; return 1 + (c + 1) * (k - 1) ** 3 + c * (k - 1) ** 2; };
 
@@ -232,7 +232,14 @@ export class View {
         case 'splash': this.fx.splash(e.x as number, e.y as number); break;
         case 'thud':
           if (e.rock) this.fx.dust(e.x as number, e.y as number);
+          else if (e.shield) this.fx.ring(e.x as number, e.y as number, 1, 6, 0.3, FX.shield);
           else this.fx.hit(e.x as number, e.y as number);
+          break;
+        case 'power':
+          if (e.kind === 'smoke') this.fx.smokeBank(e.x as number, e.y as number);
+          else if (e.kind === 'song') this.fx.ring(e.x as number, e.y as number, 4, TUNING.songRange, 0.8, FX.song);
+          else if (e.kind === 'shield') this.fx.pop(e.x as number, e.y as number, FX.shield, 18);
+          if (mine) this.shake = Math.max(this.shake, 0.3);
           break;
         case 'hit': {
           const v = this.seen.get(p);
@@ -283,7 +290,7 @@ export class View {
     for (const s of w.ships) {
       let v = this.seen.get(s.id);
       if (!v) {
-        v = { out: s.out, sinkT: SINK, popT: s.out ? 0 : POP, hit: 0, foam: 0, x: s.x, y: s.y, h: s.h, heel: 0 };
+        v = { out: s.out, sinkT: SINK, popT: s.out ? 0 : POP, hit: 0, foam: 0, x: s.x, y: s.y, h: s.h, heel: 0, aura: 0 };
         this.seen.set(s.id, v);
       }
       const color = this.colorOf(s.id);
@@ -306,6 +313,9 @@ export class View {
       }
       v.popT = Math.min(POP, v.popT + dt);
       v.x = s.x; v.y = s.y; v.h = s.h;
+      // in smoke she is gone from every screen but her own, where the smoke hangs round her
+      if (s.smoke > 0 && s.id !== w.focus) continue;
+      this.aura(s, v, dt, s.id === w.focus);
       // she leans out of a turn, the way a cartoon ship would, and bobs on the swell
       v.heel += (Math.max(-0.32, Math.min(0.32, -s.rot * 0.13)) - v.heel) * Math.min(1, dt * 6);
       const scale = v.popT < POP ? Math.max(0.01, easeBack(v.popT / POP)) : 1;
@@ -316,7 +326,7 @@ export class View {
         lift: Math.sin(t * 1.6 + s.id * 2.1) * 0.18,
         scale, color, hit: v.hit,
         ring: s.id === w.focus ? 2 : 1,
-        shine: s.invuln > 0 && Math.floor(t * 8) % 2 === 0,
+        shine: s.shield > 0 || (s.invuln > 0 && Math.floor(t * 8) % 2 === 0),
       });
       // foam: a trail from her stern, and a little off her bow
       v.foam -= dt;
@@ -340,6 +350,17 @@ export class View {
       this.aimMesh.rotation.y = -this.aim;
       (this.aimMesh.material as THREE.MeshBasicMaterial).color.set(this.aimDry ? '#FF6B5A' : '#FFFFFF');
     } else this.aimMesh.visible = false;
+  }
+
+  /** What a power she has on looks like round her, a few times a second. */
+  private aura(s: Ship, v: Seen, dt: number, mine: boolean) {
+    v.aura -= dt;
+    if (v.aura > 0 || !(s.smoke > 0 || s.song > 0 || s.shield > 0)) return;
+    v.aura = 0.3;
+    if (s.shield > 0) this.fx.ring(s.x, s.y, 15, 17, 0.32, FX.shield);
+    // the song's ring closes in on her: what is inside it is being pulled in
+    if (s.song > 0) this.fx.ring(s.x, s.y, TUNING.songRange, 10, 0.9, FX.song);
+    if (s.smoke > 0 && mine) this.fx.smokeBank(s.x, s.y, 3, 10);
   }
 
   /* --------------------------------------------------------------- camera -- */

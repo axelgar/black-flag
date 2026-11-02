@@ -22,8 +22,8 @@ export function lead(x: number, y: number, t: Vessel, speed: number, k = 1): [nu
   return [t.x + Math.cos(t.h) * t.v * tt, t.y + Math.sin(t.h) * t.v * tt];
 }
 
-/** Can she hurt that ship? Every other ship on the water. */
-export const foe = (s: Ship, o: Ship) => o !== s && !o.out;
+/** Can she go after that ship? Every other ship on the water, unless it is in smoke. */
+export const foe = (s: Ship, o: Ship) => o !== s && !o.out && !(o.smoke > 0);
 
 /** The nearest ship she can see within reach, or null. */
 export function nearestFoe(w: World, s: Ship, reach: number): Ship | null {
@@ -63,19 +63,26 @@ export function fire(w: World, s: Ship, bearing: number): boolean {
   s.ammo--;
   s.gapT = T.gap;
   if (s.ammo === T.ammo - 1) s.reloadT = T.reload;
+  const heavy = s.heavy;
+  s.heavy = false;
+  volley(w, s, bearing, T.balls, T.spread, heavy);
+  return true;
+}
+
+/** `n` balls off the side facing a bearing, `spread` radians apart: a volley, or a
+ *  broadside (powers.ts). */
+export function volley(w: World, s: Ship, bearing: number, n: number, spread: number, heavy: boolean) {
   s.invuln = 0;                      // firing ends a newcomer's grace
+  s.smoke = 0;                       // and gives her away in smoke
   const side = sideFacing(s.h, bearing);
   const [sx, sy] = sideVec(s.h, side);
   const fx = Math.cos(s.h), fy = Math.sin(s.h);
-  const heavy = s.heavy;
-  s.heavy = false;
-  const n = T.balls;
   for (let i = 0; i < n; i++) {
     const k = n === 1 ? 0 : i / (n - 1) - 0.5;           // -0.5 stern .. 0.5 bow
     const along = k * s.len * 0.5;
     const px = s.x + fx * along + sx * s.beam * 0.5;
     const py = s.y + fy * along + sy * s.beam * 0.5;
-    const a = bearing + (i - (n - 1) / 2) * T.spread;
+    const a = bearing + (i - (n - 1) / 2) * spread;
     w.shots.push({
       x: px, y: py, vx: Math.cos(a) * T.ballSpeed, vy: Math.sin(a) * T.ballSpeed,
       r: heavy ? 1.6 : 1, dmg: T.damage * (heavy ? T.heavy : 1), heavy,
@@ -83,7 +90,6 @@ export function fire(w: World, s: Ship, bearing: number): boolean {
     });
   }
   ev(w, 'volley', { p: s.id, side, a: bearing, heavy, x: s.x, y: s.y });
-  return true;
 }
 
 /* ------------------------------------------------------------ shot in air -- */
@@ -105,6 +111,8 @@ export function flyShots(w: World, dt: number) {
       // a newcomer's grace: the ball goes through her and on
       if (o.invuln > 0) continue;
       sh.dead = true;
+      // a shield: the ball stops at it
+      if (o.shield > 0) { ev(w, 'thud', { x: sh.x, y: sh.y, p: o.id, by: sh.by, shield: true }); break; }
       ev(w, 'thud', { x: sh.x, y: sh.y, p: o.id, by: sh.by });
       wound(w, o, sh.dmg, by ?? null, sh.x, sh.y);
       break;
@@ -121,7 +129,7 @@ export function flyShots(w: World, dt: number) {
 
 /** A ship hurt by another. The last hit sinks her, and the sink is whoever fired it. */
 export function wound(w: World, s: Ship, dmg: number, by: Ship | null, x = s.x, y = s.y) {
-  if (s.out || s.invuln > 0) return;
+  if (s.out || s.invuln > 0 || s.shield > 0) return;
   s.hull -= dmg;
   s.hit = 1;
   s.calm = 0; s.mendT = 0;

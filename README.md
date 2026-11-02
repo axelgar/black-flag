@@ -55,6 +55,7 @@ Supabase (Postgres and sign-in) behind both.
 |---|---|---|
 | Sail | left thumb: push the way to go (north is always up), as far as you want to go fast; let go and she holds her course | WASD or the arrows |
 | Fire | right thumb: drag to aim, let go to fire; a quick tap fires at the nearest ship | hold the left button to aim at the pointer, let go to fire; Space or the right button fires at the nearest ship |
+| Powers (on trial) | four buttons, bottom right: 💥 broadside, 💨 smoke, 🧜‍♀️ song, 🛡️ shield | 1 to 4 |
 | Leave | ⚓ Leave | Esc |
 
 Three shots, which reload. Every number the fight is tuned by is in `src/data/tuning.ts`,

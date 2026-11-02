@@ -24,11 +24,12 @@ export interface Hello { t: 'hello'; v: number; token: string; name: string; loo
 /**
  * The hands, sent as they change. `m` is the left stick on the chart (north up), or null
  * when let go. The guns are counts of presses, so a press is fired once however the
- * messages fall: `f` volleys aimed by a drag, the last of them along `fa`; `a` quick taps.
+ * messages fall: `f` volleys aimed by a drag, the last of them along `fa`; `a` quick taps;
+ * `u` presses on each power, in POWERS order (left out by a phone without them).
  * `n` numbers the hands, one more each time they change, so the phone knows which of its
  * own the sea has sailed her by (see mine() and net/lead.ts).
  */
-export interface Helm { t: 'in'; n: number; m: [number, number] | null; f: number; fa: number; a: number }
+export interface Helm { t: 'in'; n: number; m: [number, number] | null; f: number; fa: number; a: number; u?: number[] }
 /** Going ashore from the Leave button. A dropped line is taken the same way. */
 export interface Ashore { t: 'leave' }
 /** Looking on, from the bar's screen: no seat and no ship, only the watch key the sea's
@@ -52,7 +53,7 @@ export interface Snap {
   R: number;               // the sea's radius
   p: number[][];           // every ship, as anyone looking on sees her: [id, x, y, h, v, rot,
                            // sail, hull, hit, invuln, flags, streak]; flags: out 1, left 2,
-                           // heavy 4, boost 8
+                           // heavy 4, boost 8, smoke 16, song 32, shield 64
   me?: number[] | null;    // the phone's own ship's own (see mine()). Put on by the host, phone
                            // by phone: nobody else's phone needs to know her guns
   s: number[][];           // balls fired since the last: [id, x, y, vx, vy, fired at, life, heavy, by]
@@ -112,7 +113,9 @@ export function pack(w: World, ck: number, events: GameEvent[], log: ShotLog): S
     t: 's', at: q(w.t, 1000), ck: q(ck, 1000), R: q(w.R, 10),
     p: w.ships.map((c) => [
       c.id, q(c.x, 10), q(c.y, 10), q(c.h, 1000), q(c.v, 10), q(c.rot, 1000), q(c.sail), q(c.hull, 10), q(c.hit, 10),
-      q(c.invuln, 10), (c.out ? 1 : 0) | (c.left ? 2 : 0) | (c.heavy ? 4 : 0) | (c.boost > 0 ? 8 : 0), c.streak,
+      q(c.invuln, 10),
+      (c.out ? 1 : 0) | (c.left ? 2 : 0) | (c.heavy ? 4 : 0) | (c.boost > 0 ? 8 : 0) | (c.smoke > 0 ? 16 : 0) | (c.song > 0 ? 32 : 0) | (c.shield > 0 ? 64 : 0),
+      c.streak,
     ]),
     s, sx,
     c: w.crates.map((c) => [c.id, CRATES.indexOf(c.kind), q(c.x, 10), q(c.y, 10), q(c.age, 10)]),
@@ -127,13 +130,15 @@ export interface Ran { n: number; ticks: number }
 /**
  * What only a ship's own phone needs: her guns for the HUD, what she has sunk tonight, how
  * long she has been out of a fight; and, for the phone to step her ahead of the sea, which
- * of its hands she has sailed by so far and all of her own way, finely:
- *   [ammo, reloadT, gapT, sank, calm, down, n, ticks, x, y, h, v, sail, trim, rim, boost]
+ * of its hands she has sailed by so far and all of her own way, finely; then how long
+ * until each of her powers is ready:
+ *   [ammo, reloadT, gapT, sank, calm, down, n, ticks, x, y, h, v, sail, trim, rim, boost, ...cool]
  */
 export function mine(p: Ship, ran: Ran): number[] {
   return [
     p.ammo, q(p.reloadT), q(p.gapT), p.sank, q(p.calm, 10), q(p.down, 10), ran.n, ran.ticks,
     q(p.x, 1000), q(p.y, 1000), q(p.h, 10000), q(p.v, 1000), q(p.sail, 1000), q(p.trim, 1000), p.rim ? 1 : 0, q(p.boost, 1000),
+    ...p.cool.map((c) => q(c, 10)),
   ];
 }
 
@@ -308,12 +313,14 @@ export class Mirror {
       s.hit = r[8]; s.invuln = r[9];
       const f = r[10];
       s.out = !!(f & 1) || s.left; s.heavy = !!(f & 4); s.boost = f & 8 ? 1 : 0;
+      s.smoke = f & 16 ? 1 : 0; s.song = f & 32 ? 1 : 0; s.shield = f & 64 ? 1 : 0;
       s.streak = r[11];
     }
     // her own: the guns the HUD shows
     const me = w.ships[w.focus], m = this.own;
     if (!me || !m) return;
     me.ammo = m[0]; me.reloadT = m[1]; me.gapT = m[2]; me.sank = m[3]; me.calm = m[4]; me.down = m[5];
+    if (m.length >= 16 + me.cool.length) me.cool = m.slice(16, 16 + me.cool.length);
   }
 }
 
