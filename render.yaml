@@ -1,0 +1,29 @@
+# The sea server on Render: Dashboard → New → Blueprint, on this repository and branch.
+# It must stay one instance: the seas are in the process's memory.
+services:
+  - type: web
+    name: black-flag-sea
+    runtime: node
+    region: frankfurt   # the nearest to the bar, and it can't be changed later
+    plan: free          # for testing: it sleeps after 15 idle minutes. Guests need starter
+    branch: v3-mvp
+    buildCommand: npm ci --omit=dev
+    startCommand: node --import tsx server/src/index.ts
+    healthCheckPath: /
+    # what the sea is built from: a push that only changes the page leaves everyone aboard
+    buildFilter:
+      paths:
+        - server/**
+        - src/core/**
+        - src/data/**
+        - src/net/**
+        - src/sim/**
+        - package-lock.json
+        - render.yaml
+    envVars:
+      - key: NODE_VERSION
+        value: 24.14.0
+      - key: SUPABASE_SECRET
+        sync: false
+      - key: WATCH_KEY
+        sync: false

@@ -1,7 +1,7 @@
 // A shared sea: the room a server keeps for everyone sailing it. Seats, every captain's
 // hands, the bots, and the one world they all sail, stepped at the game's own fixed rate.
 //
-// Nothing here knows about sockets or Cloudflare. The host calls join(), leave() and
+// Nothing here knows about sockets or servers. The host calls join(), leave() and
 // helm() as messages arrive and step() about thirty times a second, and sends on what
 // step() hands back, each snapshot with own() of the phone it goes to. That is what lets
 // the tests sail whole nights with no server.

@@ -1,6 +1,6 @@
-// The Supabase project, when the build does not name another: the one the phones and the
-// scripts use. The sea server names it again in server/wrangler.jsonc. A build points
-// elsewhere with VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY.
+// The Supabase project, when the build does not name another: the one the phones, the
+// scripts and the sea server use. A build points elsewhere with VITE_SUPABASE_URL and
+// VITE_SUPABASE_PUBLISHABLE_KEY.
 
 export const SUPABASE_URL = 'https://vspueoyeaorfmbmefhiv.supabase.co';
 // Publishable: it is meant to ship in the page. What a phone may do is decided by the

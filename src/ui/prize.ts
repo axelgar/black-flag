@@ -243,7 +243,7 @@ export function privacy(): Screen {
         </ul>
         <p><b>Why.</b> To run the game and give you the free shot you won. We send you news only if you tick the box, and you can ask us to stop at any time.</p>
         <p><b>No cookies, no ads, no trackers.</b> Your phone remembers your sign-in, your name and your settings in its own storage, and nothing else.</p>
-        <p><b>Who helps us.</b> Supabase keeps our database, in the EU (Ireland), and sends the code emails. Cloudflare runs the sea. Vercel serves this page.</p>
+        <p><b>Who helps us.</b> Supabase keeps our database, in the EU (Ireland), and sends the code emails. Render runs the sea, in the EU (Frankfurt). Vercel serves this page.</p>
         <p><b>How long.</b> For as long as the game runs at the bar, or until you ask us to delete it. A free shot runs out 30 days after it is won.</p>
         <p><b>Your rights.</b> You can ask to see, correct or delete your data, or object to how we use it, by writing to <a href="mailto:${CONTACT}">${CONTACT}</a>. You can also complain to the Spanish data protection authority (AEPD, aepd.es).</p>
         <a class="cta" href="#/">Back</a>

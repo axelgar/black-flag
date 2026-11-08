@@ -9,8 +9,8 @@ Every decision behind this version is in `PLANS/MVP.md`. The full game before it
 down (waves, Nassau, boarding, rounds) is tagged `v2-full`.
 
 **Where it runs.** This version is on branch `v3-mvp`, previewed at
-<https://black-flag-git-v3-mvp-axelgars-projects.vercel.app> against the test sea server
-`black-flag-sea-mvp`. The production site, <https://black-flag-two.vercel.app>, still serves
+<https://black-flag-git-v3-mvp-axelgars-projects.vercel.app> against the sea server on
+Render. The production site, <https://black-flag-two.vercel.app>, still serves
 the early solo game until the switch-over (`PLANS/SWITCHOVER.md`). Hold a phone in
 landscape.
 
@@ -26,13 +26,12 @@ npm run build        # typecheck + production bundle in dist/
 npm run odds         # how long a win takes with the tuning as it stands
 npm run captain      # a scripted guest: ticket, five in a row, free shot written down
 npm run qr           # the ticket card: the NFC tag's link and the QR for its back
-npm run sea:deploy   # the sea server to Cloudflare, after npx wrangler login
 npm run icons        # redraw the home-screen icons into public/
 npm run ships:pack   # make a ship's model file ready for the sea (props:pack for land)
 ```
 
-Vite, TypeScript and Three.js on the phone, a Cloudflare Durable Object per sea, and
-Supabase (Postgres and sign-in) behind both.
+Vite, TypeScript and Three.js on the phone, one Node server on Render holding every sea,
+and Supabase (Postgres and sign-in) behind both.
 
 ## How it plays
 
@@ -91,8 +90,8 @@ The privacy notice is `#/privacy`. There are no cookies: the bar's numbers are r
 
 ## The sea server
 
-`server/`: a worker in front and one Durable Object per sea, at `/sea/bar/<n>`. It checks
-each phone's Supabase token against the project's public signing keys, asks `me()` whether
+`server/`: one Node process holding every sea, at `/sea/bar/<n>`. It checks each phone's
+Supabase token against the project's public signing keys, asks `me()` whether
 it holds a ticket, and steps the sea (`src/net/sea.ts`) thirty times a second while anyone
 is aboard, sending a snapshot fifteen times a second.
 
@@ -101,14 +100,17 @@ is aboard, sending a snapshot fifteen times a second.
   stick and corrects as the sea's word comes back (`src/net/lead.ts`).
 - **Coming aboard** gives up after 10 s and says why: the server, a sea out of reach, or a
   sea that never answered, with Try again (`src/net/link.ts`).
-- **Secrets**, set with `npx wrangler secret put <NAME> -c server/wrangler.jsonc [--name
-  <worker>]`, or in `server/.dev.vars` (not committed) for `npm run sea:dev`:
+- **Secrets**, set on the service under Environment in Render's dashboard, or in
+  `server/.dev.vars` (not committed) for `npm run sea:dev`:
   - `SUPABASE_SECRET`, the project's secret key. Without it the sea plays, but wins go
     unrecorded.
   - `WATCH_KEY`, what the bar's TV says to look on. Without it, nobody can watch.
-- **The workers.** `black-flag-sea` is the one in `wrangler.jsonc`, and still serves the
-  v2 previews. `black-flag-sea-mvp` is this version's test server:
-  `npx wrangler deploy -c server/wrangler.jsonc --name black-flag-sea-mvp`.
+- **The service.** `render.yaml` describes it: `black-flag-sea`, in Frankfurt. It must stay
+  one instance, because the seas are in its memory. A push to its branch that touches the
+  sea's code redeploys it, and a redeploy drops everyone aboard, so make those outside
+  opening hours. A push that only changes the page leaves it alone. The free plan sleeps
+  after 15 idle minutes and takes about a minute to wake, longer than a phone waits: open
+  the service's address in a browser first. Guests need Starter.
 - A page finds its sea through `VITE_SEA_URL`; in development it is `npm run sea:dev` on
   the machine serving the page, so a phone on the same wifi works.
 
@@ -206,7 +208,7 @@ src/
                  feed), line.ts (its line to a sea), watch.css
   audio/         synthesised cannons, sea and shanty
   state/         session.ts: what the phone remembers (name, ship, switches)
-server/          the sea server on Cloudflare
+server/          the sea server, on Render (render.yaml)
 supabase/        config.toml and migrations/: tables, rules and functions
 scripts/         captain.ts, odds.ts, brain.ts (test tools), qr.ts, icons.ts,
                  pack-models.ts
@@ -236,9 +238,9 @@ watch.html       the TV's page; index.html the game's
 ## Not done yet
 
 - **Spanish match days.** On LaLiga match days the big Spanish carriers block shared
-  Cloudflare addresses, which both the sea server and Supabase sit behind: a phone on
-  them gets "Can't reach the sea". The fix (a sea server with its own address, Supabase
-  through the site) is on hold.
+  Cloudflare addresses. The sea server moved to Render's own addresses to get round that,
+  which a match night still has to prove. Supabase is still behind Cloudflare, and sending
+  it through the site is on hold.
 - **The email sender** is Resend's test address, which only delivers to the Resend
   account's own email. Saving a free shot worked end to end with it from a phone (2 Nov).
   Guests need a sender on a verified domain (see **Supabase**).
