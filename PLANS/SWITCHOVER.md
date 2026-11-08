@@ -48,10 +48,10 @@ go-ahead.
 
 ## On the day
 
-1. **Check the sea server.** `npm run captain -- --sea wss://<the Render service's address>`
+1. **Check the sea server.** `npm run captain -- --sea wss://black-flag-sea.onrender.com`
    must end with `✓ Tester 1: won a free shot`. It takes a few minutes.
 2. **Point production at it.** From the main checkout:
-   `vercel env add VITE_SEA_URL production`, with `wss://<the Render service's address>`.
+   `vercel env add VITE_SEA_URL production`, with `wss://black-flag-sea.onrender.com`.
    Do this before the merge: the value is built into the page.
 3. **Merge and push.** From the worktree, set `branch: main` in `render.yaml`, commit, and
    `git push origin v3-mvp:main`. This is a fast-forward, and Vercel builds production from it.

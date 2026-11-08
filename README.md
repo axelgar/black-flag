@@ -105,8 +105,8 @@ is aboard, sending a snapshot fifteen times a second.
   - `SUPABASE_SECRET`, the project's secret key. Without it the sea plays, but wins go
     unrecorded.
   - `WATCH_KEY`, what the bar's TV says to look on. Without it, nobody can watch.
-- **The service.** `render.yaml` describes it: `black-flag-sea`, in Frankfurt. It must stay
-  one instance, because the seas are in its memory. A push to its branch that touches the
+- **The service.** `wss://black-flag-sea.onrender.com`, in Frankfurt, described by
+  `render.yaml`. It must stay one instance, because the seas are in its memory. A push to its branch that touches the
   sea's code redeploys it, and a redeploy drops everyone aboard, so make those outside
   opening hours. A push that only changes the page leaves it alone. The free plan sleeps
   after 15 idle minutes and takes about a minute to wake, longer than a phone waits: open
