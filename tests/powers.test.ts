@@ -1,5 +1,5 @@
-// The three powers, headless: what each does, once a life, the bots reaching for them, a
-// phone stepping its own ship through a song, and a press over the wire.
+// The three powers, headless: what each does, how each recharges, the bots reaching for
+// them, a phone stepping its own ship through a song, and a press over the wire.
 
 import { describe, expect, it } from 'vitest';
 import { TUNING as T } from '../src/data/tuning';
@@ -53,13 +53,16 @@ describe('the powers', () => {
     expect(b.hullMax - b.hull).toBeGreaterThan(T.balls * T.damage);
   });
 
-  it('each goes off once a life: used, it stays used however long she sails', () => {
+  it('each recharges on its own while she sails', () => {
     const { w, a } = duel();
     expect(usePower(w, a, P('broadside'))).toBe(true);
-    run(w, 60);
     expect(usePower(w, a, P('broadside'))).toBe(false);
-    expect(usePower(w, a, P('shield'))).toBe(true);
-    expect(a.spent).toEqual(POWERS.map((k) => k === 'broadside' || k === 'shield'));
+    run(w, T.powerCool - 1);
+    expect(usePower(w, a, P('broadside'))).toBe(false);
+    expect(usePower(w, a, P('shield'))).toBe(true);        // the others never waited on it
+    run(w, 1.1);
+    expect(usePower(w, a, P('broadside'))).toBe(true);
+    expect(usePower(w, a, P('shield'))).toBe(false);       // hers is still recharging
   });
 
   it('shield: balls stop at it and do no harm, until it is down', () => {
@@ -97,7 +100,7 @@ describe('the powers', () => {
     b.hull = 1; b.out = true; b.down = 0;
     run(w, T.respawn + 0.1);
     expect(b.out).toBe(false);
-    expect(b.spent.every((used) => !used)).toBe(true);
+    expect(b.cool.every((left) => left === 0)).toBe(true);
     expect(b.song + b.shield).toBe(0);
   });
 });
@@ -113,6 +116,15 @@ describe('a bot and its powers', () => {
   it('puts the shield up when it is being hit and losing', () => {
     const { w, a } = duel();
     a.bot = true; a.hull = a.hullMax * 0.3;
+    expect(asks(w, a, 4, () => { a.mendT = 0; }).has(P('shield'))).toBe(true);
+  });
+
+  it('waits for a power to recharge, then reaches for it again', () => {
+    const { w, a } = duel();
+    a.bot = true; a.hull = a.hullMax * 0.3;
+    a.cool[P('shield')] = T.powerCool;
+    expect(asks(w, a, 4, () => { a.mendT = 0; }).has(P('shield'))).toBe(false);
+    a.cool[P('shield')] = 0;
     expect(asks(w, a, 4, () => { a.mendT = 0; }).has(P('shield'))).toBe(true);
   });
 
@@ -147,7 +159,7 @@ describe('a phone in a song', () => {
 });
 
 describe('a power over the wire', () => {
-  it('goes off once a press, and the phone hears it is used, and the song', () => {
+  it('goes off once a press, and the phone hears how long it has to recharge, and the song', () => {
     const sea = new Sea('BAR1', { seed: 't' });
     sea.join({ seat: 'me', name: 'Me', look: 'jackdaw' });
     let roster: Roster | null = null;
@@ -158,11 +170,11 @@ describe('a power over the wire', () => {
     sea.step(1 / 30);
     const me = sea.world.ships[id];
     expect(me.song).toBeGreaterThan(0);
-    expect(me.spent[P('song')]).toBe(true);
-    me.spent[P('song')] = false;
+    expect(me.cool[P('song')]).toBeGreaterThan(0);
+    me.cool[P('song')] = 0;
     sea.step(1 / 30);
-    expect(me.spent[P('song')]).toBe(false);     // not set off again by the same press
-    me.spent[P('song')] = true;
+    expect(me.cool[P('song')]).toBe(0);          // not set off again by the same press
+    me.cool[P('song')] = 12;
 
     // a phone that sends no powers at all still sails
     sea.helm('me', { t: 'in', n: 2, m: [1, 0], f: 0, fa: 0, a: 0 });
@@ -175,6 +187,6 @@ describe('a power over the wire', () => {
     mirror.frame(1);
     const seen = mirror.world!.ships[id];
     expect(seen.song).toBe(1);
-    expect(seen.spent).toEqual(POWERS.map((k) => k === 'song'));
+    expect(seen.cool).toEqual(POWERS.map((k) => (k === 'song' ? 12 : 0)));
   });
 });

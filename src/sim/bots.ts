@@ -1,10 +1,10 @@
-// Bots: ships the sea sails itself, so a quiet night still has five on the water. A bot
+// Bots: ships the sea sails itself, so a quiet night still has a fleet on the water. A bot
 // sees what a captain sees and steers, aims and fires through the same Input a phone
 // sends; it gets no turn, speed or shot a captain doesn't.
 //
 // It picks a ship, circles it at cannon range and fires with an aim that is off by more
 // the less skilled it is. When it is low it backs off to mend, and it takes a crate near
-// it. It uses its powers as a captain would, each once a life: the shield when it is
+// it. It uses its powers as a captain would, each as it recharges: the shield when it is
 // losing a fight, the broadside to finish a ship close by, the song on one getting away;
 // the less skilled, the slower it is to think of them. It never crowds a ship more than botCrowd bots deep, and a WANTED ship is no more
 // interesting to it than any other: humans hunt the near-winners, bots don't gang up.

@@ -38,7 +38,7 @@ export function hudHtml(practice: boolean) {
     <div class="practice" id="practice"${practice ? '' : ' hidden'}>Practice · order a <b>Black Flag</b> to play for a free shot</div>
     <div class="feed" id="feed"></div>
     <div class="toast" id="toast"></div>
-    <div class="powers" id="powers">${POWERS.map((p, i) => `<button class="power ${p}" data-power="${i}" aria-label="${POWER_NAME[p]}">${POWER_ICON[p]}<span>${touch ? POWER_NAME[p] : `${i + 1} ${POWER_NAME[p]}`}</span></button>`).join('')}</div>
+    <div class="powers" id="powers">${POWERS.map((p, i) => `<button class="power ${p}" data-power="${i}" aria-label="${POWER_NAME[p]}">${POWER_ICON[p]}<i class="cool"></i><b class="left"></b><span>${touch ? POWER_NAME[p] : `${i + 1} ${POWER_NAME[p]}`}</span></button>`).join('')}</div>
     ${touch ? `
     <div class="joy left" id="joy-l"><div class="base"></div><div class="knob"></div></div>
     <div class="joy right" id="joy-r"><div class="base"></div><div class="knob"></div></div>
@@ -89,6 +89,7 @@ export function mountHud(el: HTMLElement, act: (what: string) => void): () => vo
     if (!b) return;
     e.preventDefault();
     e.stopPropagation();
+    if (b.classList.contains('cooling')) return;
     press(Number(b.dataset.power));
     buzz(10);
   };
@@ -228,18 +229,29 @@ export function hudTick(w: World | null, seats: Seat[], view: View, dt: number, 
   hintsTick(me);
 }
 
-/** Each power's button: lit while it is on, dark once used, until she is back from sinking. */
+/** Each power's button: lit while it is on; recharging, a dark wedge wearing away with the
+ *  seconds left on it, and a pop when it is ready; grey while she is on the bottom. */
 function powersTick(me: Ship | undefined) {
   const up = !!me && !me.out;
   for (let i = 0; i < powerEls.length; i++) {
     const b = powerEls[i], kind = POWERS[i];
     const on = up && ((kind === 'song' && me!.song > 0) || (kind === 'shield' && me!.shield > 0));
-    const used = !up || !!me!.spent[i];
-    const key = `${on}|${used}`;
+    const left = up && !on ? me!.cool[i] : 0;
+    const key = `${on}|${up}|${Math.ceil(left * 10)}`;
     if (b.dataset.key === key) continue;
     b.dataset.key = key;
-    b.classList.toggle('used', used && !on);
+    if (up && !on && !left && b.classList.contains('cooling')) {
+      b.classList.remove('ready');
+      void b.offsetWidth;
+      b.classList.add('ready');
+    }
+    b.classList.toggle('used', !up);
     b.classList.toggle('on', on);
+    b.classList.toggle('cooling', left > 0);
+    if (left > 0) {
+      b.style.setProperty('--left', String(left / T.powerCool));
+      $('.left', b)!.textContent = String(Math.ceil(left));
+    }
   }
 }
 
@@ -333,7 +345,7 @@ function hintsTick(me: Ship | undefined) {
   h.className = `hint ${want}`;
   h.innerHTML = want === 'left' ? '<b>Left thumb</b> · sail where you push'
     : want === 'right' ? '<b>Right thumb</b> · drag to aim, let go to fire<br>or tap to fire at the nearest ship'
-    : want === 'powers' ? '<b>Powers</b> · one go each, every life<br>they come back when you do' : '';
+    : want === 'powers' ? `<b>Powers</b> · tap to use<br>each one recharges in ${T.powerCool} seconds` : '';
 }
 
 /** The win card is up: the host keeps it there until it is dismissed. */

@@ -75,6 +75,9 @@ export const TUNING = {
 
   /** Ships on a sea at the least: bots make up the rest. */
   minShips: 5,
+  /** Bots on a sea whatever the captains aboard, on top of them. At 0, bots only make up
+   *  the numbers to minShips. */
+  bots: 15,
   /** Captains on a sea at the most. The next phone goes to the next sea. */
   maxShips: 30,
   /** Seconds to sail across the sea at full speed with minShips on it. It grows with the
@@ -99,9 +102,11 @@ export const TUNING = {
   heavy: 2,
 
   /* ---------------------------------------------------------------- powers -- */
-  // Three, each on a button of its own and each once a life: she has all of them again
-  // when she comes back from sinking. Bots use them too (sim/bots.ts).
+  // Three, each on a button of its own and each recharging on its own once used: she has
+  // all of them again when she comes back from sinking. Bots use them too (sim/bots.ts).
 
+  /** Seconds a power takes to recharge, counted from the press. */
+  powerCool: 20,
   /** Full broadside: this many balls in one fan at the nearest ship, without using a shot. */
   broadsideBalls: 8,
   /** Radians between them. */

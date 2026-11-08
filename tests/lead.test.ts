@@ -57,6 +57,7 @@ function sail(seconds: number, wifi: Wifi, steer: (t: number) => Input['move'], 
       const w = mirror.world!;
       if (m.me) lead.hear({ map: w.map, R: m.R, focus: w.focus }, m.me, false);
     }
+    mirror.frame(t);      // each paint, as the phone does: it brings the sea's radius with it
     // the thumb, and what goes up
     const want = steer(t);
     const body = JSON.stringify(want ? [Math.round(want.x * 100) / 100, Math.round(want.y * 100) / 100] : null);

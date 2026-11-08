@@ -12,10 +12,10 @@
 // sent as anyone looking on sees her; her own guns go only to her own phone.
 
 import { angleTo, clamp } from '../core/vec';
-import { CRATES, POWERS, type CrateKind, type GameEvent, type Ship, type World } from '../sim/types';
+import { CRATES, type CrateKind, type GameEvent, type Ship, type World } from '../sim/types';
 import * as Wo from '../sim/world';
 
-export const WIRE = 4;
+export const WIRE = 5;
 
 /* ------------------------------------------------------------ phone → sea -- */
 
@@ -130,15 +130,15 @@ export interface Ran { n: number; ticks: number }
 /**
  * What only a ship's own phone needs: her guns for the HUD, what she has sunk tonight, how
  * long she has been out of a fight; and, for the phone to step her ahead of the sea, which
- * of its hands she has sailed by so far and all of her own way, finely; then which of her
- * powers she has used this life, a bit each in POWERS order:
- *   [ammo, reloadT, gapT, sank, calm, down, n, ticks, x, y, h, v, sail, trim, rim, boost, spent]
+ * of its hands she has sailed by so far and all of her own way, finely; then how long each
+ * of her powers has left to recharge, in POWERS order:
+ *   [ammo, reloadT, gapT, sank, calm, down, n, ticks, x, y, h, v, sail, trim, rim, boost, ...cool]
  */
 export function mine(p: Ship, ran: Ran): number[] {
   return [
     p.ammo, q(p.reloadT), q(p.gapT), p.sank, q(p.calm, 10), q(p.down, 10), ran.n, ran.ticks,
     q(p.x, 1000), q(p.y, 1000), q(p.h, 10000), q(p.v, 1000), q(p.sail, 1000), q(p.trim, 1000), p.rim ? 1 : 0, q(p.boost, 1000),
-    p.spent.reduce((b, used, i) => b | (used ? 1 << i : 0), 0),
+    ...p.cool.map((c) => q(c, 10)),
   ];
 }
 
@@ -320,7 +320,7 @@ export class Mirror {
     const me = w.ships[w.focus], m = this.own;
     if (!me || !m) return;
     me.ammo = m[0]; me.reloadT = m[1]; me.gapT = m[2]; me.sank = m[3]; me.calm = m[4]; me.down = m[5];
-    if (m.length > 16) me.spent = POWERS.map((_, i) => !!(m[16] & (1 << i)));
+    me.cool = m.slice(16);
   }
 }
 

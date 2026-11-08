@@ -44,8 +44,8 @@ and Supabase (Postgres and sign-in) behind both.
   sea: "Order a Black Flag and this would have been a free shot."
 - **Leaving.** Out of a fight for 10 s, your ship docks and the streak waits for you. Leave
   mid-fight and she stays on the water for 10 s, and can still be sunk.
-- **The sea.** One open sea, no rounds. At least five ships (bots make up the numbers) and
-  at most thirty; a full sea sends the next phone to the next (the bar's seas 1–9). The
+- **The sea.** One open sea, no rounds. Fifteen bots are always on it (`bots` in the tuning),
+  and at most thirty captains; a full sea sends the next phone to the next (the bar's seas 1–9). The
   sea grows at once as ships join and closes in over about 30 s as they leave. Islands
   stop shots. Crates: repair, a burst of speed, heavy shot.
 - **The ships.** Three looks (Kenney models, `public/ships/`), all with the same numbers.
@@ -59,11 +59,11 @@ and Supabase (Postgres and sign-in) behind both.
 |---|---|---|
 | Sail | left thumb: push the way to go (north is always up), as far as you want to go fast; let go and she holds her course | WASD or the arrows |
 | Fire | right thumb: drag to aim, let go to fire; a quick tap fires at the nearest ship | hold the left button to aim at the pointer, let go to fire; Space or the right button fires at the nearest ship |
-| Powers, once a life | three buttons, bottom right: broadside, song, shield | 1 to 3 |
+| Powers, every 20 s | three buttons, bottom right: broadside, song, shield | 1 to 3 |
 | Leave | ⚓ Leave | Esc |
 
-Three powers, each once a life, and all three back when you come back from sinking. Bots
-use them too:
+Three powers, each recharging 20 s after you use it, and all three back when you come back
+from sinking. Bots use them too:
 - **Broadside:** 8 balls at the nearest ship, without using a shot.
 - **Mermaid song:** pulls every ship within 90 m toward you for 4 s.
 - **Shield:** stops balls for 3 s.

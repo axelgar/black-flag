@@ -1,5 +1,5 @@
-// Powers: three, each on a button of its own, and each once a life. A ship that sinks has
-// all three again when she comes back.
+// Powers: three, each on a button of its own, and each recharging on its own, powerCool
+// seconds from the press. A ship that sinks has all three again when she comes back.
 //   broadside  a fan of balls at the nearest ship, without using a shot: the finisher
 //   song       every ship near her is pulled toward her, however it is sailing: the one
 //              that catches a ship running away, which a ship as fast can't
@@ -10,17 +10,17 @@ import { TUNING as T } from '../data/tuning';
 import { autoBearing, volley } from './combat';
 import { POWERS, ev, type Ship, type World } from './types';
 
-/** None used yet: a new life. */
-export const fresh = () => POWERS.map(() => false);
+/** All ready: a new life. */
+export const fresh = () => POWERS.map(() => 0);
 
 /** Can she use power `i` now? */
-export const can = (s: Ship, i: number) => !s.out && !s.spent[i];
+export const can = (s: Ship, i: number) => !s.out && s.cool[i] <= 0;
 
 /** A press on power `i`. Returns whether it went off. */
 export function usePower(w: World, s: Ship, i: number): boolean {
   const kind = POWERS[i];
   if (!kind || !can(s, i)) return false;
-  s.spent[i] = true;
+  s.cool[i] = T.powerCool;
   ev(w, 'power', { p: s.id, kind, x: s.x, y: s.y });
   if (kind === 'broadside') volley(w, s, autoBearing(w, s), T.broadsideBalls, T.broadsideSpread, false);
   else if (kind === 'song') s.song = T.songFor;
@@ -28,10 +28,11 @@ export function usePower(w: World, s: Ship, i: number): boolean {
   return true;
 }
 
-/** Whatever she has on runs down. */
+/** Whatever she has on runs down, and whatever she has used recharges. */
 export function powers(s: Ship, dt: number) {
   s.song = Math.max(0, s.song - dt);
   s.shield = Math.max(0, s.shield - dt);
+  for (let i = 0; i < s.cool.length; i++) s.cool[i] = Math.max(0, s.cool[i] - dt);
 }
 
 /** Every ship singing pulls the others near her in. */

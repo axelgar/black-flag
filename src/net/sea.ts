@@ -7,8 +7,8 @@
 // the tests sail whole nights with no server.
 //
 // How a shared sea plays: it is always open, and a captain sails in whenever she likes.
-// Bots make up the numbers to minShips; when a captain comes aboard, one of them stays
-// until it is next sunk and doesn't come back. A captain who leaves out of a fight docks
+// A fleet of bots sails it whoever is aboard, and any more make up the numbers to minShips:
+// one no longer needed stays until it is next sunk and doesn't come back. A captain who leaves out of a fight docks
 // at once and her streak waits for her; one who leaves in a fight leaves her ship on the
 // sea for `linger` seconds, where it can still be sunk.
 
@@ -174,15 +174,16 @@ export class Sea {
   /* ------------------------------------------------------------ the crew -- */
 
   /**
-   * Bots make up the numbers to minShips. One too many (a captain came aboard) is told to
-   * leave the next time it sinks; one too few brings back one that was leaving, or a new one.
+   * The fleet (T.bots) is always on the water, and more bots make up the numbers to minShips.
+   * One too many (a captain came aboard) is told to leave the next time it sinks; one too few
+   * brings back one that was leaving, or a new one.
    */
   private crew() {
     const w = this.world;
     for (let i = this.bots.length - 1; i >= 0; i--) {
       if (w.ships[this.bots[i].id]?.left) { this.bots.splice(i, 1); this.dirty = true; }
     }
-    const want = Math.max(0, T.minShips - this.hands.size);
+    const want = Math.max(T.bots, T.minShips - this.hands.size);
     const staying = this.bots.filter((b) => !w.ships[b.id].retire);
     for (let i = staying.length - 1; i >= want; i--) w.ships[staying[i].id].retire = true;
     let n = staying.length;

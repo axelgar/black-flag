@@ -18,8 +18,28 @@ function beat(sea: Sea, seconds: number) {
 const aboard = (seat: string, name = seat) => ({ seat, name, look: 'jackdaw' });
 const shipOf = (sea: Sea, seat: string) => sea.world.ships[sea.roster().seats.find((s) => s.seat === seat)!.id];
 
+/** With no fleet of bots, for as long as `f` runs: bots only make up the numbers. */
+function noFleet(f: () => void) {
+  const had = T.bots;
+  T.bots = 0;
+  try { f(); } finally { T.bots = had; }
+}
+
 describe('a shared sea', () => {
-  it('makes up the numbers with bots, named, coloured and marked as bots', () => {
+  it('keeps its fleet of bots on the water however many captains are aboard', () => {
+    const sea = new Sea('BAR1', { seed: 't' });
+    const bots = () => sea.roster().seats.filter((s) => !s.left && s.bot).length;
+    sea.join(aboard('a'));
+    beat(sea, 0.1);
+    expect(bots()).toBe(T.bots);
+    sea.join(aboard('b'));
+    sea.join(aboard('c'));
+    beat(sea, 0.1);
+    expect(bots()).toBe(T.bots);
+    expect(sea.world.ships.filter((s) => s.bot && s.retire)).toHaveLength(0);
+  });
+
+  it('makes up the numbers with bots, named, coloured and marked as bots', () => noFleet(() => {
     const sea = new Sea('BAR1', { seed: 't' });
     expect(sea.join(aboard('a', 'Marta'))).toBeNull();
     beat(sea, 0.1);
@@ -29,9 +49,9 @@ describe('a shared sea', () => {
     expect(live.filter((s) => s.bot)).toHaveLength(T.minShips - 1);
     expect(live.find((s) => !s.bot)!.name).toBe('Marta');
     for (const s of live) { expect(s.name.length).toBeGreaterThan(0); expect(s.c).toBeGreaterThanOrEqual(0); }
-  });
+  }));
 
-  it('a captain coming aboard sends a bot home the next time it sinks', () => {
+  it('a captain coming aboard sends a bot home the next time it sinks', () => noFleet(() => {
     const sea = new Sea('BAR1', { seed: 't' });
     sea.join(aboard('a'));
     beat(sea, 0.1);
@@ -43,7 +63,7 @@ describe('a shared sea', () => {
     beat(sea, T.respawn + 0.2);
     expect(retiring[0].left).toBe(true);
     expect(sea.roster().seats.filter((s) => !s.left)).toHaveLength(T.minShips);
-  });
+  }));
 
   it('two captains of the same name are told apart', () => {
     const sea = new Sea('BAR1', { seed: 't' });
@@ -157,7 +177,7 @@ describe('the mirror', () => {
     for (let i = 0; i < 6; i++) { now += STEP; take(sea.step(STEP)); }
     m.frame(now + 0.2);
     const w = m.world!;
-    expect(w.ships.filter((s) => !s.left)).toHaveLength(T.minShips);
+    expect(w.ships.filter((s) => !s.left)).toHaveLength(T.bots + 1);
     const mine = w.ships[w.focus];
     const real = shipOf(sea, 'a');
     expect(mine.seat).toBe('a');

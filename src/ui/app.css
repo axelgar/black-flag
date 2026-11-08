@@ -212,6 +212,19 @@ a.chip{color:inherit;text-decoration:none}
 .power.song{--c:#FF7AD9}
 .power.shield{--c:#7FE3FF}
 .power.used{filter:grayscale(1) brightness(.6);opacity:.75}
+/* recharging: a dark wedge that wears away, with the seconds left on it */
+.power .cool,.power .left{position:absolute;inset:3px;border-radius:50%;display:none;pointer-events:none}
+.power .cool{background:conic-gradient(rgba(8,18,34,.8) calc(var(--left,0)*360deg),rgba(8,18,34,.2) 0)}
+.power .left{place-items:center;margin-top:-3px;color:#fff;font:400 24px/1 'Lilita One',system-ui,sans-serif;text-shadow:0 2px 0 var(--ink),0 0 6px rgba(8,18,34,.8)}
+.power.cooling{cursor:default}
+.power.cooling svg{filter:grayscale(1) brightness(.75)}
+.power.cooling .cool{display:block}
+.power.cooling .left{display:grid}
+.power.ready{animation:ready .45s ease-out}
+@keyframes ready{
+  0%{transform:scale(1);box-shadow:0 5px 0 var(--ink),inset 0 0 0 3px var(--c),0 0 0 0 var(--c)}
+  40%{transform:scale(1.18);box-shadow:0 5px 0 var(--ink),inset 0 0 0 3px var(--c),0 0 18px 8px var(--c)}
+  100%{transform:scale(1);box-shadow:0 5px 0 var(--ink),inset 0 0 0 3px var(--c),0 0 0 0 var(--c)}}
 .power.on{animation:glow .6s ease-in-out infinite alternate}
 @keyframes glow{
   from{box-shadow:0 5px 0 var(--ink),inset 0 0 0 3px var(--c),0 0 0 3px var(--c),0 0 10px 4px var(--c)}

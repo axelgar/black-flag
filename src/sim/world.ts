@@ -63,7 +63,7 @@ export function launch(seat: Seat, i: number): Ship {
     ammo: T.ammo, reloadT: T.reload, gapT: 0, heavy: false, boost: 0,
     calm: T.calm, mendT: 0, invuln: T.grace, down: 0,
     out: false, left: false, retire: false, rim: false,
-    spent: fresh(), song: 0, shield: 0, brain: null,
+    cool: fresh(), song: 0, shield: 0, brain: null,
   };
 }
 
@@ -111,7 +111,7 @@ export function place(w: World, s: Ship) {
     x: best.x, y: best.y, h: Math.atan2(-best.y, -best.x), v: s.maxSpeed * 0.5, rot: 0, sail: 1, trim: 1,
     hull: s.hullMax, hit: 0, out: false, down: 0, invuln: T.grace, calm: T.calm, mendT: 0,
     ammo: T.ammo, reloadT: T.reload, gapT: 0, heavy: false, boost: 0, rim: false,
-    spent: fresh(), song: 0, shield: 0,
+    cool: fresh(), song: 0, shield: 0,
   });
 }
 
