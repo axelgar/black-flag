@@ -14,6 +14,7 @@ import * as P from './ui/prize';
 import { hudEvents, hudState, hudTick } from './ui/hud';
 import * as Input from './ui/input';
 import { buzz } from './ui/haptics';
+import { keepScreen, leaveScreen, swipeTick, takeScreen } from './ui/fullscreen';
 import { connect, count, credentials, me, refresh, tap } from './net/cloud';
 import { Link } from './net/link';
 import { inkOn } from './render/ink';
@@ -55,6 +56,7 @@ Input.attachMouse(app, atSea, (x, y) => {
 });
 // Sound may only start from a gesture, and on glass a touch becomes one when it lifts.
 for (const k of ['pointerdown', 'pointerup', 'touchend', 'click'] as const) addEventListener(k, () => A.unlock(), { capture: true, passive: true });
+keepScreen(atSea);
 // The page never zooms: iOS lets a pinch or a double tap zoom it whatever the viewport
 // says, and a quick double tap on the right stick zoomed the whole sea.
 for (const k of ['gesturestart', 'gesturechange', 'gestureend']) document.addEventListener(k, (e) => e.preventDefault(), { passive: false });
@@ -69,18 +71,6 @@ document.addEventListener('touchend', (e) => {
 
 /* ------------------------------------------------------------- the sea -- */
 
-/**
- * On a phone that allows it, the sea takes the whole screen and stays sideways. Asked
- * from the tap that sets sail, because a browser only says yes to a tap. iPhones allow no
- * such thing for a page; Add to Home Screen is theirs.
- */
-function takeScreen() {
-  if (!Input.touchUi() || !document.fullscreenEnabled || document.fullscreenElement) return;
-  document.documentElement.requestFullscreen({ navigationUI: 'hide' })
-    .then(() => (window.screen.orientation as ScreenOrientation & { lock?: (o: string) => Promise<void> }).lock?.('landscape'))
-    .catch(() => { /* refused, or no lock on this browser: the page still plays */ });
-}
-
 function aboard() {
   link?.close();
   Input.reset();
@@ -88,6 +78,7 @@ function aboard() {
   link = L;
 }
 
+// the sea takes the whole screen (ui/fullscreen.ts): asked from this tap, as only a tap can
 window.addEventListener('bf:sail', () => {
   takeScreen();
   aboard();
@@ -100,7 +91,7 @@ function ashore(to = '/') {
   if (link) { link.close(); link = null; }
   world = null; view.setWorld(null);
   A.stopShanty();
-  if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+  leaveScreen();
   if (atSea()) go(to, true);
 }
 
@@ -295,6 +286,8 @@ function tick(dt: number) {
       }
     }
   }
+  const mine = world?.ships[world.focus];
+  swipeTick(dt, atSea(), !upright.matches, !!mine && !mine.out);
   if (upright.matches && atSea()) { sincePaint += dt; return; }
   if (!due(dt, atSea() ? PAINT_HZ : IDLE_HZ)) return;
   const d = Math.min(sincePaint, 0.1);

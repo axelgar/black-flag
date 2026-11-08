@@ -131,7 +131,9 @@ steering, aiming and island-avoidance (`src/sim/ai.ts`, `lead()` in `src/sim/com
    - The ship is picked with one tap, with a random one already chosen.
    - A banner shows either "🎟 Ticket! Sink 5 in a row for a free shot" or "Practice:
      order a Black Flag to play for a free shot".
-3. **Set sail:** asks for the phone sideways and goes full screen.
+3. **Set sail:** asks for the phone sideways and goes full screen. An iPhone can't go full
+   screen from a page, so it gets a "Swipe up for the whole screen" card as a life begins
+   while Safari's bars are up; the swipe folds them away.
 4. **First sail only:** "left thumb: steer" and "right thumb: drag to aim, tap to fire",
    gone after the first shot.
 5. **At sea:**

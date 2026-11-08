@@ -50,6 +50,11 @@ Supabase (Postgres and sign-in) behind both.
   sea grows at once as ships join and closes in over about 30 s as they leave. Islands
   stop shots. Crates: repair, a burst of speed, heavy shot.
 - **The ships.** Three looks (Kenney models, `public/ships/`), all with the same numbers.
+- **The whole screen.** Android goes full screen, sideways, on Set sail, and a tap at sea
+  takes it back if it was lost. An iPhone can't give a page full screen: as a ship comes
+  into the sea with Safari's bars up, a card asks for a swipe up, which folds them away
+  (`src/ui/fullscreen.ts`; `?swipe` shows the card on any screen). Added to the Home
+  Screen, an iPhone opens it with no bars at all.
 
 | | Touch | Keyboard / mouse |
 |---|---|---|
