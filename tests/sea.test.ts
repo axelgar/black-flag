@@ -221,3 +221,103 @@ describe('the mirror', () => {
     expect(Math.hypot(seen!.x - back!.x, seen!.y - back!.y)).toBeLessThan(3);
   });
 });
+
+describe('her hands, as the sea sails her by them', () => {
+  const TICK = 1 / 120;
+  const hands = (n: number, d: number): Helm => ({ t: 'in', n, m: [Math.cos(n), Math.sin(n)], f: 0, fa: 0, a: 0, d });
+  /** Which of her hands the sea is sailing her by, and for how many ticks so far. */
+  const ran = (sea: Sea) => sea.own('a')!.slice(6, 8);
+
+  it('sails each as long as her phone did, though they come all at once', () => {
+    const sea = new Sea('BAR1', { seed: 't' });
+    sea.join(aboard('a'));
+    for (const [n, d] of [[1, 0], [2, 6], [3, 4], [4, 8]]) sea.helm('a', hands(n, d));
+    const by: number[] = [];
+    for (let i = 0; i < 21; i++) { sea.step(TICK); by.push(ran(sea)[0]); }
+    expect(by).toEqual([...Array(6).fill(1), ...Array(4).fill(2), ...Array(8).fill(3), 4, 4, 4]);
+  });
+
+  it('takes hands that come late at once, then makes up the ticks it fell behind by', () => {
+    // her phone sends new hands every 6 ticks; the line takes 12 ticks, and once 16
+    const sea = new Sea('BAR1', { seed: 't' });
+    sea.join(aboard('a'));
+    const wire: { at: number; m: Helm }[] = [];
+    const sailed = new Map<number, number>();
+    let behind = 0;
+    for (let t = 0, n = 0; t < 120 * 5; t++) {
+      if (t % 6 === 0) { n++; wire.push({ at: t + (n === 20 ? 16 : 12), m: hands(n, n > 1 ? 6 : 0) }); }
+      while (wire.length && wire[0].at <= t) sea.helm('a', wire.shift()!.m);
+      sea.step(TICK);
+      const [k, ticks] = ran(sea);
+      sailed.set(k, ticks);
+      behind = t + 1 - (6 * (k - 1) + ticks);     // how far behind her phone the sea is sailing her
+    }
+    expect(sailed.get(19)).toBe(10);              // waiting on the late hands
+    const short = [...sailed].filter(([k, ticks]) => k > 20 && k < 90 && ticks === 5);
+    expect(short).toHaveLength(2);                // two of the four made up, two kept in hand
+    expect(behind).toBe(12 + 2);
+    for (const [k, ticks] of sailed) if (k > 1 && k < 90 && k !== 19) expect(ticks).toBeGreaterThanOrEqual(5);
+  });
+
+  it('goes straight to the newest hands when the line was gone a moment', () => {
+    const sea = new Sea('BAR1', { seed: 't' });
+    sea.join(aboard('a'));
+    sea.helm('a', hands(1, 0));
+    for (let i = 0; i < 66; i++) sea.step(TICK);
+    // half a second with nothing, then all the line held at once
+    for (let n = 2; n <= 11; n++) sea.helm('a', hands(n, 6));
+    sea.step(TICK);
+    const [n] = ran(sea);
+    expect(n).toBeGreaterThan(2);
+    expect((11 - n) * 6).toBeLessThanOrEqual(30);
+  });
+});
+
+describe('the mirror on a line that holds a snapshot up', () => {
+  /** A sea of bots, a mirror of it, and frames painted sixty times a second; `held` says
+   *  when snapshots are kept back, all to come at once when it ends. */
+  function watch(seconds: number, held: (t: number) => boolean) {
+    const sea = new Sea('BAR1', { seed: 'held' });
+    sea.join(aboard('a'));
+    const m = new Mirror();
+    const late: Snap[] = [];
+    const drawn: Map<number, { x: number; y: number; v: number }>[] = [];
+    for (let f = 0, now = 0; now < seconds; f++, now = f / 60) {
+      if (f % 2 === 0) {
+        for (const o of sea.step(STEP)) {
+          if (o.t === 'roster') m.roster(o, 'a');
+          else late.push({ ...o, me: sea.own('a') });
+        }
+      }
+      if (!held(now)) for (const s of late.splice(0)) m.push(s, now);
+      m.frame(now);
+      drawn.push(new Map(m.world!.ships.filter((s) => !s.out && s.id !== m.world!.focus).map((s) => [s.id, { x: s.x, y: s.y, v: s.v }])));
+    }
+    return drawn;
+  }
+  const moved = (a: Map<number, { x: number; y: number }>, b: Map<number, { x: number; y: number }>, id: number) =>
+    Math.hypot(b.get(id)!.x - a.get(id)!.x, b.get(id)!.y - a.get(id)!.y);
+
+  it('sails the ships on while it waits, and glides each to where the sea says', () => {
+    const drawn = watch(5, (t) => t >= 3 && t < 3.5);
+    let checked = 0;
+    for (let f = 2.5 * 60; f < drawn.length; f++) {
+      const a = drawn[f - 1], b = drawn[f];
+      for (const id of b.keys()) {
+        if (!a.has(id)) continue;
+        const d = moved(a, b, id);
+        // while it waits, never stopped dead under way; and never a jump: a frame at full
+        // sail is 0.4 m, and a guess put right is spread over many
+        if (f / 60 >= 3 && f / 60 < 3.5 && a.get(id)!.v > 10) { expect(d).toBeGreaterThan(0.1); checked++; }
+        expect(d).toBeLessThan(1.5);
+      }
+    }
+    expect(checked).toBeGreaterThan(200);
+  });
+
+  it('and stops them, gently, if the wait goes on', () => {
+    const drawn = watch(6, (t) => t >= 3);
+    const end = drawn.length - 1, a = drawn[end - 1], b = drawn[end];
+    for (const id of b.keys()) if (a.has(id)) expect(moved(a, b, id)).toBeLessThan(0.01);
+  });
+});

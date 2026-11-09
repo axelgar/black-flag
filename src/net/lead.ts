@@ -51,6 +51,9 @@ export class Lead {
   private k = 0;
   private acc = 0;
   private off = { x: 0, y: 0, h: 0 };
+  /** How far her last tick took her. She is drawn that much further on for the part of a
+   *  tick not stepped yet, so a paint that falls between ticks finds her between them. */
+  private step = { x: 0, y: 0, h: 0 };
 
   /** Step her on by `dt`, sailing by helm `n`, the hands most lately sent. */
   advance(w: Pick<World, 'map' | 'R'>, dt: number, n: number, move: Move, singers: Singers = []) {
@@ -60,7 +63,7 @@ export class Lead {
       if (n !== this.n) { this.n = n; this.k = 0; }
       this.log.push({ n, k: this.k++, move });
       if (this.log.length > KEEP) this.log.shift();
-      if (this.ship) sail(w, this.ship, move, singers);
+      if (this.ship) this.tick(w, this.ship, move, singers);
       this.acc -= FIXED; steps++;
     }
     if (steps === 24) this.acc = 0;
@@ -84,7 +87,8 @@ export class Lead {
     const rest = from < 0 ? [] : this.log.slice(from);
     if (from > 0) this.log.splice(0, from);
     else if (from < 0) this.log.length = 0;
-    for (const t of rest) sail(w, s, t.move, singers);
+    if (!was) this.step = { x: 0, y: 0, h: 0 };
+    for (const t of rest) this.tick(w, s, t.move, singers);
     this.ship = s;
     if (!was) { this.off = { x: 0, y: 0, h: 0 }; return; }
     const ox = was.x - s.x, oy = was.y - s.y, d = Math.hypot(ox, oy);
@@ -98,14 +102,25 @@ export class Lead {
   show(w: World) {
     const s = this.ship, m = w.ships[w.focus];
     if (!s || !m || m.out) return;
-    m.x = s.x + this.off.x; m.y = s.y + this.off.y; m.h = wrap(s.h + this.off.h);
+    const f = this.acc / FIXED, d = this.step;
+    m.x = s.x + this.off.x + d.x * f; m.y = s.y + this.off.y + d.y * f; m.h = wrap(s.h + this.off.h + d.h * f);
     m.v = s.v; m.rot = s.rot; m.sail = s.sail;
   }
+
+  /** One tick of hers, noting how far it took her. */
+  private tick(w: Pick<World, 'map' | 'R'>, s: Ship, move: Move, singers: Singers) {
+    const x = s.x, y = s.y, h = s.h;
+    sail(w, s, move, singers);
+    this.step = { x: s.x - x, y: s.y - y, h: angleTo(h, s.h) };
+  }
+
+  /** How many ticks she has been stepped by helm `n` so far: 0 for any other. */
+  ticksOf(n: number) { return n === this.n ? this.k : 0; }
 
   /** How far ahead of the sea's newest word the phone has stepped her, in ticks: the
    *  ticks of hands the sea has not sailed yet. */
   get ahead() { return this.log.length; }
 
   /** Start again: a new line, a new chart. */
-  reset() { this.ship = null; this.log = []; this.n = -1; this.k = 0; this.acc = 0; this.off = { x: 0, y: 0, h: 0 }; }
+  reset() { this.ship = null; this.log = []; this.n = -1; this.k = 0; this.acc = 0; this.off = { x: 0, y: 0, h: 0 }; this.step = { x: 0, y: 0, h: 0 }; }
 }

@@ -8,6 +8,7 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview --host",
     "test": "vitest run",
+    "lines": "MEASURE=1 vitest run tests/lines.test.ts",
     "typecheck": "tsc --noEmit && tsc --noEmit -p server",
     "icons": "tsx scripts/icons.ts",
     "qr": "tsx scripts/qr.ts",

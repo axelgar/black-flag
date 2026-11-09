@@ -45,10 +45,15 @@ export function sing(w: World, dt: number) {
 
 /** One ship pulled toward a singer at (x, y) for `dt`, if she is in reach and not already
  *  alongside. A phone pulls its own ship the same way, to step her ahead of the sea
- *  (net/lead.ts). */
+ *  (net/lead.ts). The pull eases in over half a length at the edge of the reach and eases
+ *  off as she comes alongside, rather than starting and stopping dead: a ship held on either
+ *  edge would be pulled one tick and let go the next, and the phone, which sees the singer a
+ *  moment late, would have her on the other side of it as often as not. */
 export function pull(o: { x: number; y: number }, x: number, y: number, dt: number) {
   const dx = x - o.x, dy = y - o.y, d = Math.hypot(dx, dy);
-  if (d > T.songRange || d < T.length * 1.2) return;
-  const k = (T.songPull * dt) / d;
-  o.x += dx * k; o.y += dy * k;
+  const ease = T.length / 2, alongside = T.length * 1.2;
+  const k = Math.min(1, (d - alongside) / ease, (T.songRange - d) / ease);
+  if (k <= 0) return;
+  const f = (T.songPull * k * dt) / d;
+  o.x += dx * f; o.y += dy * f;
 }

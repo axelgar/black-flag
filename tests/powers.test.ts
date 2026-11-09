@@ -9,7 +9,7 @@ import { Sea } from '../src/net/sea';
 import { botInput } from '../src/sim/bots';
 import { fire } from '../src/sim/combat';
 import { onLand } from '../src/sim/map';
-import { usePower } from '../src/sim/powers';
+import { pull, usePower } from '../src/sim/powers';
 import * as Wo from '../src/sim/world';
 import { POWERS, type Ship, type World } from '../src/sim/types';
 
@@ -92,6 +92,17 @@ describe('the powers', () => {
     const sung = sea(true), not = sea(false);
     expect(sung.near).toBeLessThan(not.near - T.songPull * 0.8);
     expect(sung.far).toBeCloseTo(not.far, 3);
+  });
+
+  it('song: the pull eases in at the edge of her reach, and off as a ship comes alongside', () => {
+    // how far a ship this far off is pulled in a second
+    const by = (d: number) => { const o = { x: 0, y: d }; pull(o, 0, 0, 1); return d - o.y; };
+    const alongside = T.length * 1.2, ease = T.length / 2;
+    expect(by(T.songRange + 1)).toBe(0);
+    expect(by(T.songRange - ease / 2)).toBeCloseTo(T.songPull / 2);
+    expect(by((T.songRange + alongside) / 2)).toBeCloseTo(T.songPull);
+    expect(by(alongside + ease / 4)).toBeCloseTo(T.songPull / 4);
+    expect(by(alongside - 1)).toBe(0);
   });
 
   it('has every one again when she comes back from sinking', () => {

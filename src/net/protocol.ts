@@ -5,13 +5,16 @@
 //
 // The phone sends its hands (the sticks and the taps) and draws what the sea says
 // happened a moment ago, sliding every ship between the snapshots either side of that
-// moment. How long a moment is, the phone works out from its wifi (see the Mirror).
+// moment. How long a moment is, the phone works out from its line (see the Mirror); when
+// the next snapshot is late, it sails them on rather than stopping them. Every message is
+// deflated on the line (server/src/index.ts), and a phone whose line falls behind is held
+// back rather than sent more than it can take (net/post.ts).
 //
 // A snapshot carries only what changes and what a phone draws. The chart is rebuilt from
 // its seed, and a ball, which flies straight, is sent once when it is fired. Every ship is
 // sent as anyone looking on sees her; her own guns go only to her own phone.
 
-import { angleTo, clamp } from '../core/vec';
+import { angleTo, clamp, wrap } from '../core/vec';
 import { CRATES, type CrateKind, type GameEvent, type Ship, type World } from '../sim/types';
 import * as Wo from '../sim/world';
 
@@ -27,9 +30,11 @@ export interface Hello { t: 'hello'; v: number; token: string; name: string; loo
  * messages fall: `f` volleys aimed by a drag, the last of them along `fa`; `a` quick taps;
  * `u` presses on each power, in POWERS order (left out by a phone without them).
  * `n` numbers the hands, one more each time they change, so the phone knows which of its
- * own the sea has sailed her by (see mine() and net/lead.ts).
+ * own the sea has sailed her by (see mine() and net/lead.ts). `d` is how many ticks the
+ * phone sailed her by the hands before these: the sea sails them as long (net/sea.ts).
+ * `k` is the sea's clock at the newest snapshot the phone has heard (net/post.ts).
  */
-export interface Helm { t: 'in'; n: number; m: [number, number] | null; f: number; fa: number; a: number; u?: number[] }
+export interface Helm { t: 'in'; n: number; m: [number, number] | null; f: number; fa: number; a: number; u?: number[]; d?: number; k?: number }
 /** Going ashore from the Leave button. A dropped line is taken the same way. */
 export interface Ashore { t: 'leave' }
 /** Looking on, from the bar's screen: no seat and no ship, only the watch key the sea's
@@ -157,11 +162,20 @@ export function wayOf(s: Ship, m: number[]) {
 // running the picture a little fast or slow, never by stepping it back.
 const QUICK = 3;      // the sea's clock is read off the quickest snapshot of this many seconds
 const LATE = 8;       // how late snapshots have come, over this many seconds...
-const COVER = 0.95;   // ...of which the delay covers this share
-const SLIDE = 0.15;   // past the newest snapshot, ships sail on this long before they wait
+const COVER = 0.9;   // ...of which the delay covers this share
 const WARP = 0.08;    // the picture runs at most this much fast or slow while it settles
 const LEAP = 0.4;     // further from its place than this, and it jumps there instead
 const FIRST = 0.12;   // the delay until there is a second of snapshots to judge by
+
+// A snapshot held up (a lost segment sent again, a moment with no signal) leaves the
+// picture past the newest one the phone has. The ships sail on as they were going, turning
+// as they were turning, and only lose their way if the wait goes on. When the sea's word
+// comes, each glides from where she was guessed to where she is, rather than jumping.
+const RECKON = 0.6;   // past the newest snapshot, ships sail on as they were for this long...
+const STOP = 0.3;     // ...then lose their way over about this long
+const TURN = 0.8;     // turning no further than this, radians, however long she is sailed on
+const EASE = 0.15;    // a guess put right halves about every EASE × 0.7 seconds
+const SNAP = 20;      // a guess further out than this, metres, is put right at once
 
 interface Ball { x: number; y: number; vx: number; vy: number; born: number; life: number; end: number; heavy: boolean; by: number }
 
@@ -178,8 +192,11 @@ export class Mirror {
   delay = FIRST;
   /** The newest snapshot's own row for this phone's ship, as sent (see mine()). */
   own: number[] | null = null;
-  /** The sea's clock at the newest snapshot. */
+  /** The world's clock at the newest snapshot. */
   newest = 0;
+  /** The sea's clock at the newest snapshot, for the sea to know how far behind this phone
+   *  is (net/post.ts). */
+  lastCk = 0;
   /** How far ahead of the sea this phone is stepping its own ship, seconds (net/lead.ts).
    *  Its own balls are drawn that far on too, so they leave from her where she is drawn. */
   ahead = 0;
@@ -192,16 +209,20 @@ export class Mirror {
   private last = 0;                         // our clock at the last frame
   private said = -1;                        // the latest event time already handed over
   private balls = new Map<number, Ball>();
+  /** Each ship's guess still being put right, by id: how far she is drawn from her place. */
+  private guess = new Map<number, { x: number; y: number; h: number }>();
+  /** The snapshot the last frame sailed the ships on from, if it did. */
+  private basis: Snap | null = null;
 
   /** Who is aboard, and on which chart. A new chart is a new world. */
   roster(r: Roster, me: string) {
     if (!this.world || r.seed !== this.seed) {
       this.seed = r.seed;
       this.world = Wo.create({ seed: r.seed });
-      this.snaps = []; this.balls.clear(); this.said = -1;
+      this.snaps = []; this.balls.clear(); this.said = -1; this.guess.clear(); this.basis = null;
       // as often as not a new chart is a new sea clock too (a server that restarted), so it
       // is judged afresh
-      this.heard = []; this.ck = null; this.delay = FIRST; this.newest = 0; this.own = null;
+      this.heard = []; this.ck = null; this.delay = FIRST; this.newest = 0; this.lastCk = 0; this.own = null;
     }
     const w = this.world;
     for (const s of r.seats) {
@@ -242,6 +263,7 @@ export class Mirror {
     for (const [id, at] of s.sx) { const b = this.balls.get(id); if (b) b.end = Math.min(b.end, at); }
     if (s.me) this.own = s.me;
     this.newest = Math.max(this.newest, s.at);
+    this.lastCk = Math.max(this.lastCk, s.ck);
     this.snaps.push(s);
     if (this.snaps.length > 40) this.snaps.shift();
   }
@@ -251,26 +273,25 @@ export class Mirror {
     const w = this.world;
     if (!w || !this.snaps.length) return;
     const want = now + this.best - this.delay;
+    const dt = this.ck == null ? 0 : Math.max(0, now - this.last);
     if (this.ck == null || Math.abs(want - this.ck) > LEAP) this.ck = want;
-    else {
-      const dt = Math.max(0, now - this.last);
-      this.ck += dt * (1 + clamp((want - this.ck - dt) * 2, -WARP, WARP));
-    }
+    else this.ck += dt * (1 + clamp((want - this.ck - dt) * 2, -WARP, WARP));
     this.last = now;
     const ck = this.ck;
 
-    // the snapshots either side; past the newest, the last two, to slide on from
+    // the snapshots either side; past the newest, the newest, to sail the ships on from
     const snaps = this.snaps, newest = snaps[snaps.length - 1];
     let i = snaps.length - 1;
     while (i > 0 && snaps[i].ck > ck) i--;
-    if (i === snaps.length - 1 && i > 0) i--;
+    const on = sailOn(ck - newest.ck);
+    if (on > 0) i = snaps.length - 1;
     const a = snaps[i], b = snaps[Math.min(i + 1, snaps.length - 1)];
     const span = b.ck - a.ck;
-    const k = span > 0 ? clamp((ck - a.ck) / span, 0, 1 + SLIDE / span) : 1;
-    const t = a.at + (b.at - a.at) * k;
+    const k = span > 0 ? clamp((ck - a.ck) / span, 0, 1) : 1;
+    const t = a.at + (b.at - a.at) * k + on;
 
     // what happened, as it comes due. Never past the newest snapshot's time, though the
-    // ships slide on beyond it: what happened there has not been heard yet.
+    // ships sail on beyond it: what happened there has not been heard yet.
     for (const s of snaps) {
       for (const e of s.e) {
         const at = e.at as number;
@@ -283,8 +304,9 @@ export class Mirror {
     snaps.splice(0, Math.max(0, i - 1));      // keep one behind, for a late frame
 
     w.t = t;
-    w.R = a.R + (b.R - a.R) * Math.min(1, k);
-    this.ships(w, a, b, k);
+    w.R = a.R + (b.R - a.R) * k;
+    this.ships(w, a, b, k, on);
+    this.glide(w, ck, dt, on > 0 ? newest : null);
     w.shots = [];
     // your own balls in your own ship's time, the rest in the sea's a moment ago
     const own = this.ahead > 0 ? newest.at + this.ahead : t;
@@ -301,7 +323,7 @@ export class Mirror {
     w.crates = b.c.map((r) => ({ id: r[0], kind: CRATES[r[1]] as CrateKind, x: r[2], y: r[3], age: r[4], dead: false }));
   }
 
-  private ships(w: World, a: Snap, b: Snap, k: number) {
+  private ships(w: World, a: Snap, b: Snap, k: number, on: number) {
     const prev = new Map(a.p.map((r) => [r[0], r]));
     for (const r of b.p) {
       const s = w.ships[r[0]];
@@ -310,6 +332,7 @@ export class Mirror {
       // slid across the sea to it
       const o = prev.get(r[0]);
       slide(s, o && (o[10] & 1) === (r[10] & 1) ? o : r, r, k);
+      if (on > 0 && !(r[10] & 1)) reckon(s, r, on);
       s.hit = r[8]; s.invuln = r[9];
       const f = r[10];
       s.out = !!(f & 1) || s.left; s.heavy = !!(f & 4); s.boost = f & 8 ? 1 : 0;
@@ -322,6 +345,64 @@ export class Mirror {
     me.ammo = m[0]; me.reloadT = m[1]; me.gapT = m[2]; me.sank = m[3]; me.calm = m[4]; me.down = m[5];
     me.cool = m.slice(16);
   }
+
+  /**
+   * Put right a guess, gently. While the last frame sailed the ships on from a snapshot
+   * (`basis`) and a newer one has come since, every ship is somewhere other than where she
+   * was guessed: she is drawn where the guess had her, and glides to where the sea says.
+   * `from` is the snapshot this frame sailed them on from, if it did.
+   */
+  private glide(w: World, ck: number, dt: number, from: Snap | null) {
+    const fade = Math.exp(-dt / EASE);
+    for (const [id, g] of this.guess) {
+      g.x *= fade; g.y *= fade; g.h *= fade;
+      if (Math.abs(g.x) + Math.abs(g.y) + Math.abs(g.h) < 1e-3) this.guess.delete(id);
+    }
+    const was = this.basis;
+    if (was && was !== from) {
+      const on = sailOn(ck - was.ck), at = { x: 0, y: 0, h: 0, v: 0 };
+      for (const r of was.p) {
+        const s = w.ships[r[0]];
+        if (!s || s.out || r[10] & 1) continue;
+        reckon(at, r, on);
+        const dx = at.x - s.x, dy = at.y - s.y;
+        if (Math.hypot(dx, dy) > SNAP) { this.guess.delete(r[0]); continue; }
+        const g = this.guess.get(r[0]) ?? { x: 0, y: 0, h: 0 };
+        g.x += dx; g.y += dy; g.h += angleTo(s.h, at.h);
+        this.guess.set(r[0], g);
+      }
+    }
+    this.basis = from;
+    for (const [id, g] of this.guess) {
+      const s = w.ships[id];
+      if (!s || s.out) { this.guess.delete(id); continue; }
+      s.x += g.x; s.y += g.y; s.h = wrap(s.h + g.h);
+    }
+  }
+}
+
+/** How long past the newest snapshot the ships are sailed on for, `past` seconds past it:
+ *  as long, at first, then less and less as they lose their way. 0 for none. */
+function sailOn(past: number) {
+  if (past <= 0) return 0;
+  return past <= RECKON ? past : RECKON + STOP * (1 - Math.exp(-(past - RECKON) / STOP));
+}
+
+/** Sail a ship on from her row in a snapshot for `t` seconds, as she was going: her way,
+ *  and her turn, up to TURN. */
+function reckon(s: { x: number; y: number; h: number; v: number }, r: number[], t: number) {
+  const v = r[4], h = r[3], turn = clamp(r[5] * t, -TURN, TURN);
+  if (Math.abs(turn) < 1e-4) {
+    s.x = r[1] + Math.cos(h) * v * t;
+    s.y = r[2] + Math.sin(h) * v * t;
+  } else {
+    // round an arc the length she sails, as far round as she turns
+    const R = (v * t) / turn;
+    s.x = r[1] + R * (Math.sin(h + turn) - Math.sin(h));
+    s.y = r[2] - R * (Math.cos(h + turn) - Math.cos(h));
+  }
+  s.h = wrap(h + turn);
+  s.v = v;
 }
 
 /** Slide a ship between two snapshots (k past 1 sails her on from the newer): position and

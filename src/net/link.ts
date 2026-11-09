@@ -45,6 +45,8 @@ export class Link {
   private sentPresses = { f: 0, a: 0, u: '' };
   /** The hands' number, one more each time they change, and the stick as last sent. */
   private n = 0;
+  /** How many ticks the phone sailed her by the hands before the newest sent. */
+  private d = 0;
   private sentMove: Input['move'] = null;
   private last = -1;
   /** Volleys shown at once that the sea has not yet counted, by the hands they went in. */
@@ -192,8 +194,9 @@ export class Link {
     const pressed = m.f !== p.f || m.a !== p.a || String(m.u) !== p.u;
     if (!pressed && (s === this.sent ? now - this.sentAt < KEEPALIVE : now - this.changedAt < HELM_EVERY)) return false;
     if (this.ws?.readyState !== WebSocket.OPEN || this.state !== 'aboard') return false;
-    if (s !== this.sent) { this.n++; this.changedAt = now; }
-    this.ws.send(JSON.stringify({ ...m, n: this.n }));
+    // the sea sails her by each of her hands as long as the phone did: say how long that was
+    if (s !== this.sent) { this.d = this.n > 0 ? this.lead.ticksOf(this.n) : 0; this.n++; this.changedAt = now; }
+    this.ws.send(JSON.stringify({ ...m, n: this.n, d: this.d, k: this.mirror.lastCk }));
     this.sent = s; this.sentAt = now; this.sentPresses = { f: m.f, a: m.a, u: String(m.u) };
     this.sentMove = m.m ? { x: m.m[0], y: m.m[1] } : null;
     return true;

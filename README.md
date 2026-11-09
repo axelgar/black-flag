@@ -98,6 +98,7 @@ is aboard, sending a snapshot fifteen times a second.
 - **The phone** draws a moment behind the sea and slides every ship between snapshots
   (`Mirror`, `src/net/protocol.ts`), except its own, which it steps itself at once from the
   stick and corrects as the sea's word comes back (`src/net/lead.ts`).
+- **A slow line** (a phone on weak 4G at the bar) is the next section.
 - **Coming aboard** gives up after 10 s and says why: the server, a sea out of reach, or a
   sea that never answered, with Try again (`src/net/link.ts`).
 - **Secrets**, set on the service under Environment in Render's dashboard, or in
@@ -113,6 +114,42 @@ is aboard, sending a snapshot fifteen times a second.
   the service's address in a browser first. Guests need Starter.
 - A page finds its sea through `VITE_SEA_URL`; in development it is `npm run sea:dev` on
   the machine serving the page, so a phone on the same wifi works.
+
+## A slow line
+
+A phone at the bar may be on weak 4G or worse. What keeps the sea smooth on one:
+
+- **Deflated.** The server deflates every message (`permessage-deflate`, which every
+  browser takes), against the ones before it on the same line: a snapshot is mostly the
+  same numbers again, so the sea's word drops from about 165 to about 45 kbit/s.
+- **Sailed on through a late snapshot.** When the next snapshot is late, the `Mirror`
+  sails every ship on along her arc for up to 0.6 s, then eases her to a stop, rather than
+  freezing her. When the snapshot comes, she glides to where it says over a few frames
+  rather than jumping (`protocol.ts`).
+- **Her hands, for as long as the phone held them.** Each set of hands a phone sends says
+  how many ticks it sailed the ones before (`d`), and the sea sails her by each for exactly
+  that long however late they arrive (`Helmsman`, `sea.ts`). So where the sea puts her is
+  where the phone already had her, and a jittery line puts her right less often.
+- **Drawn between ticks.** Your own ship is drawn where she is between two of the sim's
+  ticks, so she moves as far every frame on any screen (`lead.ts`).
+- **Held back, not queued.** Each set of hands also says the newest snapshot the phone has
+  heard (`k`). A phone more than 1.5 s behind is sent nothing new until it catches up, then
+  the newest with every ball and event it missed, so a line slower than the sea's word
+  stays about a second behind rather than falling further and further (`net/post.ts`).
+
+Both `d` and `k` are optional: a phone that doesn't send them sails as before.
+`npm run lines` measures every kind of line (`tests/slowline.ts` models wifi, weak 4G, bad
+3G with signal fades, and 2G) and prints how far behind the sea is, how often ships hitch,
+and how far your own ship is put right. Before, and after:
+
+| line | behind the sea | ships stopped dead | ships hitching | own ship put right | kbit/s |
+| --- | --- | --- | --- | --- | --- |
+| weak 4G | 0.24 → 0.18 s | 1.1 → 0.1% | 41 → 7/min | 0.92 → 0.23 m | 164 → 46 |
+| bad 3G | 0.53 → 0.44 s | 5.6 → 0.1% | 52 → 15/min | 1.61 → 1.02 m | 165 → 46 |
+| 2G | 8.9 → 0.57 s | 82 → 0.3% | 737 → 22/min | 5.2 → 1.35 m | 162 → 43 |
+
+What is left on bad lines is the uplink: a phone's hands lost on a line that resends them
+come late, and the sea can only sail her by them when they come.
 
 ## The bar's screen
 
@@ -183,6 +220,10 @@ migration only ever adds.
   fills the TV for a demo or a load test. Options are at the top of `scripts/captain.ts`.
   Every captain is a real anonymous player in the live database, marked as a test; the
   SQL that clears them is in `PLANS/SWITCHOVER.md`.
+- **`npm run lines`** plays a night on each kind of slow line, headless, and prints how
+  it plays (see A slow line). `ON_LINES=weak4g,bad3g` picks the lines, `NIGHTS=5` how many
+  each, `ZIP=1` only deflated (`ZIP=0` only plain), and `TWEAK='{"loss":0.05}'` changes
+  the lines (the fields of `Line` in `tests/slowline.ts`).
 
 How a scripted captain steers and fires is `scripts/brain.ts`.
 
@@ -198,7 +239,7 @@ src/
                  combat.ts (guns, damage, streaks), bots.ts, map.ts (the chart), types.ts
   net/           cloud.ts (Supabase), project.ts (which project), protocol.ts (the wire
                  and the Mirror), sea.ts (a shared sea), link.ts (the phone's line to it),
-                 lead.ts (your own ship, at once)
+                 lead.ts (your own ship, at once), post.ts (what a slow phone is sent)
   render/        three.js, cartoon: view.ts (camera and effects), sea.ts, land.ts,
                  ships.ts, crates.ts, fx.ts, toon.ts (banded light), ink.ts (outlines),
                  files.ts (the model loader)
@@ -231,6 +272,9 @@ watch.html       the TV's page; index.html the game's
   stays close to where the sea puts her.
 - **A bad line** (`link.test.ts`): the phone is told within ten seconds whether the sign-in,
   the sea or its answer failed, and can try again.
+- **A slow line** (`slowline.test.ts`, `post.test.ts`): a night on wifi, weak 4G, bad 3G
+  and 2G stays near the present, smooth and seldom put right, and a line slower than the
+  sea's word stays under two seconds behind.
 - **The server's rules** (`db.test.ts`): tickets, wins, saving and pouring a free shot,
   handing it over, and that a phone reads only its own rows.
 - **The TV** (`watch.test.ts`), and **model files and outlines** (`models.test.ts`).

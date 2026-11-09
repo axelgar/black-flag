@@ -22,6 +22,7 @@ import { checkName } from '../../src/data/names';
 import { lookById } from '../../src/data/ships';
 import { TUNING } from '../../src/data/tuning';
 import { SUPABASE_KEY, SUPABASE_URL } from '../../src/net/project';
+import { Post } from '../../src/net/post';
 import { WIRE, type FromSea, type Nope, type ToSea, type Watch } from '../../src/net/protocol';
 import { Sea, type Win } from '../../src/net/sea';
 
@@ -38,7 +39,13 @@ const ASK_EVERY = 30_000;
 const NIGHT_OVER = 60 * 60 * 1000;
 
 const rooms = new Map<string, SeaRoom>();
-const wires = new WebSocketServer({ noServer: true, maxPayload: LONGEST });
+// Every snapshot is deflated, against the ones before it on the same line: a sea's word is
+// mostly the same numbers again, so it goes in about a quarter of the bytes, which is what
+// lets a phone on a slow line keep up at all. Phones say they can take it; all do.
+const wires = new WebSocketServer({
+  noServer: true, maxPayload: LONGEST,
+  perMessageDeflate: { threshold: 64, zlibDeflateOptions: { level: 6, memLevel: 8 } },
+});
 const answered = new WeakSet<WebSocket>();   // the lines that have answered since last asked
 
 /** Which of the bar's seas a path is for. */
@@ -75,6 +82,7 @@ let jwks: ReturnType<typeof createRemoteJWKSet> | null = null;
 class SeaRoom {
   private sea: Sea | null = null;
   private socks = new Map<WebSocket, string | null>();   // every socket, and its seat once aboard
+  private posts = new Map<WebSocket, Post>();            // what each phone aboard is sent, and when
   private watchers = new Set<WebSocket>();                // the screens looking on
   private timer: ReturnType<typeof setInterval> | null = null;
   private empty: ReturnType<typeof setTimeout> | undefined;
@@ -98,6 +106,7 @@ class SeaRoom {
     if (m.t === 'in') {
       const seat = this.socks.get(ws);
       if (seat) this.sea?.helm(seat, m);
+      this.posts.get(ws)?.hear(m.k);
       return;
     }
     if (m.t === 'leave') {
@@ -120,6 +129,7 @@ class SeaRoom {
     const why = this.sea.join({ seat: who.seat, name: named.name, look: lookById(m.look).id, ticket: who.ticket });
     if (why) return this.nope(ws, why);
     this.socks.set(ws, who.seat);
+    this.posts.set(ws, new Post((s) => { try { ws.send(s); } catch { /* closing */ } }));
     this.send(ws, { t: 'welcome', v: WIRE, code: this.sea.code, cap: this.sea.cap });
     this.send(ws, this.sea.roster());
     this.start();
@@ -198,9 +208,10 @@ class SeaRoom {
       for (const ws of this.watchers) { try { ws.send(s); } catch { /* closing */ } }
       if (m.t !== 's') { for (const [ws, seat] of this.socks) if (seat) { try { ws.send(s); } catch { /* closing */ } } continue; }
       // A snapshot is the same for everyone aboard but for each phone's own ship, whose
-      // guns and takings go on the end: written once, finished phone by phone.
+      // guns and takings go on the end: written once, finished phone by phone, and held
+      // back from a phone whose line has fallen behind (net/post.ts).
       const head = s.slice(0, -1);
-      for (const [ws, seat] of this.socks) if (seat) { try { ws.send(`${head},"me":${JSON.stringify(sea.own(seat))}}`); } catch { /* closing */ } }
+      for (const [ws, seat] of this.socks) if (seat) this.posts.get(ws)?.snap(m, sea.own(seat), head);
     }
     for (const w of sea.takeWins()) void this.record(w);
     if (!sea.aboard) {
@@ -232,6 +243,7 @@ class SeaRoom {
   private gone(ws: WebSocket) {
     const seat = this.socks.get(ws);
     this.socks.delete(ws);
+    this.posts.delete(ws);
     this.watchers.delete(ws);
     if (seat && ![...this.socks.values()].includes(seat)) this.sea?.leave(seat);
   }

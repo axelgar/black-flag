@@ -38,9 +38,8 @@ interface Hand extends Aboard {
   id: number;             // their ship's place in the world
   online: boolean;
   gone: number;           // when the phone dropped off, by the sea's clock
-  helm: Helm;
+  hands: Helmsman;        // which of their hands she is sailed by, and when the next are due
   seen: { f: number; a: number; u: number[] };   // the presses already fired
-  ran: Ran;               // which of their hands she is sailing by, and for how many ticks
   c: number;              // their colour
   ticket: boolean;        // sailing for a free shot: spent by a win
 }
@@ -85,7 +84,7 @@ export class Sea {
     if (had) {
       // a new line is a new phone's count of hands, from nothing
       had.online = true;
-      had.helm = idle(); had.seen = unseen(); had.ran = { n: 0, ticks: 0 };
+      had.hands = new Helmsman(); had.seen = unseen();
       had.ticket = !!a.ticket;
       if (had.name !== a.name) { had.name = a.name; this.dirty = true; }
       return null;
@@ -94,7 +93,7 @@ export class Sea {
     const streak = this.kept.get(a.seat) ?? 0;
     this.kept.delete(a.seat);
     const p = Wo.join(this.world, { seat: a.seat, look: a.look, streak });
-    this.hands.set(a.seat, { ...a, id: p.id, online: true, gone: 0, helm: idle(), seen: unseen(), ran: { n: 0, ticks: 0 }, c: this.color(a.seat), ticket: !!a.ticket });
+    this.hands.set(a.seat, { ...a, id: p.id, online: true, gone: 0, hands: new Helmsman(), seen: unseen(), c: this.color(a.seat), ticket: !!a.ticket });
     this.drain();
     this.crew();
     this.dirty = true;
@@ -106,14 +105,14 @@ export class Sea {
     const h = this.hands.get(seat);
     if (!h || !h.online) return;
     h.online = false; h.gone = this.clock;
-    h.helm = idle(); h.seen = unseen(); h.ran = { n: 0, ticks: 0 };
+    h.hands = new Helmsman(); h.seen = unseen();
   }
 
   /** The hands, as the phone last sent them. */
   helm(seat: string, m: Helm) {
     const h = this.hands.get(seat);
     if (!h || !h.online) return;
-    h.helm = m;
+    h.hands.hear(m, this.clock);
   }
 
   /** The sea's heartbeat. Returns what every phone aboard should be sent. */
@@ -134,7 +133,7 @@ export class Sea {
   own(seat: string): number[] | null {
     const h = this.hands.get(seat);
     const p = h ? this.world.ships[h.id] : null;
-    return p && h && !p.left ? mine(p, h.ran) : null;
+    return p && h && !p.left ? mine(p, h.hands.ran) : null;
   }
 
   /** Who is in which seat, under what name, in which colour. Two captains of the same name
@@ -229,18 +228,17 @@ export class Sea {
       const inputs: Input[] = [];
       for (const h of this.hands.values()) {
         if (!h.online) { inputs[h.id] = NO_INPUT; continue; }
-        const m = h.helm, first = n === 0;
-        // a press fires on the first tick after it arrives, once
+        // she sails by her hands as her phone did; a press fires on the first tick after
+        // it arrives, once
+        const m = h.hands.heard, first = n === 0, way = h.hands.tick();
         const fire = first && m.f > h.seen.f ? m.fa : null;
         const auto = first && m.a > h.seen.a;
         // one power a step: a second pressed with it goes off the step after
         const u = Array.isArray(m.u) ? m.u : [];
         const power = first ? POWERS.findIndex((_, k) => (u[k] ?? 0) > h.seen.u[k]) : -1;
-        inputs[h.id] = { move: m.m ? { x: m.m[0], y: m.m[1] } : null, fire, auto: fire == null && auto, power: power >= 0 ? power : null };
+        inputs[h.id] = { move: way.m ? { x: way.m[0], y: way.m[1] } : null, fire, auto: fire == null && auto, power: power >= 0 ? power : null };
         if (first) { h.seen.f = m.f; h.seen.a = m.a; }
         if (power >= 0) h.seen.u[power] = u[power];
-        if (m.n !== h.ran.n) h.ran = { n: m.n, ticks: 0 };
-        h.ran.ticks++;
       }
       Wo.step(w, FIXED, inputs);
       this.shots.note(w);
@@ -283,3 +281,73 @@ export class Sea {
 }
 
 const ROMAN = ['', '', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X'];
+
+/* ---------------------------------------------------------- her hands -- */
+
+// Her phone sails her the moment it sends her hands (net/lead.ts), and goes on by them until
+// it sends the next. If the sea took each the moment it arrived, a wifi that brings one
+// late and the next on time would have the sea sail her a different way from her phone,
+// and her phone would be put right, over and over, the worse the line the more. So each of
+// her hands says how long her phone sailed the ones before (`d`), and the sea sails those
+// as long. Hands that arrive early wait their turn; late ones are taken as they come, and
+// the sea makes up the ticks it fell behind by, one at a time, while the hands keep coming
+// with time to spare. Hands that are very late (the line was gone a moment) are not made
+// up: the sea goes straight to the newest.
+const SPARE = 2;          // ticks: the least the next hands should wait before they are due
+const BEHIND = 30;        // ticks behind her phone past which the sea goes straight to the newest
+const LOOK_BACK = 2;      // seconds of hands arriving it judges how early they come by
+
+/** Her hands as the sea sails her by them. */
+class Helmsman {
+  /** The hands she is sailed by, and for how many ticks so far. */
+  now: Helm = idle();
+  ran: Ran = { n: 0, ticks: 0 };
+  /** The newest hands heard: their presses go off at once. */
+  heard: Helm = idle();
+  private next: Helm[] = [];
+  /** As each of the hands came, how many ticks before it was due. */
+  private early: { at: number; ticks: number }[] = [];
+
+  hear(m: Helm, clock: number) {
+    const last = this.next.length ? this.next[this.next.length - 1] : this.now;
+    if (m.n === last.n) return;           // the same hands again: a line kept alive
+    this.heard = m;
+    // a phone that doesn't say how long it sailed them: at once, as they come
+    if (typeof m.d !== 'number') { this.next = []; this.now = m; return; }
+    this.next.push(m);
+    this.early.push({ at: clock, ticks: this.toCome() });
+    while (clock - this.early[0].at > LOOK_BACK) this.early.shift();
+  }
+
+  /** The hands to sail the next tick by. */
+  tick(): Helm {
+    while (this.next.length) {
+      const due = this.next[0].d!, t = this.ran.ticks;
+      const late = this.toCome() > BEHIND;
+      const ahead = t === due - 1 && this.spare();
+      if (t < due && !late && !ahead) break;
+      if (ahead && !late) for (const e of this.early) e.ticks--;
+      this.now = this.next.shift()!;
+      this.ran = { n: this.now.n, ticks: 0 };
+    }
+    // hands taken at once, from a phone that doesn't say how long
+    if (this.now.n !== this.ran.n) this.ran = { n: this.now.n, ticks: 0 };
+    this.ran.ticks++;
+    return this.now;
+  }
+
+  /** Ticks of her phone's sailing still to sail before the newest hands heard. */
+  private toCome() {
+    let n = -this.ran.ticks;
+    for (const m of this.next) n += m.d!;
+    return n;
+  }
+
+  /** Have the hands lately all come with ticks to spare? */
+  private spare() {
+    if (this.early.length < 4) return false;
+    let least = Infinity;
+    for (const e of this.early) least = Math.min(least, e.ticks);
+    return least > SPARE;
+  }
+}

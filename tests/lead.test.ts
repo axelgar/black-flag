@@ -62,10 +62,12 @@ function sail(seconds: number, wifi: Wifi, steer: (t: number) => Input['move'], 
     const want = steer(t);
     const body = JSON.stringify(want ? [Math.round(want.x * 100) / 100, Math.round(want.y * 100) / 100] : null);
     if (body !== sent) {
+      // as the phone does: say how long it sailed her by the hands before
+      const d = n > 0 ? lead.ticksOf(n) : 0;
       n++; sent = body;
       move = want ? { x: Math.round(want.x * 100) / 100, y: Math.round(want.y * 100) / 100 } : null;
       lastUp = Math.max(lastUp, t + late());
-      up.push({ at: lastUp, m: { t: 'in', n, m: move ? [move.x, move.y] : null, f: 0, fa: 0, a: 0 } });
+      up.push({ at: lastUp, m: { t: 'in', n, m: move ? [move.x, move.y] : null, f: 0, fa: 0, a: 0, d } });
       if (lead.ship) {
         const h0 = lead.ship.h;
         const w = mirror.world!;
@@ -133,5 +135,40 @@ describe('your own ship, at once', () => {
     const shown = { ...w.ships[0] };
     l.show({ ...w, ships: [shown] });
     expect(shown.x).toBeCloseTo(w.ships[0].x, 2);
+  });
+
+  it('on a jittery line, is sailed by the sea as by the phone, and barely put right', () => {
+    // each of her hands sailed as long by the sea as by her phone, however late it came
+    const { lead } = sail(12, { ms: 90, jitter: 70 }, zigzag);
+    const c = stats(lead.corrections.slice(10));
+    expect(c.n).toBeGreaterThan(150);
+    expect(c.mean).toBeLessThan(0.1);
+    expect(c.p99).toBeLessThan(0.6);
+  });
+
+  it('is drawn between ticks: on a 90 Hz screen she moves as far every frame', () => {
+    const l = new Lead();
+    const sea = new Sea('BAR1', { seed: 'between' });
+    sea.join({ seat: 'me', name: 'Me', look: 'jackdaw' });
+    const w = sea.world, s = w.ships[0];
+    // open water, sailing east at full way
+    const r = rng('between');
+    for (let i = 0; i < 400; i++) {
+      const x = (r() - 0.5) * 200, y = (r() - 0.5) * 200;
+      if ([0, 20, 40].every((dx) => [-15, 0, 15].every((dy) => !onLand(w.map, x + dx, y + dy)))) { Object.assign(s, { x, y }); break; }
+    }
+    Object.assign(s, { h: 0, v: s.maxSpeed, sail: 1, trim: 1 });
+    l.hear({ map: w.map, R: 1e6, focus: 0 }, sea.own('me')!, false);
+    const shown = { ...s }, steps: number[] = [];
+    let x = 0;
+    for (let i = 0; i < 90; i++) {
+      l.advance({ map: w.map, R: 1e6 }, 1 / 90, 0, { x: 1, y: 0 });
+      l.show({ ...w, ships: [shown] });
+      if (i > 0) steps.push(shown.x - x);
+      x = shown.x;
+    }
+    // ticks come 120 a second, so a frame falls across one or two of them
+    const mean = steps.reduce((a, b) => a + b, 0) / steps.length;
+    for (const d of steps) expect(Math.abs(d - mean)).toBeLessThan(mean * 0.05);
   });
 });
