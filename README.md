@@ -44,7 +44,7 @@ and Supabase (Postgres and sign-in) behind both.
   sea: "Order a Black Flag and this would have been a free shot."
 - **Leaving.** Out of a fight for 10 s, your ship docks and the streak waits for you. Leave
   mid-fight and she stays on the water for 10 s, and can still be sunk.
-- **The sea.** One open sea, no rounds. Fifteen bots are always on it (`bots` in the tuning),
+- **The sea.** One open sea, no rounds. Five bots are always on it (`bots` in the tuning),
   and at most thirty captains; a full sea sends the next phone to the next (the bar's seas 1–9). The
   sea grows at once as ships join and closes in over about 30 s as they leave. Islands
   stop shots. Crates: repair, a burst of speed, heavy shot.

@@ -312,7 +312,9 @@ describe('the mirror on a line that holds a snapshot up', () => {
         expect(d).toBeLessThan(1.5);
       }
     }
-    expect(checked).toBeGreaterThan(200);
+    // most of the bots under way for most of the half second it waits
+    const bots = Math.max(T.bots, T.minShips - 1);
+    expect(checked).toBeGreaterThan(bots * 30 / 2);
   });
 
   it('and stops them, gently, if the wait goes on', () => {

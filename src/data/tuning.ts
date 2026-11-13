@@ -77,7 +77,7 @@ export const TUNING = {
   minShips: 5,
   /** Bots on a sea whatever the captains aboard, on top of them. At 0, bots only make up
    *  the numbers to minShips. */
-  bots: 15,
+  bots: 5,
   /** Captains on a sea at the most. The next phone goes to the next sea. */
   maxShips: 30,
   /** Seconds to sail across the sea at full speed with minShips on it. It grows with the
