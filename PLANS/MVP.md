@@ -1,7 +1,8 @@
 # Black Flag — the bar's game
 
 Planned 1 November 2026, from a grilling session with the owner. A guest who orders a
-Black Flag gets a ticket. With it, sinking five ships in a row without being sunk wins a
+cocktail gets a ticket (any cocktail since 16 November; at first only the Black Flag, and
+the rest of this plan still says so). With it, sinking five ships in a row without being sunk wins a
 free shot. The game is only captains against captains on one shared sea, with bots
 topping it up, in a cartoon look like Brawl Stars. It replaces the live site.
 

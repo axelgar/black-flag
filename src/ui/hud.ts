@@ -35,7 +35,7 @@ export function hudHtml(practice: boolean) {
       <div class="skulls">${slots}</div>
       <div class="label" id="streak-label">Sink 5 in a row</div>
     </div>
-    <div class="practice" id="practice"${practice ? '' : ' hidden'}>Practice · order a <b>Black Flag</b> to play for a free shot</div>
+    <div class="practice" id="practice"${practice ? '' : ' hidden'}>Practice · order <b>any cocktail</b> to play for a free shot</div>
     <div class="feed" id="feed"></div>
     <div class="toast" id="toast"></div>
     <div class="powers" id="powers">${POWERS.map((p, i) => `<button class="power ${p}" data-power="${i}" aria-label="${POWER_NAME[p]}">${POWER_ICON[p]}<i class="cool"></i><b class="left"></b><span>${touch ? POWER_NAME[p] : `${i + 1} ${POWER_NAME[p]}`}</span></button>`).join('')}</div>
@@ -168,7 +168,7 @@ export function hudEvents(events: GameEvent[], w: World, seats: Seat[]) {
           if (c) {
             // on a ticket, a free shot to save; without one, what it would have been
             $('#won-big', c)!.textContent = e.prize ? 'Free shot!' : 'Five in a row!';
-            $('#won-sub', c)!.textContent = e.prize ? 'Five in a row on your ticket. Save it with your email to claim it.' : 'Order a Black Flag and this would have been a free shot.';
+            $('#won-sub', c)!.textContent = e.prize ? 'Five in a row on your ticket. Save it with your email to claim it.' : 'Order any cocktail and this would have been a free shot.';
             $('#won-save', c)!.hidden = !e.prize;
             $('#won-ok', c)!.textContent = e.prize ? 'Later' : 'Keep sailing';
             $('#won-ok', c)!.classList.toggle('quiet', !!e.prize);

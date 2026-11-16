@@ -39,7 +39,7 @@ export function standing(): string {
     : ready ? `<a class="shot" href="#/redeem/${ready.id}">🥃 Free shot · until ${day(ready.valid_until)} <b>Pour it</b></a>` : '';
   const ticket = me.ticket
     ? `<div class="ticket">🎟 <b>Ticket!</b> Sink 5 in a row for a free shot</div>`
-    : `<div class="ticket off">Practice · order a <b>Black Flag</b> to play for a free shot</div>`;
+    : `<div class="ticket off">Practice · order <b>any cocktail</b> to play for a free shot</div>`;
   return `${said}${shot}${ticket}`;
 }
 

@@ -1,5 +1,5 @@
 // The Black Flag ticket card: `npm run qr [-- https://your.site]`. The bartender holds it
-// out with every Black Flag. Prints the link to write to the card's NFC tag, and writes
+// out with every cocktail. Prints the link to write to the card's NFC tag, and writes
 // the QR code for its back (for phones without NFC) to qr/ticket.svg and qr/ticket.png.
 // The links are plain by design (PLANS/MVP.md): a ticket is one a phone a night.
 //

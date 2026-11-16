@@ -135,7 +135,7 @@ function banner(text: string, prize: boolean) {
   const el = $('#banner');
   if (!el) return;
   el.innerHTML = `<div class="big">${prize ? '🥃 ' : ''}${esc(text)}</div>
-    <div class="small">${prize ? 'Five in a row on a Black Flag ticket' : 'With a Black Flag, that\'s a free shot'}</div>`;
+    <div class="small">${prize ? 'Five in a row on a ticket' : 'With any cocktail, that\'s a free shot'}</div>`;
   el.classList.remove('on', 'gold');
   void el.offsetWidth;
   el.classList.add('on');
@@ -166,7 +166,7 @@ function draw() {
   else if (L.state === 'refused') card = `<div class="eyebrow">The sea is out of reach</div><div class="disp">${L.why === 'full' ? 'Too many screens' : L.why === 'bad' ? 'No seas on this site' : 'Not tonight'}</div>`;
   else if (L.quiet) card = `<div class="eyebrow">The sea is quiet</div><div class="disp">Who sets sail first?</div>
       <div class="qr big">${qr(joinUrl())}</div>
-      <div class="cta-line">Order a <b>Black Flag</b> to play for a free shot</div>
+      <div class="cta-line">Order <b>any cocktail</b> to play for a free shot</div>
       <div class="scan">or scan to practise · <b>${esc(location.host)}</b></div>`;
   set($('#card'), card ? `<div class="in">${card}</div>` : '', true);
 
@@ -180,14 +180,14 @@ function draw() {
       <div class="eyebrow"><i class="live"></i>The bar's sea${bar > 1 ? ` ${bar}` : ''} · live</div></div>
     <div class="rule">Sink <b>5 ships in a row</b> without going down to win a <b>free shot</b> 🥃</div>
     ${L.state === 'watching' && L.quiet ? `<section><h3>How it works</h3><ol class="how">
-      <li><span>Order a <b>Black Flag</b> at the bar</span></li>
+      <li><span>Order <b>any cocktail</b> at the bar</span></li>
       <li><span>Tap the card it comes with on your phone</span></li>
       <li><span>Sink <b>5 in a row</b> on the TV's sea</span></li>
       <li><span>Show the bartender your <b>free shot</b></span></li></ol></section>` : ''}
     ${busy ? `<section class="streaks"><h3>On a streak</h3>${top.length ? top.map(row).join('') : '<div class="none">Nobody yet. Who\'s first?</div>'}</section>` : ''}
     ${busy && feed.length ? `<section class="feed"><h3>Just now</h3>${feed.map((f) => `<div class="line">${f.html}</div>`).join('')}</section>` : ''}
     ${busy ? `<div class="join"><div class="qr">${qr(joinUrl())}</div>
-      <div><div class="cta-line">Order a <b>Black Flag</b> to play for a free shot</div>
+      <div><div class="cta-line">Order <b>any cocktail</b> to play for a free shot</div>
       <div class="scan">or scan to practise<br><b>${esc(location.host)}</b></div></div></div>` : ''}`, true);
   chart.room = $('#panel')?.getBoundingClientRect().width ?? 0;
 

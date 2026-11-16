@@ -1,6 +1,6 @@
 # Black Flag
 
-The bar's game. A guest who orders a **Black Flag** cocktail taps the bartender's card,
+The bar's game. A guest who orders a cocktail, any on the menu, taps the bartender's card,
 types a name and sails onto one shared sea with everyone else in the bar, topped up with
 bots. Sink five ships in a row without being sunk and you win a free shot. The game is run
 by Glitch Bars.
@@ -36,12 +36,12 @@ and Supabase (Postgres and sign-in) behind both.
 ## How it plays
 
 - **A ticket.** The bartender holds out a card with an NFC tag (and a QR code on the back)
-  to whoever orders a Black Flag. It gives that phone tonight's ticket, one a phone a night
+  to whoever orders a cocktail. It gives that phone tonight's ticket, one a phone a night
   (6:00 to 6:00, Madrid time). A ticket lasts until it wins.
 - **Five in a row.** Sink five ships without being sunk. Bots count, the last hit takes
   the sink, and being sunk puts the streak back to 0. At four a ship is **WANTED** on
   every screen. A win on a ticket is a free shot; without one it is practice, on the same
-  sea: "Order a Black Flag and this would have been a free shot."
+  sea: "Order any cocktail and this would have been a free shot."
 - **Leaving.** Out of a fight for 10 s, your ship docks and the streak waits for you. Leave
   mid-fight and she stays on the water for 10 s, and can still be sunk.
 - **The sea.** One open sea, no rounds. Five bots are always on it (`bots` in the tuning),
@@ -157,7 +157,7 @@ come late, and the sea can only sail her by them when they come.
 as a disc that opens out and closes in with the ships on it, the islands, every ship in
 her captain's colour with her name and skulls over her, a WANTED ship pulsing red, shots as
 short streaks and a sinking as a splash. Down the right: the rule, the captains on a
-streak, what just happened, and "Order a Black Flag" with a QR code to the game (practice:
+streak, what just happened, and "Order any cocktail" with a QR code to the game (practice:
 a scan of the TV is not a ticket). A free shot won is said across the top of the chart.
 Nothing in the game links to it, and it loads none of the 3D game: a 2D canvas, about
 25 kB.
