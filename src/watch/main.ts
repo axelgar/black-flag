@@ -7,6 +7,7 @@
 // night it turns between the bar's seas; 1–9 hold it on one, 0 lets it turn again, F is
 // full screen.
 
+import '../ui/fonts/fonts.css';
 import './watch.css';
 import { markOf } from '../data/colors';
 import { mapFor } from '../sim/world';

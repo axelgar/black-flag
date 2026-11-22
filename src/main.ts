@@ -3,6 +3,7 @@
 // The phone never steps the sea: the server does (server/, src/net/sea.ts). This device
 // sends its hands and draws the Mirror the Link keeps of the world, a moment behind.
 
+import './ui/fonts/fonts.css';
 import './ui/app.css';
 import { session, save } from './state/session';
 import { mapFor } from './sim/world';
