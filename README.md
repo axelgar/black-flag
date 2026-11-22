@@ -174,6 +174,11 @@ Nothing in the game links to it, and it loads none of the 3D game: a 2D canvas, 
   says "Live at Glitch · played from this room", or how many are playing in the bar, and
   over a sea of bots alone the bar's line, "Do you wanna play?". The sea keeps the game's
   look, and so does the Black Flag title, as on the phones.
+- **The prize card.** The one block of solid orange on the panel: "FREE SHOT", and under it
+  "Sink 5 in a row" beside five boxes. Every seven seconds the boxes fill with skulls one
+  at a time, and at the fifth the words jump and a light runs across the card: the game
+  with nothing to read. It keeps its place in the count when the panel is written again
+  (`--t`, `main.ts`), and holds still for a screen set to reduce motion.
 - **The watch key.** The page asks for it once and keeps it in that browser; it goes up
   the socket as the first message, never in a URL. Make it a passphrase: there is no
   lockout, only a second's wait after each wrong key. Put a new secret to change it, and

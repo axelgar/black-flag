@@ -28,6 +28,7 @@ const BANNER_FOR = 7;         // seconds a free shot won is said across the char
 const DAWN = 6;               // the hour the screen reloads itself, fresh for the night ahead
 const AGAIN = 60;             // seconds before a screen turned away (not for its key) asks again
 const SKULL = '☠';
+const COUNT = 7;              // seconds the prize card takes to count its five skulls and rest (watch.css)
 
 const $ = <T extends HTMLElement = HTMLElement>(s: string) => document.querySelector(s) as T | null;
 const esc = (s: unknown) => String(s ?? '').replace(/[<>&"]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' }[c]!));
@@ -182,23 +183,27 @@ function draw() {
   const top = L.state === 'watching' && !L.quiet ? standings(w, L.mirror.seats) : [];
   feed = feed.filter((f) => now - f.at < FEED_FOR);
   const busy = L.state === 'watching' && !L.quiet;
-  set($('#panel'), `
+  const redrawn = set($('#panel'), `
     <div class="house"><div class="glitch" role="img" aria-label="Glitch">${GLITCH}</div>
       <div class="eyebrow">A Glitch original · only played here</div></div>
     <div class="brand"><div class="logo">Black <span>Flag</span></div>
       <div class="eyebrow"><i class="live"></i>${busy ? `${L.aboard} playing now in this bar` : 'Live at Glitch · played from this room'}${bar > 1 ? ` · sea ${bar}` : ''}</div></div>
-    <div class="rule">Sink <b>5 ships in a row</b> without going down to win a <b>free shot</b> 🥃</div>
+    <div class="prize"><div class="shot">Free shot<i>🥃</i></div>
+      <div class="for"><span>Sink 5 in a row</span><span class="five">${`<i>${SKULL}</i>`.repeat(5)}</span></div></div>
     ${L.state === 'watching' && L.quiet ? `<section><h3>How it works</h3><ol class="how">
       <li><span>Order <b>any cocktail</b> at the bar</span></li>
-      <li><span>Tap the card it comes with on your phone</span></li>
-      <li><span>Sink <b>5 in a row</b> on the TV's sea</span></li>
-      <li><span>Show the bartender your <b>free shot</b></span></li></ol></section>` : ''}
+      <li><span>Tap its card with your phone</span></li>
+      <li><span>Sink <b>5 in a row</b> on this sea</span></li>
+      <li><span>Show your <b>free shot</b> at the bar</span></li></ol></section>` : ''}
     ${busy ? `<section class="streaks"><h3>On a streak</h3>${top.length ? top.map(row).join('') : '<div class="none">Nobody yet. Who\'s first?</div>'}</section>` : ''}
     ${busy && feed.length ? `<section class="feed"><h3>Just now</h3>${feed.map((f) => `<div class="line">${f.html}</div>`).join('')}</section>` : ''}
     ${open ? `<section class="first"><div class="eyebrow">Only bots out there</div><div class="hook">Do you wanna <span>play?</span></div></section>` : ''}
     ${busy || open ? `<div class="join"><div class="qr">${qr(joinUrl())}</div>
-      <div><div class="cta-line">Order <b>any cocktail</b> to play for a free shot</div>
+      <div><div class="cta-line">Order <b>any cocktail</b> to play</div>
       <div class="scan">or scan to practise<br><b>${esc(location.host)}</b></div></div></div>` : ''}`, true);
+  // the prize card counts its five skulls on a loop; a panel written again takes the count
+  // up where it was, by the clock, and doesn't start it over with every line of the feed
+  if (redrawn) $('.prize')?.style.setProperty('--t', `${-(now % COUNT).toFixed(2)}s`);
   chart.room = $('#panel')?.getBoundingClientRect().width ?? 0;
 
   // a busy night's seas: on to the next live one after a while, unless held
@@ -299,11 +304,12 @@ function qr(url: string): string {
   return '';
 }
 
-/** Write into an element only when what it says has changed. */
+/** Write into an element only when what it says has changed. True if it was written. */
 function set(el: HTMLElement | null, html: string, show = false) {
-  if (!el || el.dataset.h === html) return;
+  if (!el || el.dataset.h === html) return false;
   el.innerHTML = html; el.dataset.h = html;
   if (show) el.classList.toggle('on', !!html.trim());
+  return true;
 }
 
 /* ---------------------------------------------------------------- boot -- */
