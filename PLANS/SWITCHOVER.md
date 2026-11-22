@@ -4,20 +4,28 @@ What it takes to put this version (`v3-mvp`) on the bar's site, in order, and ho
 Steps marked **(you)** need your accounts or secrets; the rest Claude can run on your
 go-ahead.
 
-## Where things stand (2 Nov 2026)
+## Where things stand (22 Nov 2026)
 
 - **The site.** <https://black-flag-two.vercel.app> is Vercel project `axelgars-projects/black-flag`,
   production from branch `main`. It is the early solo game (deployed 5 Sep,
   `dpl_4xZcX6SsiPMyaf6ku5Wfd8amBcSY`), which uses no server and no Supabase. `main` is an
-  ancestor of `v3-mvp`, so the merge is a fast-forward.
+  ancestor of `v3-mvp` (55 commits behind it, none ahead), so the merge is a fast-forward.
+  `main` is not a protected branch.
 - **Vercel settings.** `VITE_SEA_URL` is set for the `v3-mvp` and `v2-open-sea` previews only.
   Production has none.
 - **The sea servers.** This version's server is the Render service `black-flag-sea`
   (`render.yaml`), from branch `v3-mvp`, on the free plan while it is tested. On Cloudflare,
   the worker `black-flag-sea` still runs the v2 sea for the `v2-open-sea` preview, and
   `black-flag-sea-mvp` is the previous test server. Neither is deployed from here any more.
-- **Supabase.** All 50 accounts are anonymous ones from development and play-tests. No
-  guest has used it, since production never talked to it.
+- **Supabase.** All 92 accounts are from development and play-tests: 90 anonymous, and 2
+  saved with an email in the save tests. No guest has used it, since production never
+  talked to it. The live database has the two migrations in `supabase/migrations/` and
+  nothing else.
+- **Checked on 22 Nov, at `efa2df6`.** `npm run typecheck`, `npm test` (100 pass),
+  `npm run build` and `npm audit --omit=dev` (nothing found). A scripted captain on the
+  Render server took a ticket, won five in a row in 70 s and had the free shot written
+  down, so the server's `SUPABASE_SECRET` is set and right. The `v3-mvp` preview is built
+  from the same commit, against the same server.
 
 ## Before the day
 
@@ -34,8 +42,9 @@ go-ahead.
 4. **The sea server's plan (you).** Move the Render service from Free to Starter, and
    `plan: starter` in `render.yaml`. The free plan sleeps after 15 idle minutes and takes
    about a minute to wake, so the night's first guest would be told the sea can't be reached.
-5. **The keys (you).** Under Environment on the Render service, check `SUPABASE_SECRET` (the
-   project's secret key) and `WATCH_KEY` (what the TV says to look on).
+5. **The keys (you).** Under Environment on the Render service, check `WATCH_KEY` (what
+   the TV says to look on). `SUPABASE_SECRET` (the project's secret key) is there and
+   right: the scripted captain's win was written down on 22 Nov.
 6. **The cards.** `npm run qr` prints the tag's link,
    `https://black-flag-two.vercel.app/u/BLACKFLAG?src=nfc`, and writes the QR code for
    the back to `qr/ticket.png`. Write the tags, but don't hand them out until the switch:
@@ -53,8 +62,15 @@ go-ahead.
 2. **Point production at it.** From the main checkout:
    `vercel env add VITE_SEA_URL production`, with `wss://black-flag-sea.onrender.com`.
    Do this before the merge: the value is built into the page.
-3. **Merge and push.** From the worktree, set `branch: main` in `render.yaml`, commit, and
-   `git push origin v3-mvp:main`. This is a fast-forward, and Vercel builds production from it.
+3. **Merge and push.** From the worktree:
+   - Give the old game a name, so it can be found again:
+     `git tag v1-solo origin/main && git push origin v1-solo`.
+   - In one commit: `branch: main` (and `plan: starter`, once the service is on it) in
+     `render.yaml`, and the README's "Where it runs".
+   - `git push origin v3-mvp v3-mvp:main`. This is a fast-forward, and Vercel builds
+     production from it. Push both at once, and not `v3-mvp` alone before: a `render.yaml`
+     that says `main` while `main` is still the old game sends the sea server to build
+     from a branch with no server in it.
 4. **Point the Render service at `main`** (Settings → Build & Deploy), if it hasn't picked
    the branch up from `render.yaml`.
 5. **Check the site** on a phone:
@@ -65,7 +81,6 @@ go-ahead.
    Then open `/watch` on the TV laptop and say the key.
 6. **Clear the test data,** after the checks and before the first guest (SQL below).
 7. **Hand out the cards.**
-8. **Afterwards:** update the README's "Where it runs".
 
 ## Clearing test data
 
@@ -76,7 +91,7 @@ alone: it's the register of tag codes.
 every player, and with them their tickets, free shots and handovers:
 
 ```sql
-select count(*) from auth.users;   -- what goes: 50 on 2 Nov
+select count(*) from auth.users;   -- what goes: 92 on 22 Nov
 delete from public.events;
 delete from auth.users;            -- players, tickets, prizes and handovers follow (on delete cascade)
 ```

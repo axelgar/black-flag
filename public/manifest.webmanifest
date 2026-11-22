@@ -1,7 +1,7 @@
 {
   "name": "Black Flag",
   "short_name": "Black Flag",
-  "description": "Open water, a Spanish fleet that hunts on sight, and a white flag that turns every enemy into a prize.",
+  "description": "The bar's sea: sink five ships in a row and win a free shot.",
   "start_url": "/",
   "scope": "/",
   "display": "fullscreen",
