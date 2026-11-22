@@ -8,7 +8,9 @@
 // full screen.
 
 import '../ui/fonts/fonts.css';
+import './fonts/fonts.css';
 import './watch.css';
+import GLITCH from './glitch.svg?raw';
 import { markOf } from '../data/colors';
 import { mapFor } from '../sim/world';
 import type { GameEvent } from '../sim/types';
@@ -181,8 +183,10 @@ function draw() {
   feed = feed.filter((f) => now - f.at < FEED_FOR);
   const busy = L.state === 'watching' && !L.quiet;
   set($('#panel'), `
+    <div class="house"><div class="glitch" role="img" aria-label="Glitch">${GLITCH}</div>
+      <div class="eyebrow">A Glitch original · only played here</div></div>
     <div class="brand"><div class="logo">Black <span>Flag</span></div>
-      <div class="eyebrow"><i class="live"></i>The bar's sea${bar > 1 ? ` ${bar}` : ''} · live</div></div>
+      <div class="eyebrow"><i class="live"></i>${busy ? `${L.aboard} playing now in this bar` : 'Live at Glitch · played from this room'}${bar > 1 ? ` · sea ${bar}` : ''}</div></div>
     <div class="rule">Sink <b>5 ships in a row</b> without going down to win a <b>free shot</b> 🥃</div>
     ${L.state === 'watching' && L.quiet ? `<section><h3>How it works</h3><ol class="how">
       <li><span>Order <b>any cocktail</b> at the bar</span></li>
@@ -191,7 +195,7 @@ function draw() {
       <li><span>Show the bartender your <b>free shot</b></span></li></ol></section>` : ''}
     ${busy ? `<section class="streaks"><h3>On a streak</h3>${top.length ? top.map(row).join('') : '<div class="none">Nobody yet. Who\'s first?</div>'}</section>` : ''}
     ${busy && feed.length ? `<section class="feed"><h3>Just now</h3>${feed.map((f) => `<div class="line">${f.html}</div>`).join('')}</section>` : ''}
-    ${open ? `<section class="first"><div class="eyebrow">Only bots out there</div><div class="disp">Who sets sail first?</div></section>` : ''}
+    ${open ? `<section class="first"><div class="eyebrow">Only bots out there</div><div class="hook">Do you wanna <span>play?</span></div></section>` : ''}
     ${busy || open ? `<div class="join"><div class="qr">${qr(joinUrl())}</div>
       <div><div class="cta-line">Order <b>any cocktail</b> to play for a free shot</div>
       <div class="scan">or scan to practise<br><b>${esc(location.host)}</b></div></div></div>` : ''}`, true);

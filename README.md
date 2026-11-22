@@ -167,6 +167,13 @@ a scan of the TV is not a ticket). A free shot won is said across the top of the
 Nothing in the game links to it, and it loads none of the 3D game: a 2D canvas, about
 25 kB.
 
+- **The bar's panel.** The side panel is in Glitch's own look, so the room reads the game as
+  the bar's and not a stream of somebody else's: black and square, the GLITCH wordmark at
+  the top (`src/watch/glitch.svg`, from glitchbars.com) over "A Glitch original · only
+  played here", the site's two pixel typefaces (`src/watch/fonts/`), cream and orange. It
+  says "Live at Glitch · played from this room", or how many are playing in the bar, and
+  over a sea of bots alone the bar's line, "Do you wanna play?". The sea keeps the game's
+  look, and so does the Black Flag title, as on the phones.
 - **The watch key.** The page asks for it once and keeps it in that browser; it goes up
   the socket as the first message, never in a URL. Make it a passphrase: there is no
   lockout, only a second's wait after each wrong key. Put a new secret to change it, and
@@ -176,7 +183,7 @@ Nothing in the game links to it, and it loads none of the 3D game: a 2D canvas, 
 - **Captains, not bots.** The streaks and the feed are about the people in the room: a
   bot's five in a row, and bots sinking each other, are left out (`src/watch/board.ts`).
 - **The rest of the night.** With no captains aboard, the first sea shows its bots
-  fighting, with how it works, "Who sets sail first?" and the QR code down the side. A
+  fighting, with how it works, "Do you wanna play?" and the QR code down the side. A
   sea that has stopped (a later one, after its last captain) shows a large QR code instead,
   and the screen goes back to the first. On a busy night with a second sea open, the
   screen turns between them every minute; it only looks at the next sea while this one is
