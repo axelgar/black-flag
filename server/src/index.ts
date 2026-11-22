@@ -1,11 +1,16 @@
 // Black Flag's shared seas, on Render: one Node process that holds every sea. A room has
 // the sockets of everyone aboard, checks who they are with Supabase, and beats its sea
-// (src/net/sea.ts) thirty times a second while anyone is aboard. The seas are in this
-// process's memory, so it must stay one instance: a second would be a second set of seas.
+// (src/net/sea.ts) thirty times a second. The seas are in this process's memory, so it
+// must stay one instance: a second would be a second set of seas.
+//
+// The bar's first sea never sleeps. It is made when the server starts and its bots fight on
+// with nobody aboard, so the bar's TV always has a sea on it and the night's first captain
+// sails into one already going. The seas after it, a full night's overflow, are made when
+// they are needed and beat only while a captain is aboard.
 //
 // A screen may look on at a sea, the bar's TV, by saying the watch key (WATCH_KEY, a secret
 // set on the service in Render's dashboard; server/.dev.vars on this machine). It takes no
-// seat, and an empty sea stays asleep under it. With no key set, nobody can watch.
+// seat, and it wakes no sleeping sea. With no key set, nobody can watch.
 //
 // Five in a row is written down by the server, never by a phone: it calls record_win in
 // the database with the project's secret key (SUPABASE_SECRET, a secret set the same way).
@@ -37,6 +42,11 @@ const ASK_EVERY = 30_000;
 /** Nobody aboard for this long and the night is over: the next captain finds a new sea,
  *  with no streak kept from another night. */
 const NIGHT_OVER = 60 * 60 * 1000;
+/** The sea that never sleeps: the bar's first. */
+const ALWAYS = '1';
+/** A sea that broke and never sleeps is made again after this long, not at once: one that
+ *  breaks on every beat must not spin the process. */
+const MEND = 5000;
 
 const rooms = new Map<string, SeaRoom>();
 // Every snapshot is deflated, against the ones before it on the same line: a sea's word is
@@ -63,7 +73,7 @@ server.on('upgrade', (req, socket, head) => {
     answered.add(ws);
     ws.on('pong', () => answered.add(ws));
     let room = rooms.get(bar);
-    if (!room) rooms.set(bar, room = new SeaRoom(`BAR${bar}`));
+    if (!room) rooms.set(bar, room = new SeaRoom(`BAR${bar}`, bar === ALWAYS));
     room.add(ws);
   });
 });
@@ -88,7 +98,16 @@ class SeaRoom {
   private empty: ReturnType<typeof setTimeout> | undefined;
   private last = 0;
 
-  constructor(private code: string) {}
+  /** `always`: open at once, and beating whether or not anyone is aboard. */
+  constructor(private code: string, private always = false) {
+    if (always) this.open();
+  }
+
+  /** A new sea, beating: the first, the next night's, or one after this broke. */
+  private open() {
+    this.sea = new Sea(this.code);
+    this.start();
+  }
 
   add(ws: WebSocket) {
     this.socks.set(ws, null);
@@ -193,6 +212,7 @@ class SeaRoom {
     this.stop();
     this.sea = null;
     for (const ws of this.socks.keys()) ws.close(1011, 'the sea broke');
+    if (this.always) setTimeout(() => { if (!this.sea) this.open(); }, MEND);
   }
 
   /** The heartbeat: step the sea, and send everyone aboard what it says. */
@@ -202,7 +222,10 @@ class SeaRoom {
     const now = Date.now();
     const dt = Math.min(0.25, (now - this.last) / 1000);
     this.last = now;
+    // nobody on any line (the first sea, late at night): it is stepped, and nothing is written
+    const heard = this.watchers.size > 0 || this.posts.size > 0;
     for (const m of sea.step(dt)) {
+      if (!heard) break;
       const s = JSON.stringify(m);
       // a screen looking on is sent it all as it is: it has no ship of its own
       for (const ws of this.watchers) { try { ws.send(s); } catch { /* closing */ } }
@@ -214,12 +237,17 @@ class SeaRoom {
       for (const [ws, seat] of this.socks) if (seat) this.posts.get(ws)?.snap(m, sea.own(seat), head);
     }
     for (const w of sea.takeWins()) void this.record(w);
-    if (!sea.aboard) {
-      // nobody aboard: stop beating. The bots stop with it; the next captain aboard finds
-      // them where they were, unless the night is over by then.
-      this.stop();
-      this.empty = setTimeout(() => { this.sea = null; }, NIGHT_OVER);
+    if (sea.aboard) return;
+    if (this.always) {
+      // nobody aboard, and the bots fight on. An hour after the last captain the night is
+      // over all the same: a new sea, and the screens looking on are sent its roster.
+      if (sea.empty * 1000 >= NIGHT_OVER) this.sea = new Sea(this.code);
+      return;
     }
+    // nobody aboard: stop beating. The bots stop with it; the next captain aboard finds
+    // them where they were, unless the night is over by then.
+    this.stop();
+    this.empty = setTimeout(() => { this.sea = null; }, NIGHT_OVER);
   }
 
   /** Write a win down: a free shot, or practice. Tried three times over a few seconds;
@@ -257,6 +285,8 @@ class SeaRoom {
     try { ws.close(4001, why); } catch { /* already gone */ }
   }
 }
+
+rooms.set(ALWAYS, new SeaRoom(`BAR${ALWAYS}`, true));
 
 const port = Number(process.env.PORT) || 8787;
 server.listen(port, '0.0.0.0', () => console.log(`[sea] open on port ${port}`));

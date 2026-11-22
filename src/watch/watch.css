@@ -80,6 +80,10 @@ button{font:inherit;color:inherit}
 .panel:empty ~ .card{right:0}
 .card .in{display:flex;flex-direction:column;align-items:center;gap:calc(var(--u)*1.4);text-align:center;padding:calc(var(--u)*4) calc(var(--u)*5);
   border-radius:calc(var(--u)*3);background:var(--panel);border:calc(var(--u)*.5) solid var(--ink);box-shadow:0 calc(var(--u)*1) 0 var(--ink)}
+/* a sea of bots alone: the call to come aboard, over the QR at the foot of the panel */
+.first{margin-top:auto}
+.first .disp{font-size:calc(var(--u)*4.2);margin-top:calc(var(--u)*.6)}
+.first + .join{margin-top:0}
 .card .qr.big{width:calc(var(--u)*30);height:calc(var(--u)*30);border-radius:calc(var(--u)*1.6);overflow:hidden;background:#fff;
   border:calc(var(--u)*.5) solid var(--ink);margin:calc(var(--u)*1) 0}
 .card .cta-line{color:var(--sun);font-size:calc(var(--u)*3.4);text-shadow:0 .12em 0 var(--ink)}

@@ -39,6 +39,33 @@ describe('a shared sea', () => {
     expect(sea.world.ships.filter((s) => s.bot && s.retire)).toHaveLength(0);
   });
 
+  it('with nobody aboard the fleet fights on: bots sink each other, and no more of them come', () => {
+    const sea = new Sea('BAR1', { seed: 't' });
+    const sunk = beat(sea, 600).flatMap((m) => (m.t === 's' ? m.e ?? [] : [])).filter((e) => e.k === 'sunk');
+    expect(sea.aboard).toBe(0);
+    expect(sea.roster().seats.filter((s) => !s.left && s.bot)).toHaveLength(T.bots);
+    expect(sea.world.ships).toHaveLength(T.bots);      // the same ships come back from the bottom
+    expect(sunk.length).toBeGreaterThan(10);
+  });
+
+  it('counts how long since its last captain left, for a host to end the night by', () => {
+    const sea = new Sea('BAR1', { seed: 't' });
+    beat(sea, 30);
+    expect(sea.empty).toBe(0);                          // only bots so far: no night to end
+    sea.join(aboard('a'));
+    beat(sea, 5);
+    expect(sea.empty).toBe(0);
+    shipOf(sea, 'a').calm = T.calm + 1;
+    sea.leave('a');
+    beat(sea, BLIP + 1 + 20);
+    expect(sea.aboard).toBe(0);
+    expect(sea.empty).toBeGreaterThan(15);
+    expect(sea.empty).toBeLessThan(BLIP + 1 + 20);
+    sea.join(aboard('a'));
+    beat(sea, 0.1);
+    expect(sea.empty).toBe(0);
+  });
+
   it('makes up the numbers with bots, named, coloured and marked as bots', () => noFleet(() => {
     const sea = new Sea('BAR1', { seed: 't' });
     expect(sea.join(aboard('a', 'Marta'))).toBeNull();

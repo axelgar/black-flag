@@ -48,6 +48,9 @@ and Supabase (Postgres and sign-in) behind both.
   and at most thirty captains; a full sea sends the next phone to the next (the bar's seas 1–9). The
   sea grows at once as ships join and closes in over about 30 s as they leave. Islands
   stop shots. Crates: repair, a burst of speed, heavy shot.
+- **Always on.** The bar's first sea never stops: its bots fight each other with nobody
+  aboard, so the TV always has a fight on it and the night's first captain sails into one.
+  An hour after the last captain leaves it starts afresh, with no streak kept.
 - **The ships.** Three looks (Kenney models, `public/ships/`), all with the same numbers.
 - **The whole screen.** Android goes full screen, sideways, on Set sail, and a tap at sea
   takes it back if it was lost. An iPhone can't give a page full screen: as a ship comes
@@ -92,8 +95,10 @@ The privacy notice is `#/privacy`. There are no cookies: the bar's numbers are r
 
 `server/`: one Node process holding every sea, at `/sea/bar/<n>`. It checks each phone's
 Supabase token against the project's public signing keys, asks `me()` whether
-it holds a ticket, and steps the sea (`src/net/sea.ts`) thirty times a second while anyone
-is aboard, sending a snapshot fifteen times a second.
+it holds a ticket, and steps the sea (`src/net/sea.ts`) thirty times a second, sending a
+snapshot fifteen times a second. The first sea (`/sea/bar/1`) is made when the server starts
+and is stepped whether or not anyone is aboard, which takes under a thousandth of a
+processor; the seas after it are stepped only while a captain is aboard.
 
 - **The phone** draws a moment behind the sea and slides every ship between snapshots
   (`Mirror`, `src/net/protocol.ts`), except its own, which it steps itself at once from the
@@ -167,12 +172,15 @@ Nothing in the game links to it, and it loads none of the 3D game: a 2D canvas, 
   lockout, only a second's wait after each wrong key. Put a new secret to change it, and
   every screen asks again.
 - **A screen takes no seat.** It is sent what every phone aboard is, but nobody's own guns,
-  does not count toward the thirty, and does not wake an empty sea. Four to a sea.
+  does not count toward the thirty, and does not wake a sleeping sea. Four to a sea.
 - **Captains, not bots.** The streaks and the feed are about the people in the room: a
   bot's five in a row, and bots sinking each other, are left out (`src/watch/board.ts`).
-- **The rest of the night.** A sea with no captains on it shows a large QR code and how it
-  works. On a busy night with a second sea open, the screen turns between them every
-  minute; it only looks at the next sea while this one is full.
+- **The rest of the night.** With no captains aboard, the first sea shows its bots
+  fighting, with how it works, "Who sets sail first?" and the QR code down the side. A
+  sea that has stopped (a later one, after its last captain) shows a large QR code instead,
+  and the screen goes back to the first. On a busy night with a second sea open, the
+  screen turns between them every minute; it only looks at the next sea while this one is
+  full.
 - **Left alone.** It keeps the screen awake, hides the pointer, tries a dropped line again
   for ever, reloads itself after a deploy (at most once in ten minutes) and once at 6am,
   and never signs in, so the TV makes no player.
@@ -265,7 +273,8 @@ watch.html       the TV's page; index.html the game's
 - **The fight** (`sim.test.ts`): ships sink in as many volleys as the tuning says, hulls
   mend after a while, the streak, WANTED and the win, crates, the sea growing and closing
   in, bots, and a seeded sea replaying the same.
-- **A shared sea** (`sea.test.ts`): captains come aboard, sail, leave and come back; the
+- **A shared sea** (`sea.test.ts`): the bots fight on with nobody aboard; captains come
+  aboard, sail, leave and come back; the
   wire carries the world into a mirror that matches it; a full sea; a ticket's win goes to
   the server and practice's does not.
 - **Your own ship at once** (`lead.test.ts`): stepped ahead of a late, jittery sea, she

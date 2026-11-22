@@ -105,9 +105,9 @@ export class Chart {
     if (this.fx.length > 300) this.fx.splice(0, this.fx.length - 300);
   }
 
-  /** One picture. `map` is drawn without a world (a sea not yet made); `quiet` hides the
-   *  ships, as a sea with nobody aboard is asleep. */
-  draw(w: World | null, map: GameMap, seats: Seat[], dt: number, quiet: boolean) {
+  /** One picture. `map` is drawn without a world (a sea not yet made); `still` hides the
+   *  ships of a sea that isn't beating, which would only sit there. */
+  draw(w: World | null, map: GameMap, seats: Seat[], dt: number, still: boolean) {
     const { ctx, W, H, dpr } = this;
     const t = performance.now() / 1000;
     const R = w?.R ?? T.speed * T.across / 2;
@@ -168,7 +168,7 @@ export class Chart {
     const at = (x: number, y: number) => [ox + x * k, oy + y * k] as const;
     const L = Math.max(T.length * k * 1.15, H * 0.062);           // a ship's length on screen
 
-    if (w && !quiet) {
+    if (w && !still) {
       for (const c of w.crates) this.crate(...at(c.x, c.y), c.kind, c.age, c.id, t);
       this.shots(w, at, k);
       const afloat = w.ships.filter((s) => !s.out && !s.left);
@@ -177,7 +177,7 @@ export class Chart {
       for (const s of afloat) this.ship(s, ...at(s.x, s.y), L, seats, t);
     }
     this.effects(w, at, k, L, t);
-    if (w && !quiet) this.labels(w, seats, at, L, t);
+    if (w && !still) this.labels(w, seats, at, L, t);
   }
 
   /* -------------------------------------------------------------- islands -- */

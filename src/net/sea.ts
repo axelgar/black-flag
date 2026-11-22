@@ -7,7 +7,8 @@
 // the tests sail whole nights with no server.
 //
 // How a shared sea plays: it is always open, and a captain sails in whenever she likes.
-// A fleet of bots sails it whoever is aboard, and any more make up the numbers to minShips:
+// A fleet of bots sails it whoever is aboard, and with nobody aboard as well, for as long as
+// the host goes on stepping it. Any more make up the numbers to minShips:
 // one no longer needed stays until it is next sunk and doesn't come back. A captain who leaves out of a fight docks
 // at once and her streak waits for her; one who leaves in a fight leaves her ship on the
 // sea for `linger` seconds, where it can still be sunk.
@@ -56,6 +57,11 @@ export class Sea {
   readonly cap: number;
   world: World;
   clock = 0;               // seconds since the sea was opened
+  /** Seconds since the last captain left the water, for a host that keeps an empty sea going
+   *  to know when the night is over. 0 while anyone is aboard, and until the first comes:
+   *  a sea only bots have sailed has no night to end. */
+  empty = 0;
+  private sailed = false;  // a captain has been aboard
   /** Streaks of captains who docked out of a fight, kept for when they come back. */
   readonly kept = new Map<string, number>();
   private hands = new Map<string, Hand>();
@@ -94,6 +100,7 @@ export class Sea {
     this.kept.delete(a.seat);
     const p = Wo.join(this.world, { seat: a.seat, look: a.look, streak });
     this.hands.set(a.seat, { ...a, id: p.id, online: true, gone: 0, hands: new Helmsman(), seen: unseen(), c: this.color(a.seat), ticket: !!a.ticket });
+    this.sailed = true;
     this.drain();
     this.crew();
     this.dirty = true;
@@ -120,6 +127,7 @@ export class Sea {
     const out: Out[] = [];
     this.clock += dt;
     this.ashore();
+    this.empty = this.sailed && !this.hands.size ? this.empty + dt : 0;
     this.sail(dt);
     if (this.dirty) { out.push(this.roster()); this.dirty = false; }
     if (++this.calls % SNAP_EVERY === 0) {

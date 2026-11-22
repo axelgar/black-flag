@@ -11,6 +11,7 @@ export type WatchState = 'hailing' | 'watching' | 'refused' | 'lost';
 const PATIENCE = 10;          // seconds between tries, at the most
 const PEEK = 5;               // seconds a look at another sea waits for its answer
 const EMPTY = 0.8;            // seconds after the welcome with no roster: a sea not yet made
+const SILENT = 2;             // seconds with no word from a sea before it is taken to be asleep
 const RELOADED = 'blackflag.watch.reloaded';
 const RELOAD_EVERY = 10 * 60; // seconds: a page newer than the sea must not reload for ever
 
@@ -26,6 +27,8 @@ export class Watch {
   private ws: WebSocket | null = null;
   private tries = 0;
   private closed = false;
+  private heardAt = -Infinity;  // when the sea last sent a snapshot
+  private since = 0;            // when it took this screen on
 
   /** Look on at the bar's `bar`-th sea. */
   constructor(private key: string, readonly bar: number, private changed: () => void) {
@@ -49,13 +52,13 @@ export class Watch {
 
   private hear(m: FromSea) {
     switch (m.t) {
-      case 'welcome': this.welcome = m; this.state = 'watching'; this.tries = 0; this.changed(); break;
+      case 'welcome': this.welcome = m; this.state = 'watching'; this.tries = 0; this.since = performance.now() / 1000; this.changed(); break;
       case 'nope':
         if (m.why === 'version') { this.outdated(); return; }
         this.state = 'refused'; this.why = m.why; this.closed = true; this.changed();
         break;
       case 'roster': this.roster = m; this.mirror.roster(m, ''); this.changed(); break;
-      case 's': this.mirror.push(m, performance.now() / 1000); break;
+      case 's': this.heardAt = performance.now() / 1000; this.mirror.push(m, this.heardAt); break;
     }
   }
 
@@ -76,10 +79,16 @@ export class Watch {
   /** Each frame: slide the mirror to where the sea was a moment ago. */
   frame(now: number) { this.mirror.frame(now); }
 
-  /** Captains aboard. Bots don't count: a sea of bots alone is asleep. */
+  /** Captains aboard. Bots don't count. */
   get aboard() { return captains(this.roster).length; }
-  /** Nobody aboard: the sea is waiting for its first captain. */
+  /** Nobody aboard: the sea is waiting for its first captain. On the bar's first sea the
+   *  bots fight on meanwhile; any other is asleep. */
   get quiet() { return this.aboard === 0; }
+  /** The sea is beating: it sends word many times a second, and has just now. */
+  get live() { return performance.now() / 1000 - this.heardAt <= SILENT; }
+  /** Nothing is moving on this sea: it isn't made yet, or it stopped when its last captain
+   *  left. Told by its silence, once it has had time to say something. */
+  get asleep() { return !this.live && performance.now() / 1000 - this.since > SILENT; }
   /** Every seat taken: a captain coming aboard now is sent to the next sea. */
   get full() { return !!this.welcome && this.aboard >= this.welcome.cap; }
 

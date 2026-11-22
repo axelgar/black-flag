@@ -109,12 +109,14 @@ function frame() {
   if (L) L.frame(now);
   const w = L && L.state === 'watching' ? L.mirror.world : null;
   const seats = L?.mirror.seats ?? [];
-  const quiet = !L || L.quiet;
+  // with nobody aboard the bots' fight is still drawn, and its splashes; the feed down the
+  // side keeps to the captains by itself (board.ts)
+  const still = !L?.live;
   if (w?.events.length) {
     const evs = w.events.splice(0);
-    if (!quiet) { chart.hear(evs, w, seats); hear(evs); }
+    if (!still) { chart.hear(evs, w, seats); hear(evs); }
   }
-  chart.draw(w, w?.map ?? harbour, seats, dt, quiet);
+  chart.draw(w, w?.map ?? harbour, seats, dt, still);
   // a few times a second is plenty for words and numbers
   if (now - saidAt > 0.25) { saidAt = now; draw(); }
 }
@@ -160,12 +162,14 @@ function draw() {
     ? shown.map((b) => `<button class="sea${b === bar ? ' on' : ''}" data-bar="${b}">SEA ${b}${b === bar && pinned ? ' · HELD' : ''}</button>`).join('')
     : '');
 
-  // the card over the chart: why there is no sea, or a quiet sea's call to come aboard
+  // the card over the chart: why there is no sea, or a sleeping sea's call to come aboard.
+  // A sea of bots alone is left in view: its call and the QR go down the side.
+  const open = L.state === 'watching' && L.quiet && L.live;
   let card = '';
   if (L.state === 'hailing') card = `<div class="eyebrow">The bar's sea${bar > 1 ? ` ${bar}` : ''}</div><div class="disp">Finding the sea…</div>`;
   else if (L.state === 'lost') card = `<div class="eyebrow">Lost the sea</div><div class="disp">Coming back…</div>`;
   else if (L.state === 'refused') card = `<div class="eyebrow">The sea is out of reach</div><div class="disp">${L.why === 'full' ? 'Too many screens' : L.why === 'bad' ? 'No seas on this site' : 'Not tonight'}</div>`;
-  else if (L.quiet) card = `<div class="eyebrow">The sea is quiet</div><div class="disp">Who sets sail first?</div>
+  else if (L.quiet && L.asleep) card = `<div class="eyebrow">The sea is quiet</div><div class="disp">Who sets sail first?</div>
       <div class="qr big">${qr(joinUrl())}</div>
       <div class="cta-line">Order <b>any cocktail</b> to play for a free shot</div>
       <div class="scan">or scan to practise · <b>${esc(location.host)}</b></div>`;
@@ -187,7 +191,8 @@ function draw() {
       <li><span>Show the bartender your <b>free shot</b></span></li></ol></section>` : ''}
     ${busy ? `<section class="streaks"><h3>On a streak</h3>${top.length ? top.map(row).join('') : '<div class="none">Nobody yet. Who\'s first?</div>'}</section>` : ''}
     ${busy && feed.length ? `<section class="feed"><h3>Just now</h3>${feed.map((f) => `<div class="line">${f.html}</div>`).join('')}</section>` : ''}
-    ${busy ? `<div class="join"><div class="qr">${qr(joinUrl())}</div>
+    ${open ? `<section class="first"><div class="eyebrow">Only bots out there</div><div class="disp">Who sets sail first?</div></section>` : ''}
+    ${busy || open ? `<div class="join"><div class="qr">${qr(joinUrl())}</div>
       <div><div class="cta-line">Order <b>any cocktail</b> to play for a free shot</div>
       <div class="scan">or scan to practise<br><b>${esc(location.host)}</b></div></div></div>` : ''}`, true);
   chart.room = $('#panel')?.getBoundingClientRect().width ?? 0;
@@ -238,8 +243,12 @@ async function look() {
     const n = await peek(key, b);
     if (n >= 0) live.set(b, n);
   }
-  // nobody left on this one, and someone on another: go there
-  if (line?.quiet && !pinned) { const other = [...live].find(([b, n]) => b !== bar && n > 0); if (other) hail(other[0]); }
+  // nobody left on this one: go where someone is, or back to the first sea, where the bots
+  // fight on (a later sea stops with its last captain)
+  if (line?.quiet && !pinned) {
+    const other = [...live].find(([b, n]) => b !== bar && n > 0);
+    if (other) hail(other[0]); else if (bar !== 1) hail(1);
+  }
   draw();
 }
 
@@ -303,6 +312,6 @@ awake(); void wake(); toDawn();
 setInterval(() => { void look(); }, LOOK * 1000);
 key = kept();
 if (key) hail(bar); else ask();
-// the fonts come from Google: draw the chart's names again once they are in
+// the fonts come after the first picture: draw the chart's names again once they are in
 void document.fonts?.ready.then(() => chart.resize());
 requestAnimationFrame(frame);
