@@ -4,6 +4,13 @@ What it takes to put this version (`v3-mvp`) on the bar's site, in order, and ho
 Steps marked **(you)** need your accounts or secrets; the rest Claude can run on your
 go-ahead.
 
+**Switched on 22 Nov 2026.** `main` is this version, and the site is built from it. Decided
+that day: the sea server stays on Render's free plan for now, and the same captain may
+still be sunk any number of times in a streak (to look at again after a real night). Still
+to do before the cards go out: check the Render service follows `main`, check the site
+from a phone, save one free shot with an email outside the Resend account, and clear the
+test data.
+
 ## Where things stand (22 Nov 2026)
 
 - **The site.** <https://black-flag-two.vercel.app> is Vercel project `axelgars-projects/black-flag`,

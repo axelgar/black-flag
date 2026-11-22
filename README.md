@@ -6,13 +6,13 @@ bots. Sink five ships in a row without being sunk and you win a free shot. The g
 by Glitch Bars.
 
 Every decision behind this version is in `PLANS/MVP.md`. The full game before it was cut
-down (waves, Nassau, boarding, rounds) is tagged `v2-full`.
+down (waves, Nassau, boarding, rounds) is tagged `v2-full`, and the early solo game
+`v1-solo`.
 
-**Where it runs.** This version is on branch `v3-mvp`, previewed at
-<https://black-flag-git-v3-mvp-axelgars-projects.vercel.app> against the sea server on
-Render. The production site, <https://black-flag-two.vercel.app>, still serves
-the early solo game until the switch-over (`PLANS/SWITCHOVER.md`). Hold a phone in
-landscape.
+**Where it runs.** <https://black-flag-two.vercel.app>, built from branch `main`, against
+the sea server on Render. It took the place of the early solo game on 22 Nov 2026: how
+the switch went, what is left before the cards go out, and how to go back are in
+`PLANS/SWITCHOVER.md`. Hold a phone in landscape.
 
 ## Run
 
